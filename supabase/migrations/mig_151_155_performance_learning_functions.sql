@@ -1,0 +1,31 @@
+-- PULSE-ECOM-P15-PERFORMANCE-LEARNING-OPTIMIZATION-001
+-- FINAL state of the learning engine functions. Applied to DB as:
+--   mig_151 fn_learn_diagnose, mig_152 fn_learn_recommend + fn_learn_evaluate,
+--   mig_153/154 fn_learn_diagnose fixes (conflict/friction + local contribution),
+--   mig_155 fn_learning_memory_note + fn_learning_memory_active.
+-- Learn + recommend only. No execution. Every recommendation is non-executable and
+-- requires a separate authority gate. Fixtures are isolated and never WINNER/executable.
+--
+-- The authoritative bodies live in the Supabase migration history for project
+-- nxaunmyihhjixxxljcqt (mig_151..mig_155). This file documents the contract:
+--
+--   fn_learn_diagnose(p_eval jsonb, p_policy jsonb) -> jsonb[]  -- funnel + economics
+--       diagnostics as OBSERVATION/HYPOTHESIS/DERIVED_FINDING; derives contribution
+--       locally from economics; emits CONFLICTING_EVIDENCE when a strong economic
+--       signal coexists with funnel friction or negative contribution.
+--   fn_learn_recommend(p_eval jsonb, p_diag jsonb) -> jsonb[]   -- bounded actions
+--       (TEST_NEW_HOOK/ANGLE/CREATIVE, REFINE_AUDIENCE/OFFER, IMPROVE_PRODUCT_PAGE,
+--       REVIEW_PRICE/SUPPLIER, CONTINUE_TEST, PAUSE_CANDIDATE, SCALE_CANDIDATE),
+--       each with reason/evidence/confidence/objective/risk,
+--       execution_authorization_required=true, executable=false; conflicting evidence
+--       suppresses SCALE_CANDIDATE in favour of CONTINUE_TEST.
+--   fn_learn_evaluate(p_tenant, p_snapshot_id, p_policy, p_persist) -> jsonb
+--       SECURITY DEFINER; enforces tenant isolation via fn_perf_evaluate
+--       (cross_tenant_denied); optionally persists learnings; contract pulse_perf_learn_v1;
+--       executable=false, winner_eligible=false always.
+--   fn_learning_memory_note(...) -> uuid                        -- tenant-scoped durable
+--       memory with stale_after TTL.
+--   fn_learning_memory_active(p_tenant, p_include_fixture) -> rows with is_stale flag;
+--       never returns another tenant's rows; excludes fixtures unless requested.
+--
+-- All functions REVOKE'd from PUBLIC and anon.
