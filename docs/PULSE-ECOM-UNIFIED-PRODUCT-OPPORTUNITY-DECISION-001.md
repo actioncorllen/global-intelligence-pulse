@@ -96,6 +96,40 @@ product×market combos · product rollup best-market · best market ≠ campaign
 own evidence · metric_scope on every row · component `source_ref` = that country's pme_id.
 Fixtures prove the engine only — they are **not** real product acceptance.
 
+## Final founder-gate additions (mig_195–200)
+- **Product Confidence** — a canonical `product_confidence ∈ {HIGH, MEDIUM, LOW}` **only**, kept
+  separate from `product_opportunity_score`, market/platform scores, `overall_evidence_confidence`, and
+  the TEST/WATCH/AVOID decision. A high numeric score never auto-creates HIGH confidence: it is capped by
+  weak local price provenance, UNKNOWN saturation, or unverified stock/economics. Proven: a product×market
+  scoring **85.4** with a converted-foreign (INFERRED) price resolves to **Product Confidence MEDIUM,
+  decision WATCH**.
+- **Saturation gates TEST eligibility** — the same product × country saturation state (from the competitor
+  engine) is a hard gate: **VERY_HIGH → WATCH** (demand can never override it); **HIGH → WATCH** unless an
+  evidence-backed defensible gap **and** STRONG/PROMISING headroom justify a bounded exception;
+  **MODERATE/LOW → eligible**; **UNKNOWN → fail-closed to WATCH** and never read as LOW.
+- **Advertising Headroom** — `STRONG / PROMISING / WEAK / INSUFFICIENT_EVIDENCE` from the €10/€15/€20
+  economic **stress** scenarios (never CPA forecasts) plus saturation context. Competition is **never**
+  converted to bid/CPC/CPA cost; evidence-backed price compression downgrades headroom one tier.
+- **Opportunity Sweet Spot** — `STRONG / PROMISING / WEAK / INSUFFICIENT_EVIDENCE`, a **combination**
+  (validated demand + manageable saturation + usable supplier + verified stock + defensible local price +
+  viable economics + headroom + confidence), not another score.
+- **Tournament is an opportunity finder, not a popularity finder** — ranks product × market by
+  decision → sweet-spot → saturation penalty → score → product confidence → headroom → contribution →
+  country. Proven mandatory invariant: a higher-demand, VERY_HIGH-saturation, compressed USA candidate
+  **loses** to a lower-demand, MODERATE-saturation, stronger-headroom Germany candidate; and the same
+  product can be **WATCH in the USA (VERY_HIGH) and TEST in Germany (MODERATE)** — US saturation never
+  contaminates DE.
+
+## Founder-gate tests — 24/24 PASS (A–X) + 44/44 base retained (68 total)
+A product_confidence only HIGH/MEDIUM/LOW · B score≠confidence · C high score + weak evidence≠HIGH · D LOW
+saturation + no demand≠TEST · E VERY_HIGH prevents TEST · F HIGH without gap≠TEST · G HIGH bounded
+exception needs gap+headroom · H MODERATE stays eligible · I UNKNOWN≠LOW · J UNKNOWN fails closed · K demand
+can't override VERY_HIGH · L ad count≠CPC/CPA/ROAS · M competition doesn't fabricate bid cost · N stress
+from economics not competition · O headroom doesn't predict CPA · P Sweet-Spot STRONG needs manageable
+competition · Q price compression downgrades headroom · R gap requires evidence · S saturated-USA loses to
+moderate-Germany · T same product WATCH-US/TEST-DE · U US saturation doesn't contaminate DE · V tournament
+best combination · W product rollup best market · X Monday exposes the new fields per-country.
+
 ## Reuse (nothing re-implemented)
 `fn_pm_score` (composite), `fn_evaluate_product_market` / `product_market_evaluations` (market + gates +
 economics), `fn_ppf_evaluate` / `product_market_platform_evaluations` (acquisition channel),
