@@ -156,12 +156,14 @@ BEGIN
   v_assets := public.fn_resolve_storefront_assets(
                 p_context->>'supplier', p_context->>'supplier_product_id', p_country_code);
 
-  -- Defense-in-depth claim scan across assembled marketing copy.
+  -- Defense-in-depth claim scan across PERSUASIVE copy surfaces only
+  -- (hero / short_description / problem-solution / benefits). The trust section
+  -- and announcement are honest disclaimers ("delivery times are estimates, not
+  -- guarantees") — scanning them would false-positive on negated claim words.
   v_marketing_text := concat_ws(' ',
      v_copy->'hero'->>'headline', v_copy->'hero'->>'subheadline', v_copy->>'short_description',
      v_copy->'problem_solution'->>'problem', v_copy->'problem_solution'->>'solution',
-     (SELECT string_agg(b,' ') FROM jsonb_array_elements_text(coalesce(v_copy->'benefits','[]'::jsonb)) b),
-     v_copy->'trust'->>'copy', v_copy->'announcement'::text);
+     (SELECT string_agg(b,' ') FROM jsonb_array_elements_text(coalesce(v_copy->'benefits','[]'::jsonb)) b));
   v_scan := public.fn_ad_studio_claim_scan(v_marketing_text);
 
   -- Ad->page message match (Ad Studio addressability).
@@ -228,7 +230,12 @@ BEGIN
     page_model = page_model
       || jsonb_build_object('template_family', v_family, 'template_version', v_sel->>'template_version',
            'sections', v_sel->'sections', 'hero_variant', v_sel->>'hero_variant',
-           'assets_runtime', v_assets, 'ad_match_ref', v_ad_match),
+           'assets_runtime', v_assets, 'ad_match_ref', v_ad_match)
+      || jsonb_build_object('assets', jsonb_build_object(
+            'primary_image', v_assets->'primary_image'->>'source_url',
+            'gallery', (SELECT coalesce(jsonb_agg(x->>'source_url'),'[]'::jsonb) FROM jsonb_array_elements(v_assets->'gallery') x),
+            'state', CASE WHEN v_assets->>'state'='ASSETS_AVAILABLE' THEN 'SUPPLIER_ASSETS_RESOLVED' ELSE 'PRODUCT_ASSET_REQUIRED' END,
+            'origin','SOURCE_SUPPLIER','note','rights-clear supplier images; no fabricated replacement')),
     updated_at = now()
   WHERE id = v_page_id;
 
