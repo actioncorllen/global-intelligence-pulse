@@ -1,4 +1,11 @@
-// PULSE-ECOM-P8-PULSE-HOSTED-PUBLIC-ENDPOINT-DEPLOY-001 + HTML-RENDER-FIX-001
+// PULSE-ECOM-P8-PULSE-HOSTED-PUBLIC-ENDPOINT-DEPLOY-001 + HTML-RENDER-FIX-001 + STOREFRONT-FINAL-ACCEPTANCE-001
+// FINAL-ACCEPTANCE (v4): PRODUCT_VIDEO contract. When the public contract carries
+// video.state === 'VIDEO_AVAILABLE' with a rights-clear url, a safe <video> is rendered
+// (controls, muted, playsinline, preload=metadata, poster=primary image, no autoplay-with-sound,
+// responsive). When video is absent (VIDEO_ASSET_NOT_AVAILABLE), the block is omitted entirely —
+// no empty container, no fabricated placeholder — and the page publishes normally without it.
+// origin_kind (SOURCE_SUPPLIER vs GENERATED) is preserved so later Ad Studio/media-generated
+// video is rendered as a distinct, explicitly-labelled asset type.
 // Thin, read-only public storefront HTTP endpoint:
 //   HTTP request -> validate slug -> invoke public-safe renderer -> render -> respond.
 // Exposes ONLY PUBLISHED storefronts via fn_public_storefront_render(slug) (allowlist-only,
@@ -77,6 +84,7 @@ const STYLE =
   `.hero-sub{color:var(--muted)} .grid{display:grid;gap:16px;grid-template-columns:1fr}\n` +
   `@media(min-width:760px){.grid{grid-template-columns:1fr 1fr}}\n` +
   `.gallery img{width:100%;border:1px solid var(--line);border-radius:10px;margin-bottom:10px;aspect-ratio:1/1;object-fit:cover}\n` +
+  `.videowrap{margin:12px 0} .videowrap video{width:100%;max-width:100%;border:1px solid var(--line);border-radius:10px;background:#000;display:block}\n` +
   `.price{font-size:1.5rem;font-weight:700}\n` +
   `ul{padding-left:1.1em} .muted{color:var(--muted);font-size:.9rem}\n` +
   `.cta{display:inline-block;margin-top:12px;padding:12px 18px;border-radius:10px;background:#9ca3af;color:#fff;font-weight:600;border:0;cursor:not-allowed}\n` +
@@ -106,6 +114,25 @@ function renderHtml(sf: any): string {
     ? `<img src="${x(primary)}" alt="${title}" loading="lazy" />`
     : `<div class="note">No product image available.</div>`;
   for (const g of gallery.slice(1, 5)) galleryHtml += `<img src="${x(g)}" alt="${title}" loading="lazy" />`;
+
+  // PRODUCT_VIDEO: only rendered when a real, rights-clear video exists (state VIDEO_AVAILABLE).
+  // Absent -> the block is omitted entirely (no empty container, no fabricated placeholder).
+  // Safe controls: user-initiated only (controls, no autoplay, muted default, playsinline),
+  // preload=metadata, responsive via .videowrap, poster = primary image. Source vs generated
+  // provenance is preserved from the contract's origin_kind.
+  let videoHtml = "";
+  if (sf?.video?.state === "VIDEO_AVAILABLE" && sf?.video?.url) {
+    const posterAttr = primary ? ` poster="${x(primary)}"` : "";
+    const originKind = sf?.video?.origin_kind === "GENERATED" ? "Generated creative" : "Supplier-provided";
+    videoHtml =
+      `<div class="videowrap">` +
+      `<video controls muted playsinline preload="metadata"${posterAttr}>` +
+      `<source src="${x(sf.video.url)}" />` +
+      `Your browser does not support embedded video.` +
+      `</video>` +
+      `<p class="muted">Product video &#183; ${x(originKind)}. Autoplay off; press play to watch.</p>` +
+      `</div>`;
+  }
 
   let benefitsHtml = "";
   if (benefits.length) {
@@ -137,7 +164,7 @@ function renderHtml(sf: any): string {
   <h1>${x(sf?.hero?.headline ?? title)}</h1>
   ${sf?.hero?.subheadline ? `<p class="hero-sub">${x(sf.hero.subheadline)}</p>` : ""}
   <div class="grid">
-    <div class="gallery">${galleryHtml}</div>
+    <div class="gallery">${galleryHtml}${videoHtml}</div>
     <div>
       ${price ? `<div class="price">${price}</div>` : ""}
       ${sf?.copy?.short_description ? `<p>${x(sf.copy.short_description)}</p>` : ""}
