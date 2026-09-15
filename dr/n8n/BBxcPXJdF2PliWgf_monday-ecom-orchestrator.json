@@ -1,0 +1,18 @@
+{
+  "_dr_note": "STRATELOQ DR n8n workflow export. Credential values NEVER included — only references {id,name}. Recreate credentials per dr/runbook/SECRETS-RECOVERY.md, then import. Regenerate via scripts/dr/dr_n8n_export.sh. CANONICAL production schedule: weekly Monday 07:00 UTC (ecommerce intelligence scan — Monday-only policy).",
+  "id": "BBxcPXJdF2PliWgf",
+  "name": "Pulse — Monday Ecom Product Opportunity Orchestrator",
+  "active": true,
+  "settings": { "executionOrder": "v1" },
+  "schedule": "weekly Monday 07:00 UTC (approved canonical ecom scan cadence)",
+  "connections": {
+    "Run Monday Now (manual)": { "main": [[{ "node": "Run Orchestration (manual)", "type": "main", "index": 0 }]] },
+    "Every Monday 07:00 UTC": { "main": [[{ "node": "Run Orchestration (scheduled)", "type": "main", "index": 0 }]] }
+  },
+  "nodes": [
+    { "name": "Run Monday Now (manual)", "type": "n8n-nodes-base.manualTrigger", "typeVersion": 1, "position": [0, 0], "parameters": {} },
+    { "name": "Run Orchestration (manual)", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.5, "position": [224, 0], "parameters": { "method": "POST", "url": "https://nxaunmyihhjixxxljcqt.supabase.co/rest/v1/rpc/fn_run_monday_product_opportunity", "authentication": "predefinedCredentialType", "nodeCredentialType": "supabaseApi", "sendHeaders": true, "specifyHeaders": "keypair", "headerParameters": { "parameters": [{ "name": "Content-Type", "value": "application/json" }] }, "sendBody": true, "contentType": "json", "specifyBody": "json", "jsonBody": "={{ { \"p_trigger\": \"manual\" } }}", "options": { "timeout": 60000 } }, "credentials": { "supabaseApi": { "id": "jMhzgwaHX9jwZ7rA", "name": "Supabase account" } } },
+    { "name": "Every Monday 07:00 UTC", "type": "n8n-nodes-base.scheduleTrigger", "typeVersion": 1.3, "position": [0, 224], "parameters": { "rule": { "interval": [{ "field": "weeks", "triggerAtDay": [1], "triggerAtHour": 7 }] } } },
+    { "name": "Run Orchestration (scheduled)", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.5, "position": [224, 224], "parameters": { "method": "POST", "url": "https://nxaunmyihhjixxxljcqt.supabase.co/rest/v1/rpc/fn_run_monday_product_opportunity", "authentication": "predefinedCredentialType", "nodeCredentialType": "supabaseApi", "sendHeaders": true, "specifyHeaders": "keypair", "headerParameters": { "parameters": [{ "name": "Content-Type", "value": "application/json" }] }, "sendBody": true, "contentType": "json", "specifyBody": "json", "jsonBody": "={{ { \"p_trigger\": \"scheduled\" } }}", "options": { "timeout": 60000 } }, "credentials": { "supabaseApi": { "id": "jMhzgwaHX9jwZ7rA", "name": "Supabase account" } } }
+  ]
+}

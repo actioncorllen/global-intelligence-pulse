@@ -1,0 +1,82 @@
+-- STRATELOQ DR SCHEMA SNAPSHOT (independent logical schema backup; NO secrets, NO customer data)
+-- Source of truth: live Supabase public schema. See dr/runbook/RECOVERY-RUNBOOK.md for restore order.
+
+-- ORDER 5: RLS policies
+
+CREATE POLICY "Users see own analytics" ON public.analytics_events AS PERMISSIVE FOR ALL TO public USING ((user_id = auth.uid()));
+CREATE POLICY "public reads published build updates" ON public.build_updates AS PERMISSIVE FOR SELECT TO anon, authenticated USING ((published = true));
+CREATE POLICY "service role full access on build_updates" ON public.build_updates AS PERMISSIVE FOR ALL TO service_role USING (true);
+CREATE POLICY "service role full access on business_profiles" ON public.business_profiles AS PERMISSIVE FOR ALL TO service_role USING (true);
+CREATE POLICY "user reads own business_profile" ON public.business_profiles AS PERMISSIVE FOR SELECT TO authenticated USING ((auth.uid() = user_id));
+CREATE POLICY cdc_select_own ON public.commerce_destination_choice AS PERMISSIVE FOR SELECT TO public USING ((user_id = auth.uid()));
+CREATE POLICY cdc_service_all ON public.commerce_destination_choice AS PERMISSIVE FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY cps_select_own ON public.commerce_prediction_snapshots AS PERMISSIVE FOR SELECT TO authenticated USING (((user_id = auth.uid()) OR (visibility = 'GLOBAL_SAFE'::text)));
+CREATE POLICY cps_service_all ON public.commerce_prediction_snapshots AS PERMISSIVE FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY cpo_select_own ON public.commerce_product_opportunities AS PERMISSIVE FOR SELECT TO authenticated USING ((auth.uid() = user_id));
+CREATE POLICY cpo_service_all ON public.commerce_product_opportunities AS PERMISSIVE FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY cpp_select_own ON public.commerce_product_pages AS PERMISSIVE FOR SELECT TO public USING ((user_id = auth.uid()));
+CREATE POLICY cpp_service_all ON public.commerce_product_pages AS PERMISSIVE FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY commerce_products_global_read ON public.commerce_products AS PERMISSIVE FOR SELECT TO authenticated USING (((user_id = fn_global_intelligence_uid()) AND (visibility = 'GLOBAL_SAFE'::text)));
+CREATE POLICY commerce_products_select_own ON public.commerce_products AS PERMISSIVE FOR SELECT TO authenticated USING ((auth.uid() = user_id));
+CREATE POLICY commerce_products_service_all ON public.commerce_products AS PERMISSIVE FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY commerce_signals_global_read ON public.commerce_signals AS PERMISSIVE FOR SELECT TO authenticated USING (((user_id = fn_global_intelligence_uid()) AND (visibility = 'GLOBAL_SAFE'::text)));
+CREATE POLICY commerce_signals_select_own ON public.commerce_signals AS PERMISSIVE FOR SELECT TO authenticated USING ((auth.uid() = user_id));
+CREATE POLICY commerce_signals_service_all ON public.commerce_signals AS PERMISSIVE FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY csc_select_own ON public.commerce_store_connections AS PERMISSIVE FOR SELECT TO public USING ((user_id = auth.uid()));
+CREATE POLICY csc_service_all ON public.commerce_store_connections AS PERMISSIVE FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY csp_select_own ON public.commerce_store_projects AS PERMISSIVE FOR SELECT TO public USING ((user_id = auth.uid()));
+CREATE POLICY csp_service_all ON public.commerce_store_projects AS PERMISSIVE FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY "service role full access on communication_logs" ON public.communication_logs AS PERMISSIVE FOR ALL TO service_role USING (true);
+CREATE POLICY service_role_all ON public.competitor_content AS PERMISSIVE FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY competitors_select_own ON public.competitors AS PERMISSIVE FOR SELECT TO authenticated USING ((auth.uid() = user_id));
+CREATE POLICY service_role_all ON public.competitors AS PERMISSIVE FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY chv_select_all ON public.conversion_hero_variants AS PERMISSIVE FOR SELECT TO authenticated USING (true);
+CREATE POLICY chv_service_all ON public.conversion_hero_variants AS PERMISSIVE FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY cst_select_all ON public.conversion_section_types AS PERMISSIVE FOR SELECT TO authenticated USING (true);
+CREATE POLICY cst_service_all ON public.conversion_section_types AS PERMISSIVE FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY ctf_select_all ON public.conversion_template_families AS PERMISSIVE FOR SELECT TO authenticated USING (true);
+CREATE POLICY ctf_service_all ON public.conversion_template_families AS PERMISSIVE FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY "service role full access on daily_briefs" ON public.daily_briefs AS PERMISSIVE FOR ALL TO service_role USING (true);
+CREATE POLICY service_role_all ON public.daily_briefs AS PERMISSIVE FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY "user reads own daily_briefs" ON public.daily_briefs AS PERMISSIVE FOR SELECT TO authenticated USING ((auth.uid() = user_id));
+CREATE POLICY "anon can insert demo_events" ON public.demo_events AS PERMISSIVE FOR INSERT TO anon WITH CHECK (true);
+CREATE POLICY "service role full access on demo_events" ON public.demo_events AS PERMISSIVE FOR ALL TO service_role USING (true);
+CREATE POLICY discovery_runs_select_own ON public.discovery_runs AS PERMISSIVE FOR SELECT TO authenticated USING ((auth.uid() = user_id));
+CREATE POLICY discovery_runs_service_all ON public.discovery_runs AS PERMISSIVE FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY discovery_state_select_own ON public.discovery_state AS PERMISSIVE FOR SELECT TO authenticated USING ((EXISTS ( SELECT 1
+   FROM member m
+  WHERE ((m.id = discovery_state.member_id) AND (m.auth_user_id = auth.uid())))));
+CREATE POLICY "Users see own patterns" ON public.engagement_patterns AS PERMISSIVE FOR ALL TO public USING ((user_id = auth.uid()));
+CREATE POLICY "service role full access on founding_applications" ON public.founding_applications AS PERMISSIVE FOR ALL TO service_role USING (true);
+CREATE POLICY service_role_all ON public.generated_content AS PERMISSIVE FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY service_role_all ON public.growth_messages AS PERMISSIVE FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY mcd_select_own ON public.marketing_campaign_drafts AS PERMISSIVE FOR SELECT TO authenticated USING ((user_id = auth.uid()));
+CREATE POLICY mce_select_own ON public.marketing_campaign_executions AS PERMISSIVE FOR SELECT TO authenticated USING ((user_id = auth.uid()));
+CREATE POLICY member_select_own ON public.member AS PERMISSIVE FOR SELECT TO authenticated USING ((auth.uid() = auth_user_id));
+CREATE POLICY member_actions_select_own ON public.member_actions AS PERMISSIVE FOR SELECT TO authenticated USING ((auth.uid() = user_id));
+CREATE POLICY member_actions_service_all ON public.member_actions AS PERMISSIVE FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY member_business_dna_select_own ON public.member_business_dna AS PERMISSIVE FOR SELECT TO authenticated USING ((auth.uid() = user_id));
+CREATE POLICY member_business_dna_service_all ON public.member_business_dna AS PERMISSIVE FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY member_feedback_select_own ON public.member_feedback AS PERMISSIVE FOR SELECT TO authenticated USING ((user_id = auth.uid()));
+CREATE POLICY member_generated_content_select_own ON public.member_generated_content AS PERMISSIVE FOR SELECT TO authenticated USING ((user_id = auth.uid()));
+CREATE POLICY member_opportunities_select_own ON public.member_opportunities AS PERMISSIVE FOR SELECT TO authenticated USING ((auth.uid() = user_id));
+CREATE POLICY member_opportunities_service_all ON public.member_opportunities AS PERMISSIVE FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY "anon can read active opportunities" ON public.opportunities AS PERMISSIVE FOR SELECT TO anon USING (((status = 'active'::text) AND ((expires_at IS NULL) OR (expires_at > now()))));
+CREATE POLICY service_role_all ON public.opportunities AS PERMISSIVE FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY service_role_all ON public.pending_in_app_messages AS PERMISSIVE FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY product_acquisitions_select_own ON public.product_acquisitions AS PERMISSIVE FOR SELECT TO authenticated USING ((user_id = auth.uid()));
+CREATE POLICY pcr_read_all ON public.provider_capability_registry AS PERMISSIVE FOR SELECT TO authenticated USING (true);
+CREATE POLICY pcr_service_all ON public.provider_capability_registry AS PERMISSIVE FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY "anon can insert pulse_guide_events" ON public.pulse_guide_events AS PERMISSIVE FOR INSERT TO anon WITH CHECK (true);
+CREATE POLICY "service role full access on pulse_guide_events" ON public.pulse_guide_events AS PERMISSIVE FOR ALL TO service_role USING (true);
+CREATE POLICY "Users see own rejections" ON public.rejected_ideas AS PERMISSIVE FOR ALL TO public USING ((user_id = auth.uid()));
+CREATE POLICY "public reads visible roadmap items" ON public.roadmap_items AS PERMISSIVE FOR SELECT TO anon, authenticated USING ((public_visible = true));
+CREATE POLICY "service role full access on roadmap_items" ON public.roadmap_items AS PERMISSIVE FOR ALL TO service_role USING (true);
+CREATE POLICY "Users see own saved" ON public.saved_opportunities AS PERMISSIVE FOR ALL TO public USING ((user_id = auth.uid()));
+CREATE POLICY "service role full access on saved_opportunities" ON public.saved_opportunities AS PERMISSIVE FOR ALL TO service_role USING (true);
+CREATE POLICY "user manages own saved_opportunities" ON public.saved_opportunities AS PERMISSIVE FOR ALL TO authenticated USING ((auth.uid() = user_id));
+CREATE POLICY "Users see own successes" ON public.successful_opportunities AS PERMISSIVE FOR ALL TO public USING ((user_id = auth.uid()));
+CREATE POLICY service_role_all ON public.user_consent AS PERMISSIVE FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY service_role_all ON public.user_events AS PERMISSIVE FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY service_role_all ON public.user_growth_profile AS PERMISSIVE FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY service_role_all ON public.user_memory AS PERMISSIVE FOR ALL TO service_role USING (true) WITH CHECK (true);

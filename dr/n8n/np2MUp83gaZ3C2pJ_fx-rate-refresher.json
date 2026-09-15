@@ -1,0 +1,21 @@
+{
+  "_dr_note": "STRATELOQ DR n8n workflow export. Credential values are NEVER included — only credential references {id,name}. Recreate credentials per dr/runbook/SECRETS-RECOVERY.md, then import this definition. Regenerate all exports via scripts/dr/dr_n8n_export.sh.",
+  "id": "np2MUp83gaZ3C2pJ",
+  "name": "Pulse — FX Rate Refresher",
+  "active": true,
+  "settings": { "executionOrder": "v1", "timezone": "UTC" },
+  "schedule": "daily 06:00 UTC (approved exception)",
+  "connections": {
+    "Refresh FX Now": { "main": [[{ "node": "Fetch ECB Rates", "type": "main", "index": 0 }]] },
+    "Fetch ECB Rates": { "main": [[{ "node": "Build FX Payload", "type": "main", "index": 0 }]] },
+    "Daily 06:00 UTC": { "main": [[{ "node": "Fetch ECB Rates", "type": "main", "index": 0 }]] },
+    "Build FX Payload": { "main": [[{ "node": "Ingest FX Rates", "type": "main", "index": 0 }]] }
+  },
+  "nodes": [
+    { "name": "Refresh FX Now", "type": "n8n-nodes-base.manualTrigger", "typeVersion": 1, "position": [220, 300], "parameters": {} },
+    { "name": "Fetch ECB Rates", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.5, "position": [460, 380], "parameters": { "method": "GET", "url": "https://api.frankfurter.app/latest?base=USD", "options": { "timeout": 20000 } } },
+    { "name": "Daily 06:00 UTC", "type": "n8n-nodes-base.scheduleTrigger", "typeVersion": 1.3, "position": [220, 460], "parameters": { "rule": { "interval": [{ "field": "days", "triggerAtHour": 6 }] } } },
+    { "name": "Build FX Payload", "type": "n8n-nodes-base.code", "typeVersion": 2, "position": [680, 380], "parameters": { "mode": "runOnceForAllItems", "language": "javaScript", "jsCode": "const r = $json || {};\nconst rates = r.rates || {};\nif (!r.base || Object.keys(rates).length === 0) {\n  throw new Error('FX provider returned no rates');\n}\nreturn [{ json: { payload: { base: r.base, source: 'ECB via frankfurter.app', as_of: r.date || null, rates: rates } } }];" } },
+    { "name": "Ingest FX Rates", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.5, "position": [900, 380], "parameters": { "method": "POST", "url": "https://nxaunmyihhjixxxljcqt.supabase.co/rest/v1/rpc/ingest_fx_rates", "authentication": "predefinedCredentialType", "nodeCredentialType": "supabaseApi", "sendHeaders": true, "specifyHeaders": "keypair", "headerParameters": { "parameters": [{ "name": "Content-Type", "value": "application/json" }] }, "sendBody": true, "contentType": "json", "specifyBody": "json", "jsonBody": "={{ { \"p_payload\": $json.payload } }}", "options": { "timeout": 30000 } }, "credentials": { "supabaseApi": { "id": "jMhzgwaHX9jwZ7rA", "name": "Supabase account" } } }
+  ]
+}
