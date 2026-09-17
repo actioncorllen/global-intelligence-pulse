@@ -1,11 +1,14 @@
 # STRATELOQ DR — Weekly Encrypted Backup ACTIVATED
 
-**VERDICT: `PASS`.** The `BLOCKED_EXTERNAL_DR_ENCRYPTION_KEY` blocker from
+**VERDICT: `PASS` — DR FULLY CLOSED.** The `BLOCKED_EXTERNAL_DR_ENCRYPTION_KEY` blocker from
 `STRATELOQ-DR-FINAL-CLOSURE-005` is cleared. The founder generated a durable DR
 keypair, kept the private key offline, and provided the public key. It has been
 validated, configured into the existing weekly backup workflow, proven with one
 manual encrypted backup, and the weekly Monday 03:00 UTC schedule is now active.
-No secret was printed, committed, logged, or placed in Drive. €0.
+The founder then ran the offline recovery test on the machine holding the private key and
+reported `decrypt sha256 == manifest: true`, so **durable-key recovery is now VERIFIED end to
+end** (§8) — no remaining DR blockers. No secret was printed, committed, logged, or placed in
+Drive; the private key was never requested or handled. €0.
 
 ## 1. Public key — VALIDATED
 - Type: **RSA-4096** public key (SPKI / `BEGIN PUBLIC KEY`), exponent 65537.
@@ -49,11 +52,15 @@ No secret was printed, committed, logged, or placed in Drive. €0.
   triggerCount 1, schedule **weekly, Monday 03:00 UTC**. Separate from the Monday 07:00 market
   orchestrator — the intelligence-scan cadence was not touched.
 
-## 8. Durable-key recovery / decryption — NOT VERIFIED HERE (founder-only)
-Per the rule "do not claim durable-key recovery/decryption is verified unless actually tested":
-the private key never leaves the founder's machine, so decryption was **not** tested and is **not**
-claimed. The manual test proves *encrypt → wrap → offsite → manifest*. To verify recovery offline
-(founder only, on the machine holding the private key), download the backup file and run:
+## 8. Durable-key recovery / decryption — VERIFIED PASS (founder offline test)
+The founder ran the offline recovery test on the local machine that holds the private key
+(`node .\verify.js`) and reported **`decrypt sha256 == manifest: true`**. This confirms the full
+durable-key recovery chain end to end: RSA-OAEP-SHA256 unwrap of the per-run DEK with the founder's
+private key → AES-256-GCM decrypt of the offsite ciphertext → recomputed plaintext SHA-256 equals
+the manifest's `plaintext_sha256`. The private key never left the founder's machine and was never
+requested, handled, stored, or exposed by Claude; only the founder's reported boolean result is
+recorded here. The recovery command remains documented below for future audits (founder-only, on the
+machine holding the private key):
 
 ```js
 // node verify.js  (with the encrypted backup JSON as ./backup.enc.json and your private key ./dr_priv.pem)
@@ -71,6 +78,9 @@ console.log('decrypt sha256 == manifest:',
 A `true` result confirms full durable-key recovery. Keep the private key offline; never paste it
 into chat, n8n, Drive, or the repo.
 
+**Recorded outcome (2026-09-17):** founder-run offline test returned
+`decrypt sha256 == manifest: true` → **durable-key recovery VERIFIED PASS.**
+
 ---
 
 ## FINAL REPORT
@@ -83,7 +93,7 @@ into chat, n8n, Drive, or the repo.
 - WEEKLY SCHEDULE: **ACTIVE** (Mon 03:00 UTC)
 - UNRELATED WORKFLOWS MODIFIED: **NO**
 - PRIVATE KEY REQUESTED/HANDLED: **NO**
-- DURABLE-KEY DECRYPTION: **NOT VERIFIED (founder offline step provided)**
+- DURABLE-KEY DECRYPTION: **VERIFIED PASS** (founder offline test 2026-09-17: `decrypt sha256 == manifest: true`)
 - SECRETS EXPOSED: **NO**
 - COST: **€0**
-- VERDICT: **PASS** (weekly encrypted DR backup live; durable-key decrypt is a one-command founder confirmation)
+- VERDICT: **PASS — DR FULLY CLOSED** (weekly encrypted DR backup live; durable-key recovery verified end to end)

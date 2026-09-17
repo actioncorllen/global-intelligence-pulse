@@ -1,6 +1,14 @@
 # STRATELOQ-DR-FINAL-CLOSURE-005
 
-**VERDICT: `PARTIAL_PASS` — `BLOCKED_EXTERNAL_DR_ENCRYPTION_KEY`.** DR readiness ~**97%**.
+> **UPDATE 2026-09-17 — SUPERSEDED / CLOSED:** the sole remaining blocker below
+> (`BLOCKED_EXTERNAL_DR_ENCRYPTION_KEY`) is now cleared. The founder provided the durable DR public
+> key; it was validated and configured into workflow `PqWTgbpEwVOyPZpj`, one manual encrypted backup
+> was proven to reach Strateloq-DR, the weekly Monday 03:00 UTC schedule was activated, and the
+> founder confirmed offline durable-key recovery (`decrypt sha256 == manifest: true`). **Final DR
+> status: `PASS` — DR FULLY CLOSED (~100%).** See `STRATELOQ-DR-BACKUP-ACTIVATION.md` for the
+> activation + recovery evidence. The original closure report is retained below for history.
+
+**VERDICT (at time of writing, now superseded): `PARTIAL_PASS` — `BLOCKED_EXTERNAL_DR_ENCRYPTION_KEY`.** DR readiness ~**97%**.
 
 The founder connected the authoritative DR Google Drive account **`strateloqpulse@gmail.com`** to n8n and
 approved the weekly encrypted backup. This unit **verified that account**, provisioned the DR folder structure,
