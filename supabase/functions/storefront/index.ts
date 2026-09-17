@@ -30,6 +30,16 @@ const SECURITY_HEADERS: Record<string, string> = {
   "X-Content-Type-Options": "nosniff",
   "Referrer-Policy": "no-referrer",
   "Cache-Control": "public, max-age=60",
+  // CORS: this is a PUBLIC, read-only, anonymous endpoint that returns only the
+  // published, secret-stripped storefront contract (never credentials/cookies).
+  // A published storefront is meant to be viewable by any customer browser and
+  // fetchable by any frontend host (incl. the Strateloq/Lovable app) consuming the
+  // JSON contract. Wildcard read CORS is correct here; it is NOT an authenticated
+  // mutation endpoint (publish/unpublish go through authenticated Supabase RPCs).
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
+  "Access-Control-Allow-Headers": "authorization, apikey, content-type, accept",
+  "Access-Control-Max-Age": "86400",
 };
 // The function DECLARES text/html; charset=utf-8 (spec-correct, and what renders on any
 // non-sandboxed host / custom domain). NOTE: the default *.supabase.co/functions/v1 domain
@@ -183,6 +193,10 @@ function renderHtml(sf: any): string {
 }
 
 Deno.serve(async (req: Request) => {
+  // CORS preflight for browser fetch() of the public JSON contract.
+  if (req.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: SECURITY_HEADERS });
+  }
   if (req.method !== "GET" && req.method !== "HEAD") {
     return new Response("Method Not Allowed", { status: 405, headers: SECURITY_HEADERS });
   }
