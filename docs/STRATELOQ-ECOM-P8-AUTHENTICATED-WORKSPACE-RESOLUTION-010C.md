@@ -1,5 +1,12 @@
 # STRATELOQ-ECOM-P8-AUTHENTICATED-WORKSPACE-RESOLUTION-010C
 
+> **IDENTITY CORRECTION (010E, 2026-09-18):** The canonical authenticated Ecommerce test account is
+> **`actioncorllen@gmail.com`** (auth `7c8ddf9d-172c-4a89-a402-bb7066228b61`, member `4bc6b405…`).
+> References in this document to `actioncorllen+ecom@gmail.com` as the login/authenticated identity are
+> **incorrect**: `+ecom` was only a stale value in the `member.email` profile field (since aligned to
+> `actioncorllen@gmail.com`) and was **never an auth.users identity**. All ownership, bindings and
+> technical findings below remain valid — only the email label was wrong.
+
 **VERDICT: `PASS`.** The authenticated test tenant now resolves into a **ready** Ecommerce
 workspace and the publishing E2E can proceed. Root cause: the approved isolated test tenant
 was **missing its `discovery_state` bootstrap record**, so the workspace-readiness contract

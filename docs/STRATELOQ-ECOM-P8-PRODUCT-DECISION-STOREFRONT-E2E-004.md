@@ -1,5 +1,12 @@
 # STRATELOQ-ECOM-P8-PRODUCT-DECISION-STOREFRONT-E2E-004
 
+> **IDENTITY CORRECTION (010E, 2026-09-18):** The canonical authenticated Ecommerce test account is
+> **`actioncorllen@gmail.com`** (auth `7c8ddf9d-172c-4a89-a402-bb7066228b61`, member `4bc6b405…`).
+> References in this document to `actioncorllen+ecom@gmail.com` as the login/authenticated identity are
+> **incorrect**: `+ecom` was only a stale value in the `member.email` profile field (since aligned to
+> `actioncorllen@gmail.com`) and was **never an auth.users identity**. All ownership, bindings and
+> technical findings below remain valid — only the email label was wrong.
+
 **VERDICT: `PASS`** (one genuine bug found and fixed; authentication genuinely exercised).
 
 The final unverified boundary — *authenticated Ecommerce Product Decision → Conversion Runtime →
