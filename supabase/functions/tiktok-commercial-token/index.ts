@@ -7,10 +7,10 @@
 // SUPABASE_SERVICE_ROLE_KEY env) OR a service_role JWT claim -- so a normal anon/browser
 // JWT (which passes verify_jwt) still cannot obtain a TikTok token. Fail closed.
 //
-// 014F note: this project uses the new Supabase key system, so n8n's Supabase credential
-// authenticates with the service_role secret key (not a legacy service_role JWT). The gate
-// therefore matches the presented key against SUPABASE_SERVICE_ROLE_KEY rather than relying
-// only on a JWT `role` claim.
+// 014F.7 hardening: the two secrets are .trim()'d to strip surrounding whitespace/newlines
+// introduced during secret storage/copy-paste (014F.6 proved both carried a trailing
+// newline, which TikTok rejected as invalid_client "Client info is illegal or malformed").
+// Only SURROUNDING whitespace is removed; internal characters are never altered.
 //
 // Secrets (names only; values live solely as Edge Function secrets):
 //   TIKTOK_COMMERCIAL_CLIENT_KEY
@@ -24,12 +24,16 @@ function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 }
 
-// Scrub any secret material from anything we return.
+// Scrub any secret material (raw or trimmed) from anything we return.
 function redact(input: unknown): string {
   let s = typeof input === "string" ? input : JSON.stringify(input ?? "");
   for (const name of [CLIENT_KEY_ENV, CLIENT_SECRET_ENV]) {
     const v = Deno.env.get(name);
-    if (v && v.length > 0) s = s.split(v).join("[REDACTED]");
+    if (v && v.length > 0) {
+      s = s.split(v).join("[REDACTED]");
+      const t = v.trim();
+      if (t.length > 0 && t !== v) s = s.split(t).join("[REDACTED]");
+    }
   }
   s = s.replace(/("?(?:client_secret|client_key|access_token)"?\s*[:=]\s*)("?[^"&,}\s]+)/gi, "$1[REDACTED]");
   return s.slice(0, 500);
@@ -81,16 +85,15 @@ Deno.serve(async (req) => {
     }
   }
 
-  const clientKey = Deno.env.get(CLIENT_KEY_ENV);
-  const clientSecret = Deno.env.get(CLIENT_SECRET_ENV);
+  // 014F.7: normalize ONLY surrounding whitespace/newlines; never alter internal characters.
+  const clientKey = (Deno.env.get(CLIENT_KEY_ENV) ?? "").trim();
+  const clientSecret = (Deno.env.get(CLIENT_SECRET_ENV) ?? "").trim();
 
-  // Presence probe: report only whether both secrets exist. Never reads/returns values,
-  // never contacts TikTok.
   if (probe) {
     return jsonResponse(200, { ok: true, mode: "probe", secrets_present: Boolean(clientKey) && Boolean(clientSecret) });
   }
 
-  // Fail closed if the server secrets are not installed.
+  // Fail closed if the server secrets are not installed (empty after trim).
   if (!clientKey || !clientSecret) return jsonResponse(424, { ok: false, error: "server_secret_unavailable" });
 
   const form = new URLSearchParams();
