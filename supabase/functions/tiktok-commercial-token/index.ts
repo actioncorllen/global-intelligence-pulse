@@ -1,15 +1,16 @@
-// STRATELOQ-TIKTOK-SECURE-TOKEN-BROKER-014E
+// STRATELOQ-TIKTOK-SECURE-TOKEN-BROKER-014E/014F
 // Server-side TikTok Commercial Content token broker (014D Option B).
 //
-// Mirrors the established trusted-server pattern (meta-insights-reader): Deno.serve,
-// gateway verify_jwt=true, provider secrets read ONLY from Edge Function env, never
-// logged, never returned. Adds an explicit service_role claim check so a normal
-// anon/browser JWT can NOT obtain a TikTok token (fail closed).
+// Trusted-server pattern (like meta-insights-reader): gateway verify_jwt=true, provider
+// secrets read ONLY from Edge Function env, never logged/returned. Trusted-server gate:
+// the caller must present the project's service_role key (matched against the built-in
+// SUPABASE_SERVICE_ROLE_KEY env) OR a service_role JWT claim -- so a normal anon/browser
+// JWT (which passes verify_jwt) still cannot obtain a TikTok token. Fail closed.
 //
-// Responsibility (only): authenticate the trusted server caller, read the two TikTok
-// secrets from env, POST the form-urlencoded client_credentials request to TikTok, and
-// return the minimum token result. It does not touch the database and does not persist
-// the access token.
+// 014F note: this project uses the new Supabase key system, so n8n's Supabase credential
+// authenticates with the service_role secret key (not a legacy service_role JWT). The gate
+// therefore matches the presented key against SUPABASE_SERVICE_ROLE_KEY rather than relying
+// only on a JWT `role` claim.
 //
 // Secrets (names only; values live solely as Edge Function secrets):
 //   TIKTOK_COMMERCIAL_CLIENT_KEY
@@ -23,8 +24,7 @@ function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 }
 
-// Scrub any secret material from anything we return. Never let client_key/client_secret/
-// access_token leak into an error body.
+// Scrub any secret material from anything we return.
 function redact(input: unknown): string {
   let s = typeof input === "string" ? input : JSON.stringify(input ?? "");
   for (const name of [CLIENT_KEY_ENV, CLIENT_SECRET_ENV]) {
@@ -35,41 +35,47 @@ function redact(input: unknown): string {
   return s.slice(0, 500);
 }
 
-// The gateway (verify_jwt=true) has already validated the JWT signature before this code
-// runs; we only read the already-trusted `role` claim to require service_role.
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length || a.length === 0) return false;
+  let out = 0;
+  for (let i = 0; i < a.length; i++) out |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return out === 0;
+}
+
 function callerRole(req: Request): string | null {
-  const auth = req.headers.get("authorization") || "";
-  const m = auth.match(/^Bearer\s+(.+)$/i);
+  const m = (req.headers.get("authorization") || "").match(/^Bearer\s+(.+)$/i);
   if (!m) return null;
   const parts = m[1].split(".");
   if (parts.length < 2) return null;
   try {
     const b64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
     const pad = b64 + "=".repeat((4 - (b64.length % 4)) % 4);
-    const payload = JSON.parse(atob(pad));
-    return typeof payload?.role === "string" ? payload.role : null;
+    return JSON.parse(atob(pad)).role ?? null;
   } catch {
     return null;
   }
 }
 
+function isTrustedServer(req: Request): boolean {
+  const svc = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+  const apikey = req.headers.get("apikey") || "";
+  const bearer = (req.headers.get("authorization") || "").replace(/^Bearer\s+/i, "");
+  return callerRole(req) === "service_role" || timingSafeEqual(apikey, svc) || timingSafeEqual(bearer, svc);
+}
+
 Deno.serve(async (req) => {
-  if (req.method !== "POST") {
-    return jsonResponse(405, { ok: false, error: "method_not_allowed" });
-  }
+  if (req.method !== "POST") return jsonResponse(405, { ok: false, error: "method_not_allowed" });
 
-  // Trusted-server gate: only service_role may broker a TikTok token.
-  if (callerRole(req) !== "service_role") {
-    return jsonResponse(403, { ok: false, error: "forbidden_requires_service_role" });
-  }
+  // Trusted-server gate first: only the service_role caller may reach the broker at all.
+  if (!isTrustedServer(req)) return jsonResponse(403, { ok: false, error: "forbidden_requires_service_role" });
 
-  // Reject a malformed request body when one is provided (broker needs no input).
-  let probe = new URL(req.url).searchParams.get("probe") === "1";
+  // Optional presence probe (query ?probe=1, header x-broker-probe: 1, or body {"probe":true}).
+  let probe = new URL(req.url).searchParams.get("probe") === "1" || req.headers.get("x-broker-probe") === "1";
   const raw = await req.text();
-  if (raw && raw.trim().length > 0) {
+  if (!probe && raw && raw.trim().length > 0) {
     try {
-      const parsed = JSON.parse(raw);
-      if (parsed && parsed.probe === true) probe = true;
+      const p = JSON.parse(raw);
+      if (p && p.probe === true) probe = true;
     } catch {
       return jsonResponse(400, { ok: false, error: "invalid_json" });
     }
@@ -79,19 +85,13 @@ Deno.serve(async (req) => {
   const clientSecret = Deno.env.get(CLIENT_SECRET_ENV);
 
   // Presence probe: report only whether both secrets exist. Never reads/returns values,
-  // never contacts TikTok. Lets an operator confirm installation safely.
+  // never contacts TikTok.
   if (probe) {
-    return jsonResponse(200, {
-      ok: true,
-      mode: "probe",
-      secrets_present: Boolean(clientKey) && Boolean(clientSecret),
-    });
+    return jsonResponse(200, { ok: true, mode: "probe", secrets_present: Boolean(clientKey) && Boolean(clientSecret) });
   }
 
   // Fail closed if the server secrets are not installed.
-  if (!clientKey || !clientSecret) {
-    return jsonResponse(424, { ok: false, error: "server_secret_unavailable" });
-  }
+  if (!clientKey || !clientSecret) return jsonResponse(424, { ok: false, error: "server_secret_unavailable" });
 
   const form = new URLSearchParams();
   form.set("client_key", clientKey);
@@ -106,7 +106,6 @@ Deno.serve(async (req) => {
     });
     const j = await r.json().catch(() => ({}));
     const accessToken = j?.access_token ?? null;
-
     if (!r.ok || !accessToken) {
       return jsonResponse(r.ok ? 502 : r.status, {
         ok: false,
@@ -115,8 +114,6 @@ Deno.serve(async (req) => {
         error_code: typeof j?.error === "string" ? j.error : null,
       });
     }
-
-    // Minimum token result the n8n executor needs. access_token is short-lived (~7200s).
     return jsonResponse(200, {
       ok: true,
       access_token: accessToken,
