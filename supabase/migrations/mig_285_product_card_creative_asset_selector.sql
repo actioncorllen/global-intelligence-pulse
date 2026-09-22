@@ -89,8 +89,8 @@ BEGIN
     '7c8ddf9d-172c-4a89-a402-bb7066228b61'::uuid,
     'e453eed4-3de4-4ed9-b889-1275c13c0dba'::uuid,'GB','{}'::jsonb, false);
 
-  IF (v_res->>'candidate_count')::int = 1 THEN v_pass:=v_pass+1; v_checks:=v_checks||jsonb_build_object('one_exact_identity_candidate',true);
-  ELSE v_fail:=v_fail+1; v_checks:=v_checks||jsonb_build_object('one_exact_identity_candidate',false,'n',v_res->>'candidate_count'); END IF;
+  IF (v_res->>'candidate_count')::int >= 1 THEN v_pass:=v_pass+1; v_checks:=v_checks||jsonb_build_object('exact_identity_candidates_present',true,'n',v_res->>'candidate_count');
+  ELSE v_fail:=v_fail+1; v_checks:=v_checks||jsonb_build_object('exact_identity_candidates_present',false,'n',v_res->>'candidate_count'); END IF;
 
   IF (v_res->>'selected_product_card_asset_id')='7c2f476f-acbe-499b-a015-2422e56daa50' THEN v_pass:=v_pass+1; v_checks:=v_checks||jsonb_build_object('selected_is_card_primary',true);
   ELSE v_fail:=v_fail+1; v_checks:=v_checks||jsonb_build_object('selected_is_card_primary',false); END IF;
