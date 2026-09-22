@@ -45,7 +45,9 @@ SELECT public.fn_media_register_provider(
     'n8n_node','@n8n/n8n-nodes-langchain.alibabaCloud',
     'operation','imageToVideo',
     'model_family','wan',
-    'min_duration_s',2,'max_duration_s',15,
+    'min_duration_s',5,'max_duration_s',10,
+    'supported_durations_s', jsonb_build_array(5,10),
+    'duration_note','Wan image-to-video accepts only discrete durations {5,10}s (hard max 10s); the n8n node exposes a 2-15s field but the underlying model rejects/clamps other values. Runtime snaps requests down to the nearest supported value.',
     'resolutions', jsonb_build_array('720P','1080P'),
     'aspect_from_source', true,
     'prompt_steerable', true,
@@ -116,9 +118,9 @@ BEGIN
   v_lin := public.fn_ad_studio_resolve_lineage(p_tenant, b.product_id, b.decision_id, b.market);
   v_lstate := v_lin->>'lineage_state';
 
-  -- short-form duration clamped to [10,15]s; TikTok-style feed favours ~12s
-  v_dur := CASE WHEN p_platform='TIKTOK_FEED' THEN 12 ELSE 15 END;
-  v_dur := least(15, greatest(10, v_dur));
+  -- Wan image-to-video supports only discrete durations {5,10}s (hard max 10s).
+  -- Short-form favours the longest supported clip; snap the request down to a valid value.
+  v_dur := CASE WHEN (CASE WHEN p_platform='TIKTOK_FEED' THEN 12 ELSE 15 END) >= 10 THEN 10 ELSE 5 END;
 
   v_sb := public.fn_media_build_storyboard(p_angle_id,p_platform);
   v_provider := public.fn_media_provider_for('VIDEO');
@@ -212,7 +214,8 @@ BEGIN
   v_lstate := v_lin->>'lineage_state';
 
   -- cost estimate (indicative; real charge is metered by the n8n Gateway)
-  v_dur := least(15, greatest(10, coalesce(j.duration_target,12)));
+  -- Wan supports discrete {5,10}s only; snap the stored target down to a valid value.
+  v_dur := CASE WHEN coalesce(j.duration_target,10) >= 10 THEN 10 ELSE 5 END;
   v_res := coalesce(v_cfg->>'resolution','720P');
   v_persec := coalesce((v_cfg->>'est_cost_usd_per_second')::numeric, 0.03);
   v_est := round(v_dur * v_persec, 4);
