@@ -79,10 +79,21 @@ production-quality providers. Selection is by **quality, product-identity preser
 quality, motion quality, 9:16 support, reliability, latency, cost, commercial/API suitability**. **Customers
 must never need a provider account.**
 
-## 12. Composition quality (launch-critical)
+## 12. Composition quality (future-critical; deferred for beta)
 Finished quality needs more than generation. The architecture must support: `SCENE GENERATION + COMPOSITION +
 TRANSITIONS + CAPTIONS + TYPOGRAPHY + CTA + BRANDING + AUDIO/VOICE/SFX (where appropriate) + FINAL ENCODING`.
-**Do not mark the video system complete while deterministic composition is missing.**
+**Do not mark the video system complete while deterministic composition is missing** — for the long term.
+
+> **BETA SCOPE DECISION (2026-09-22, 015I.1) — `BETA_COMPOSITION_DEFERRED_BY_FOUNDER`.** Internal advanced
+> video composition/editing is **NOT a beta launch blocker**. For beta, Strateloq **generates** the advertising
+> video; users may **download/export** and optionally edit externally in software of their choice. The
+> provider-neutral composition contracts (015H/015I: production plan, scene contracts, quality gates, render
+> lifecycle, composition abstraction) are **PRESERVED as future-ready architecture** — not deleted, not
+> permanently removed, not unnecessary long-term. Do **not** connect a paid render/editing service
+> (Shotstack/Creatomate/Remotion/etc.) for beta, and do **not** reintroduce the composition backend as a beta
+> blocker. This does **not** weaken the standard: the **generated video itself must still meet the
+> founder-approved visual-quality benchmark** (hook, storytelling, product identity, progression, platform
+> suitability, claim safety, human review, commercial usefulness all remain LOCKED).
 
 ## 13. Text / captions (deterministic)
 Critical advertising text must **not** depend on an AI video model drawing text inside frames. Use

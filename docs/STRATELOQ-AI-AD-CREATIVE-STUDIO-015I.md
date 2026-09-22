@@ -1,5 +1,11 @@
 # STRATELOQ-AI-AD-CREATIVE-STUDIO-015I — Video Composition + Render Backend Decision & Foundation
 
+> **SUPERSEDED FOR BETA by 015I.1 (2026-09-22): `BETA_COMPOSITION_DEFERRED_BY_FOUNDER`.** The
+> `RENDER_BACKEND_EXTERNAL_SETUP_REQUIRED` finding below is **NOT a beta launch blocker**. The founder deferred
+> internal advanced composition/editing for beta (Strateloq generates the video; users export/edit externally).
+> Do **not** connect a paid render/editing backend (Shotstack/Creatomate/Remotion) for beta. All 015H/015I
+> contracts are **preserved as future-ready architecture**. See `STRATELOQ-AI-AD-CREATIVE-STUDIO-015I.1.md`.
+
 **FINAL VERDICT: `RENDER_BACKEND_EXTERNAL_SETUP_REQUIRED`.**
 **`DOES_015I_WEAKEN_FOUNDER_STANDARD = NO`.**
 
