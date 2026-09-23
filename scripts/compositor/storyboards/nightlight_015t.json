@@ -1,0 +1,50 @@
+{
+  "name": "STRATELOQ-015T founder-quality multi-scene nightlight ad",
+  "product": "Kids Nightlight Projector",
+  "aspect": "9:16",
+  "transition_s": 0.4,
+  "audio": {"type": "strateloq_ambient_pad", "cost_usd": 0.0, "note": "self-generated license-clean $0 ambient bed"},
+  "scenes": [
+    {
+      "scene_order": 1, "scene_type": "VIDEO_SCENE", "role": "HOOK", "duration": 2.6,
+      "video_asset": "docs/creatives/STRATELOQ-015T-gen-A-bedroom-galaxy.mp4", "ss": 2.6,
+      "source_type": "GENERATIVE_ENVIRONMENT_015T", "identity_state": "N/A_NO_DEVICE_SHOWN",
+      "headline": "Turn any room into a starry night sky", "headline_size": 66, "headline_y": 150
+    },
+    {
+      "scene_order": 2, "scene_type": "IMAGE_SCENE", "role": "PRODUCT_INTRO", "duration": 3.0,
+      "product_asset": "docs/creatives/STRATELOQ-015R-product-cutout.png",
+      "product_identity_required": true, "source_type": "PRODUCT_CARD_PIXELS",
+      "product_w": 680, "product_cy": 1090, "scale0": 0.98, "scale1": 1.07, "product_drift": -18,
+      "halo_r": 560, "halo": 64,
+      "kicker": "MEET", "kicker_y": 210,
+      "headline": "The dual-mode star projector & night light", "headline_size": 52, "headline_y": 268
+    },
+    {
+      "scene_order": 3, "scene_type": "VIDEO_SCENE", "role": "PRODUCT_IN_ACTION", "duration": 3.6,
+      "video_asset": "docs/creatives/STRATELOQ-015R-nightlight-video.mp4", "ss": 1.0,
+      "source_type": "GENERATIVE_VIDEO_015R", "identity_state": "IDENTITY_REVIEW_REQUIRED",
+      "caption": "One tap — and it comes alive", "caption_y": 1560
+    },
+    {
+      "scene_order": 4, "scene_type": "VIDEO_SCENE", "role": "TRANSFORMATION", "duration": 4.0,
+      "video_asset": "docs/creatives/STRATELOQ-015T-gen-B-livingroom-aurora.mp4", "ss": 2.0,
+      "source_type": "GENERATIVE_ENVIRONMENT_015T", "identity_state": "N/A_NO_DEVICE_SHOWN",
+      "caption": "Wash your walls in soft starlight", "caption_y": 1560
+    },
+    {
+      "scene_order": 5, "scene_type": "VIDEO_SCENE", "role": "OUTCOME", "duration": 3.6,
+      "video_asset": "docs/creatives/STRATELOQ-015T-gen-C-bedroom-nebula.mp4", "ss": 2.0,
+      "source_type": "GENERATIVE_ENVIRONMENT_015T", "identity_state": "N/A_NO_DEVICE_SHOWN",
+      "caption": "A softer, more magical night", "caption_y": 1560
+    },
+    {
+      "scene_order": 6, "scene_type": "CTA_SCENE", "role": "CTA", "duration": 2.4,
+      "product_asset": "docs/creatives/STRATELOQ-015R-product-cutout.png",
+      "product_identity_required": true, "source_type": "PRODUCT_CARD_PIXELS",
+      "product_w": 520, "product_cy": 980, "scale0": 1.0, "scale1": 1.03, "product_drift": -8,
+      "halo_r": 520, "halo": 60,
+      "cta": "See how it works", "cta_y": 1500
+    }
+  ]
+}

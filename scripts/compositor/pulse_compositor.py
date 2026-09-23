@@ -230,25 +230,54 @@ def render_pil_scene(scene, out_path, assets):
 
 
 def render_video_scene(scene, out_path):
-    """Normalize an existing clip to 1080x1920/30fps and overlay optional caption."""
+    """Normalize an existing clip to 1080x1920/30fps and overlay optional caption.
+    Supports an in-point (ss) so a slice of a longer clip can be used as a beat."""
     dur = scene["duration"]
+    ss = scene.get("ss", 0)
     src = scene["video_asset"]
     over_png = None
-    if scene.get("caption"):
-        ov = text_layer({k: scene[k] for k in scene if k in
-                         ("caption", "caption_y")})
+    if any(scene.get(k) for k in ("headline", "kicker", "supporting", "caption")):
+        ov = text_layer(scene)
         over_png = out_path + ".over.png"
         ov.save(over_png)
-    vf = f"scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},fps={FPS}"
+    # subtle slow push-in on the clip too, so video beats never feel static
+    z = scene.get("video_zoom", 0.04)
+    vf = (f"scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},fps={FPS},"
+          f"scale=ceil(iw*(1+{z}))/2*2:-2,crop={W}:{H}")
+    seek = ["-ss", str(ss), "-t", str(dur), "-i", src]
     if over_png:
-        cmd = [FF, "-y", "-loglevel", "error", "-t", str(dur), "-i", src, "-i", over_png,
+        cmd = [FF, "-y", "-loglevel", "error", *seek, "-i", over_png,
                "-filter_complex", f"[0:v]{vf}[v];[v][1:v]overlay=0:0:format=auto",
                "-an", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "medium",
                "-crf", "19", "-r", str(FPS), "-movflags", "+faststart", out_path]
     else:
-        cmd = [FF, "-y", "-loglevel", "error", "-t", str(dur), "-i", src,
+        cmd = [FF, "-y", "-loglevel", "error", *seek,
                "-vf", vf, "-an", "-c:v", "libx264", "-pix_fmt", "yuv420p",
                "-preset", "medium", "-crf", "19", "-r", str(FPS), "-movflags", "+faststart", out_path]
+    subprocess.run(cmd, check=True)
+
+
+def render_ambient(total_s, out_wav):
+    """Strateloq-generated, license-clean $0 ambient pad (soft low chord, slow tremolo,
+    fades). Demonstrates the audio-mix pipeline; no external API, no rights issue."""
+    d = total_s
+    fc = (
+        "[0:a][1:a][2:a]amix=inputs=3:normalize=0[m];"
+        f"[m]volume=0.10,tremolo=f=0.12:d=0.4,"
+        f"afade=t=in:st=0:d=1.3,afade=t=out:st={max(0.1,d-1.4):.2f}:d=1.4[a]"
+    )
+    cmd = [FF, "-y", "-loglevel", "error",
+           "-f", "lavfi", "-t", str(d), "-i", "sine=frequency=110",
+           "-f", "lavfi", "-t", str(d), "-i", "sine=frequency=164.81",
+           "-f", "lavfi", "-t", str(d), "-i", "sine=frequency=220",
+           "-filter_complex", fc, "-map", "[a]", "-c:a", "pcm_s16le", out_wav]
+    subprocess.run(cmd, check=True)
+
+
+def mux_audio(video_in, wav_in, out_path):
+    cmd = [FF, "-y", "-loglevel", "error", "-i", video_in, "-i", wav_in,
+           "-c:v", "copy", "-c:a", "aac", "-b:a", "128k", "-shortest",
+           "-movflags", "+faststart", out_path]
     subprocess.run(cmd, check=True)
 
 
@@ -290,8 +319,18 @@ def compose(storyboard, out_path, workdir):
         scene_files.append(sp)
         durations.append(scene["duration"])
         print(f"  rendered scene {idx} [{stype}] {scene['duration']}s -> {sp}")
-    xfade_concat(scene_files, durations, out_path, T=storyboard.get("transition_s", 0.45))
-    print("final ->", out_path)
+    T = storyboard.get("transition_s", 0.45)
+    total = sum(durations) - (len(scene_files) - 1) * T
+    if storyboard.get("audio"):
+        vid_only = os.path.join(workdir, "_final_video.mp4")
+        xfade_concat(scene_files, durations, vid_only, T=T)
+        wav = os.path.join(workdir, "_ambient.wav")
+        render_ambient(total, wav)
+        mux_audio(vid_only, wav, out_path)
+        print(f"final (with $0 ambient bed) -> {out_path}  ~{total:.1f}s")
+    else:
+        xfade_concat(scene_files, durations, out_path, T=T)
+        print(f"final -> {out_path}  ~{total:.1f}s")
 
 
 if __name__ == "__main__":
