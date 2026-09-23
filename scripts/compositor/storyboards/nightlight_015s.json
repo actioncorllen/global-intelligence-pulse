@@ -1,0 +1,76 @@
+{
+  "name": "STRATELOQ-015S nightlight first native-composited ad",
+  "product": "Kids Nightlight Projector",
+  "aspect": "9:16",
+  "transition_s": 0.45,
+  "scenes": [
+    {
+      "scene_order": 1,
+      "scene_type": "IMAGE_SCENE",
+      "role": "HOOK",
+      "duration": 2.6,
+      "product_asset": "docs/creatives/STRATELOQ-015R-product-cutout.png",
+      "product_identity_required": true,
+      "source_type": "PRODUCT_CARD_PIXELS",
+      "product_w": 430, "product_cy": 1180, "scale0": 0.9, "scale1": 1.02, "product_drift": -30,
+      "halo_r": 420, "halo": 46,
+      "headline": "Turn any room into a starry night sky",
+      "headline_size": 76, "headline_y": 210,
+      "transition_out": "crossfade"
+    },
+    {
+      "scene_order": 2,
+      "scene_type": "IMAGE_SCENE",
+      "role": "PRODUCT_INTRO",
+      "duration": 3.2,
+      "product_asset": "docs/creatives/STRATELOQ-015R-product-cutout.png",
+      "product_identity_required": true,
+      "source_type": "PRODUCT_CARD_PIXELS",
+      "product_w": 680, "product_cy": 1080, "scale0": 0.98, "scale1": 1.07, "product_drift": -18,
+      "halo_r": 560, "halo": 64,
+      "kicker": "MEET", "kicker_y": 210,
+      "headline": "The dual-mode star projector & night light",
+      "headline_size": 52, "headline_y": 268,
+      "transition_out": "crossfade"
+    },
+    {
+      "scene_order": 3,
+      "scene_type": "VIDEO_SCENE",
+      "role": "PRODUCT_IN_ACTION",
+      "duration": 8.0,
+      "video_asset": "docs/creatives/STRATELOQ-015R-nightlight-video.mp4",
+      "source_type": "GENERATIVE_VIDEO_015R",
+      "product_identity_required": true,
+      "identity_state": "IDENTITY_REVIEW_REQUIRED",
+      "caption": "Switch it on — the room comes alive",
+      "caption_y": 1560,
+      "transition_out": "crossfade"
+    },
+    {
+      "scene_order": 4,
+      "scene_type": "IMAGE_SCENE",
+      "role": "OUTCOME",
+      "duration": 3.0,
+      "product_asset": "docs/creatives/STRATELOQ-015R-product-cutout.png",
+      "product_identity_required": true,
+      "source_type": "PRODUCT_CARD_PIXELS",
+      "product_w": 600, "product_cy": 1120, "scale0": 1.06, "scale1": 0.99, "product_drift": 14,
+      "halo_r": 600, "halo": 70,
+      "headline": "A soft glow, in seconds",
+      "headline_size": 66, "headline_y": 250,
+      "transition_out": "crossfade"
+    },
+    {
+      "scene_order": 5,
+      "scene_type": "CTA_SCENE",
+      "role": "CTA",
+      "duration": 2.4,
+      "product_asset": "docs/creatives/STRATELOQ-015R-product-cutout.png",
+      "product_identity_required": true,
+      "source_type": "PRODUCT_CARD_PIXELS",
+      "product_w": 520, "product_cy": 980, "scale0": 1.0, "scale1": 1.03, "product_drift": -8,
+      "halo_r": 520, "halo": 60,
+      "cta": "See how it works", "cta_y": 1500
+    }
+  ]
+}
