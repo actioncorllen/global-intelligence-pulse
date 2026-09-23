@@ -3,6 +3,7 @@
   "product": "Kids Nightlight Projector",
   "aspect": "9:16",
   "transition_s": 0.4,
+  "design": {"palette": [[31,26,66],[58,48,110],[26,22,54]], "accent": [255,201,102], "accent_text": [35,29,74], "text": [245,244,252], "sub": [200,196,224], "stars": {"n": 260, "seed": 8080}, "halo_rgb": [255,238,208], "halo_default": 60},
   "audio": {"type": "strateloq_ambient_pad", "cost_usd": 0.0, "note": "self-generated license-clean $0 ambient bed"},
   "scenes": [
     {
