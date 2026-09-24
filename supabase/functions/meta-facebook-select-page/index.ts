@@ -1,10 +1,13 @@
 // STRATELOQ-016C — meta-facebook-select-page (edge wrapper)
 // ----------------------------------------------------------------------------
 // Finalizes a Meta Facebook ORGANIC connection after the user explicitly selects
-// which discovered Page to connect. verify_jwt=true. Core logic in ./logic.ts.
+// which discovered Page to connect. Core logic in ./logic.ts.
 // No post is created/edited/deleted. Tokens never reach the browser or logs.
 //
 // 016C.4: wrapped with serveWithCors() so the browser CORS preflight is answered.
+// 016C.6: platform verify_jwt is DISABLED at the gate (self-auth via verifyUser),
+// so the POST reaches the handler and every response carries CORS headers. An
+// authenticated user is still required; tenant isolation and RLS are unchanged.
 
 import {
   jsonResponse,

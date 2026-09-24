@@ -1,7 +1,14 @@
 // STRATELOQ-016C — meta-facebook-oauth-begin
 // ----------------------------------------------------------------------------
 // Secure server-side entrypoint that STARTS a Meta Facebook ORGANIC connection.
-// verify_jwt=true (an authenticated Strateloq user is required). It:
+//
+// 016C.6: platform verify_jwt is DISABLED at the gate (same pattern as
+// start-discovery). With verify_jwt=true the gateway rejects the POST BEFORE the
+// function runs and its 401 carries NO CORS headers, so the browser sees a "CORS
+// error" after a successful 204 preflight. This function authenticates ITSELF
+// (userClientFromRequest -> verifyUser/getUser), so every response — including a
+// real 401 — is produced by the handler and carries CORS headers. An
+// authenticated Strateloq user is still required; nothing is weakened. It:
 //   1. verifies the caller is authenticated
 //   2. resolves the tenant + authorization SERVER-SIDE via fn__own_tenant()
 //      (inside fn_social_oauth_begin; the client cannot assert a tenant)

@@ -1,6 +1,6 @@
 // STRATELOQ-016C — meta-facebook-disconnect
 // ----------------------------------------------------------------------------
-// Minimum safe server-side disconnect/revoke path (016C §7). verify_jwt=true.
+// Minimum safe server-side disconnect/revoke path (016C §7).
 //   1. authenticates the user (fn_social_connection_disconnect re-checks tenant
 //      ownership via fn__own_tenant inside the RPC)
 //   2. optionally attempts Meta-side permission revocation — success is only
@@ -11,6 +11,9 @@
 // Never fabricates Meta-side revocation. Never returns or logs a token.
 //
 // 016C.4: wrapped with serveWithCors() so the browser CORS preflight is answered.
+// 016C.6: platform verify_jwt is DISABLED at the gate (self-auth via verifyUser),
+// so the POST reaches the handler and every response carries CORS headers. An
+// authenticated user is still required; tenant isolation and RLS are unchanged.
 
 import {
   jsonResponse,

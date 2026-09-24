@@ -72,17 +72,32 @@ export function callbackRedirectUri(): string {
 // top-level navigation (no fetch, no preflight) and does not use these helpers.
 // ----------------------------------------------------------------------------
 
+// Known Strateloq browser origins that MUST always be allowed, independent of the
+// shared ISSUANCE_ALLOWED_ORIGINS env (maintained for the invitation/discovery
+// flows). 016C.7 proved via production logs that the OPTIONS 204 carried NO
+// Access-Control-Allow-Origin — i.e. the app's current custom domain is not in
+// that env list — so the preflight failed and the browser blocked the POST.
+// This list closes that gap deterministically. Still an explicit allowlist —
+// never a wildcard.
+const STRATELOQ_APP_ORIGINS: readonly string[] = [
+  "https://globalintelligenceactions.com",
+];
+
 /** Build CORS headers, reflecting the request Origin only when it is allowlisted. */
 export function corsHeadersForRequest(req: Request): Headers {
-  const origin = req.headers.get("Origin");
-  const allow = optionalEnv("ISSUANCE_ALLOWED_ORIGINS")
-    .split(",")
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0);
+  const rawOrigin = req.headers.get("Origin");
+  const norm = (s: string) => s.trim().replace(/\/+$/, ""); // tolerate trailing slash / whitespace
+  const origin = norm(rawOrigin ?? "");
+  const allow = new Set(
+    [...STRATELOQ_APP_ORIGINS, ...optionalEnv("ISSUANCE_ALLOWED_ORIGINS").split(",")]
+      .map(norm)
+      .filter((s) => s.length > 0),
+  );
   const headers = new Headers();
   headers.set("Vary", "Origin");
-  if (origin && allow.includes(origin)) {
-    headers.set("Access-Control-Allow-Origin", origin);
+  if (rawOrigin && allow.has(origin)) {
+    // reflect the exact Origin the browser sent (match is normalized, echo is verbatim)
+    headers.set("Access-Control-Allow-Origin", rawOrigin);
     headers.set("Access-Control-Allow-Methods", "POST, OPTIONS");
     headers.set("Access-Control-Allow-Headers", "Authorization, Content-Type, apikey, x-client-info");
   }
