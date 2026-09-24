@@ -64,13 +64,19 @@ async function handleSelectPage(req: Request): Promise<Response> {
           .eq("connection_type", "ORGANIC")
           .maybeSingle();
         if (error || !data) return null;
-        const dp = (data.display_metadata as { discovered_pages?: { id?: string }[] } | null)?.discovered_pages;
-        const discovered = Array.isArray(dp) ? dp.map((p) => String(p?.id)) : [];
+        const dp = (data.display_metadata as { discovered_pages?: { id?: string; tasks?: string[] }[] } | null)
+          ?.discovered_pages;
+        const discovered = Array.isArray(dp)
+          ? dp.map((p) => ({
+              id: String(p?.id),
+              tasks: Array.isArray(p?.tasks) ? p.tasks.map(String) : [],
+            }))
+          : [];
         return {
           tenant_id: String(data.tenant_id),
           authorization_status: String(data.authorization_status),
           secret_ref: data.secret_ref ? String(data.secret_ref) : null,
-          discovered_ids: discovered,
+          discovered_pages: discovered,
         };
       },
       readUserSecret: async (ref) => {

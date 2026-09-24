@@ -9,17 +9,21 @@
 //   public_profile, email) MUST NOT cause a false failure. We therefore check a
 //   SUBSET relationship (required ⊆ granted), never an exact-set equality.
 
-/** Minimum scopes required to connect a Meta Facebook Page for ORGANIC publishing. */
+// Minimum scopes required to connect a Meta Facebook Page for ORGANIC publishing.
+// `business_management` is NOT needed to mint a Page access token or publish Page
+// posts, and this app's Facebook Login for Business configuration does not grant
+// it — so requiring it made every organic connection fail the scope gate (016C.9).
+// It is therefore optional (recorded when granted), not required.
 export const META_FACEBOOK_ORGANIC_REQUIRED_SCOPES: readonly string[] = [
   "pages_show_list",
   "pages_read_engagement",
   "pages_manage_posts",
-  "business_management",
 ] as const;
 
 /** Optional scopes we will request when available; never required for success. */
 export const META_FACEBOOK_ORGANIC_OPTIONAL_SCOPES: readonly string[] = [
   "pages_manage_metadata",
+  "business_management",
   "public_profile",
 ] as const;
 

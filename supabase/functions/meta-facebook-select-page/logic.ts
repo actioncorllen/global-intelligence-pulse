@@ -6,11 +6,19 @@
 import { MetaGraph, expiryToIso } from "../_shared/meta_oauth/graph.ts";
 import { metaFacebookOrganicScopesOk } from "../_shared/meta_oauth/scopes.ts";
 
+export interface DiscoveredPageRef {
+  id: string;
+  tasks: string[];
+}
+
 export interface PendingConnection {
   tenant_id: string;
   authorization_status: string;
   secret_ref: string | null;
-  discovered_ids: string[];
+  // Pages discovered at OAuth-callback time (from the /me/accounts edge), each with
+  // its granted tasks. `tasks` cannot be re-queried on a Page node (Graph #100), so
+  // the capabilities are derived from this stored discovery data.
+  discovered_pages: DiscoveredPageRef[];
 }
 
 export interface SelectDeps {
@@ -54,7 +62,8 @@ export async function processSelectPage(
   if (pending.authorization_status !== "PENDING_OAUTH") {
     return { status: 409, body: { ok: false, error: "connection_not_pending" } };
   }
-  if (!pending.discovered_ids.includes(deps.pageId)) {
+  const selectedDiscovered = pending.discovered_pages.find((p) => p.id === deps.pageId);
+  if (!selectedDiscovered) {
     return { status: 400, body: { ok: false, error: "page_not_in_discovered_set" } };
   }
   if (!pending.secret_ref) {
@@ -64,14 +73,15 @@ export async function processSelectPage(
   const userToken = await deps.readUserSecret(pending.secret_ref);
   if (!userToken) return { status: 409, body: { ok: false, error: "user_token_unavailable" } };
 
-  // derive the chosen Page's access token + real tasks
+  // Derive the chosen Page's access token (Page node cannot be queried for `tasks`).
   const pat = await deps.graph.pageAccessToken(userToken, deps.pageId);
   if (!pat.ok || !pat.data?.access_token) {
     return { status: 502, body: { ok: false, error: "page_token_unavailable" } };
   }
   const pageToken = pat.data.access_token;
   const pageName = String(pat.data.name || "");
-  const pageTasks = Array.isArray(pat.data.tasks) ? pat.data.tasks.map(String) : [];
+  // Tasks come from the discovery metadata (the /me/accounts edge captured at callback).
+  const pageTasks = selectedDiscovered.tasks.map(String);
 
   // granted scopes (from Meta, not from what we requested)
   const scopeRes = await deps.graph.grantedScopes(userToken);

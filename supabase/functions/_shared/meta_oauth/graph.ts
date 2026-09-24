@@ -130,15 +130,21 @@ export class MetaGraph {
     return { ok: true, status: r.status, data: pages };
   }
 
-  /** Fetch the Page access token + tasks for a specific Page (via the user token). */
+  /**
+   * Fetch the Page access token for a specific Page (via the user token).
+   * NOTE: `tasks` is NOT queryable on a Page node in Graph API v21.0 — requesting
+   * it returns OAuthException #100 ("nonexisting field (tasks)"), which is what
+   * broke page selection in 016C.9. `tasks` is only exposed on the `/me/accounts`
+   * edge, so the caller sources it from the discovery metadata instead.
+   */
   async pageAccessToken(
     userToken: string,
     pageId: string,
-  ): Promise<GraphResult<{ id: string; name: string; access_token: string; tasks: string[] }>> {
+  ): Promise<GraphResult<{ id: string; name: string; access_token: string }>> {
     return this.call("/" + encodeURIComponent(pageId), {
-      fields: "id,name,access_token,tasks",
+      fields: "id,name,access_token",
       access_token: userToken,
-    }) as Promise<GraphResult<{ id: string; name: string; access_token: string; tasks: string[] }>>;
+    }) as Promise<GraphResult<{ id: string; name: string; access_token: string }>>;
   }
 
   /**
