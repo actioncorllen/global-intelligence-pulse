@@ -4,6 +4,11 @@
 // WITH the caller's JWT so a tenant can never resolve another tenant's asset. The
 // service-role key is used ONLY to mint a short-lived signed URL for the owned path
 // and is never returned to the browser.
+//
+// mig_306 fix: fn_media_asset_signed_ref returns storage_ref WITH the bucket prefix
+// (e.g. "pulse-generated-media/<tenant>/…"). The Storage sign endpoint expects the
+// OBJECT path only, so the bucket prefix is stripped before signing (previously it
+// was double-prefixed, which made every signed-URL request fail).
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -34,9 +39,15 @@ Deno.serve(async (req: Request) => {
   const owned = await rpc.json();
   if (owned?.status !== "ok") return json({ error: owned?.status ?? "forbidden" }, 403);
 
+  // storage_ref may or may not carry the bucket prefix; the sign endpoint needs the
+  // object path only.
+  const ref = String(owned.storage_ref ?? "");
+  const objectPath = ref.startsWith(`${BUCKET}/`) ? ref.slice(BUCKET.length + 1) : ref;
+  if (!objectPath) return json({ error: "no_object_path" }, 502);
+
   // 2) Mint a short-lived signed URL with the service role for the OWNED path only.
   const sign = await fetch(
-    `${SUPABASE_URL}/storage/v1/object/sign/${BUCKET}/${owned.storage_ref}`,
+    `${SUPABASE_URL}/storage/v1/object/sign/${BUCKET}/${objectPath}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json", apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` },
@@ -50,7 +61,7 @@ Deno.serve(async (req: Request) => {
 
   return json({
     status: "ok",
-    signed_url: `${SUPABASE_URL}/storage/v1${path}`,
+    signed_url: `${SUPABASE_URL}/storage/v1${String(path).startsWith("/") ? "" : "/"}${path}`,
     expires_in: TTL,
     approval_state: owned.approval_state,
     is_launch_safe: owned.is_launch_safe,
