@@ -1,25 +1,18 @@
-// PULSE-ECOM-P8-PULSE-HOSTED-PUBLIC-ENDPOINT-DEPLOY-001 + HTML-RENDER-FIX-001 + STOREFRONT-FINAL-ACCEPTANCE-001
-// FINAL-ACCEPTANCE (v4): PRODUCT_VIDEO contract. When the public contract carries
-// video.state === 'VIDEO_AVAILABLE' with a rights-clear url, a safe <video> is rendered
-// (controls, muted, playsinline, preload=metadata, poster=primary image, no autoplay-with-sound,
-// responsive). When video is absent (VIDEO_ASSET_NOT_AVAILABLE), the block is omitted entirely —
-// no empty container, no fabricated placeholder — and the page publishes normally without it.
-// origin_kind (SOURCE_SUPPLIER vs GENERATED) is preserved so later Ad Studio/media-generated
-// video is rendered as a distinct, explicitly-labelled asset type.
+// PULSE-ECOM-P8-PULSE-HOSTED-PUBLIC-ENDPOINT-DEPLOY-001 + HTML-RENDER-FIX-001 + STOREFRONT-FINAL-ACCEPTANCE-001 + CORS-ACTIVATION-008 + PUBLISHED-PARITY-009
 // Thin, read-only public storefront HTTP endpoint:
 //   HTTP request -> validate slug -> invoke public-safe renderer -> render -> respond.
 // Exposes ONLY PUBLISHED storefronts via fn_public_storefront_render(slug) (allowlist-only,
 // secret-stripped). Service-role key is used ONLY server-side and NEVER returned to the browser.
 // No directory/list endpoint, no enumeration, no checkout. Unknown/unpublished/invalid slug -> 404.
-//
-// RENDER-FIX (HTML-RENDER-FIX-001): Two issues were fixed. (1) MOJIBAKE: every non-ASCII char is
-// now entity-encoded to ASCII (e.g. em dash -> &#8212;), so output never corrupts regardless of how
-// it is served. (2) CONTENT-TYPE: HTML responses declare `text/html; charset=utf-8` and JSON
-// responses `application/json; charset=utf-8`. PLATFORM LIMITATION (proven): the default
-// *.supabase.co/functions/v1 domain forcibly rewrites ANY HTML page response (text/html AND
-// application/xhtml+xml alike) to `text/plain` + a `default-src 'none'; sandbox` CSP as anti-abuse,
-// so a browser hitting the raw functions URL still shows source. Rendering in a browser requires a
-// Supabase Pro custom domain for functions, or a frontend host that consumes the JSON contract.
+// v5 (008): CORS + OPTIONS added so a frontend host (Strateloq/Lovable app) can fetch the public
+// JSON contract cross-origin. This is a PUBLIC read-only endpoint returning only published,
+// secret-stripped data (no credentials/cookies); publish/unpublish stay authenticated RPCs.
+// PUBLISHED-PARITY-009: a genuinely PUBLISHED customer page no longer shows an internal
+// "test listing / preview storefront" banner (noindex is enforced via HTTP headers + meta only).
+// Removed the hardcoded "New condition / delivery estimates" footer claim; the page shows only
+// claim-safe copy present in the approved published snapshot (fn_product_page_strategy v3 parity),
+// plus the approved Overview (problem/solution) and Product details sections. Checkout stays a safe
+// disabled "coming soon" state.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -30,28 +23,14 @@ const SECURITY_HEADERS: Record<string, string> = {
   "X-Content-Type-Options": "nosniff",
   "Referrer-Policy": "no-referrer",
   "Cache-Control": "public, max-age=60",
-  // CORS: this is a PUBLIC, read-only, anonymous endpoint that returns only the
-  // published, secret-stripped storefront contract (never credentials/cookies).
-  // A published storefront is meant to be viewable by any customer browser and
-  // fetchable by any frontend host (incl. the Strateloq/Lovable app) consuming the
-  // JSON contract. Wildcard read CORS is correct here; it is NOT an authenticated
-  // mutation endpoint (publish/unpublish go through authenticated Supabase RPCs).
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
   "Access-Control-Allow-Headers": "authorization, apikey, content-type, accept",
   "Access-Control-Max-Age": "86400",
 };
-// The function DECLARES text/html; charset=utf-8 (spec-correct, and what renders on any
-// non-sandboxed host / custom domain). NOTE: the default *.supabase.co/functions/v1 domain
-// forcibly rewrites HTML page responses to `text/plain` + a sandbox CSP (platform anti-abuse),
-// so a browser hitting the raw functions URL still shows source; serving real HTML requires a
-// Supabase Pro custom domain for functions, or a frontend host consuming the JSON contract.
-// Body is entity-encoded to ASCII so it never mojibakes regardless of how it is served.
 const HTML_CT = "text/html; charset=utf-8";
 const JSON_CT = "application/json; charset=utf-8";
 
-// XML-safe + ASCII-only: escape metacharacters and encode any codepoint > 126 as a numeric
-// character reference, so the rendered page is byte-for-byte ASCII and cannot be mojibaked.
 function x(s: unknown): string {
   const str = String(s ?? "");
   let out = "";
@@ -99,6 +78,7 @@ const STYLE =
   `ul{padding-left:1.1em} .muted{color:var(--muted);font-size:.9rem}\n` +
   `.cta{display:inline-block;margin-top:12px;padding:12px 18px;border-radius:10px;background:#9ca3af;color:#fff;font-weight:600;border:0;cursor:not-allowed}\n` +
   `.note{background:#f3f4f6;border:1px solid var(--line);border-radius:10px;padding:12px;margin-top:12px;font-size:.9rem;color:var(--muted)}\n` +
+  `table.details{border-collapse:collapse;width:100%;margin-top:6px} table.details th,table.details td{text-align:left;vertical-align:top;padding:6px 10px;border-bottom:1px solid var(--line);font-size:.92rem} table.details th{color:var(--muted);font-weight:600;width:40%}\n` +
   `footer{margin:28px 0;color:var(--muted);font-size:.8rem;border-top:1px solid var(--line);padding-top:12px}\n` +
   `/*]]>*/</style>\n`;
 
@@ -119,6 +99,9 @@ function renderHtml(sf: any): string {
   const faq: any[] = Array.isArray(sf?.copy?.faq) ? sf.copy.faq : [];
   const disclaimers: string[] = Array.isArray(sf?.copy?.trust?.disclaimers) ? sf.copy.trust.disclaimers : [];
   const title = x(sf?.copy?.product_title ?? sf?.hero?.headline ?? "Product");
+  const psProblem = typeof sf?.copy?.problem_solution?.problem === "string" ? sf.copy.problem_solution.problem : "";
+  const psSolution = typeof sf?.copy?.problem_solution?.solution === "string" ? sf.copy.problem_solution.solution : "";
+  const details: any[] = Array.isArray(sf?.copy?.details) ? sf.copy.details : [];
 
   let galleryHtml = primary
     ? `<img src="${x(primary)}" alt="${title}" loading="lazy" />`
@@ -126,10 +109,6 @@ function renderHtml(sf: any): string {
   for (const g of gallery.slice(1, 5)) galleryHtml += `<img src="${x(g)}" alt="${title}" loading="lazy" />`;
 
   // PRODUCT_VIDEO: only rendered when a real, rights-clear video exists (state VIDEO_AVAILABLE).
-  // Absent -> the block is omitted entirely (no empty container, no fabricated placeholder).
-  // Safe controls: user-initiated only (controls, no autoplay, muted default, playsinline),
-  // preload=metadata, responsive via .videowrap, poster = primary image. Source vs generated
-  // provenance is preserved from the contract's origin_kind.
   let videoHtml = "";
   if (sf?.video?.state === "VIDEO_AVAILABLE" && sf?.video?.url) {
     const posterAttr = primary ? ` poster="${x(primary)}"` : "";
@@ -168,9 +147,25 @@ function renderHtml(sf: any): string {
     for (const d of disclaimers) li += `<li>${x(d)}</li>`;
     discHtml = `<ul class="muted">${li}</ul>`;
   }
+  // Overview (problem/solution) — factual, from the approved snapshot only.
+  let overviewHtml = "";
+  if (psProblem || psSolution) {
+    overviewHtml = `<h2>Overview</h2>` +
+      (psProblem ? `<p>${x(psProblem)}</p>` : "") +
+      (psSolution ? `<p>${x(psSolution)}</p>` : "");
+  }
+  // Product details table — label/value pairs from the approved snapshot only.
+  let detailsHtml = "";
+  if (details.length) {
+    let rows = "";
+    for (const d of details) {
+      if (d?.label == null && d?.value == null) continue;
+      rows += `<tr><th>${x(d?.label)}</th><td>${x(d?.value)}</td></tr>`;
+    }
+    if (rows) detailsHtml = `<h2>Product details</h2><table class="details">${rows}</table>`;
+  }
 
-  return `<div class="draftbar">Preview storefront &#8212; not indexed. This is a test listing (not a live customer store).</div>
-<div class="wrap">
+  return `<div class="wrap">
   <h1>${x(sf?.hero?.headline ?? title)}</h1>
   ${sf?.hero?.subheadline ? `<p class="hero-sub">${x(sf.hero.subheadline)}</p>` : ""}
   <div class="grid">
@@ -179,21 +174,22 @@ function renderHtml(sf: any): string {
       ${price ? `<div class="price">${price}</div>` : ""}
       ${sf?.copy?.short_description ? `<p>${x(sf.copy.short_description)}</p>` : ""}
       ${benefitsHtml}
-      <button class="cta" disabled="disabled" aria-disabled="true">Checkout not available</button>
-      <div class="note">Checkout is not configured for this preview storefront (no payment provider connected). No purchase can be made.</div>
+      <button class="cta" disabled="disabled" aria-disabled="true">Checkout coming soon</button>
+      <div class="note">Checkout is not yet available for this store (no payment provider connected). No purchase can be made.</div>
     </div>
   </div>
+  ${overviewHtml}
+  ${detailsHtml}
   ${howHtml}
   ${sf?.copy?.shipping?.copy ? `<h2>Shipping</h2><p>${x(sf.copy.shipping.copy)}</p>` : ""}
   ${sf?.copy?.trust?.copy ? `<h2>About this listing</h2><p>${x(sf.copy.trust.copy)}</p>` : ""}
   ${discHtml}
   ${faqHtml}
-  <footer>Market: ${x(sf?.market ?? "")} &#183; Currency: ${x(sf?.currency?.display ?? "")} &#183; Template: ${x(sf?.template_family ?? "")} ${x(sf?.template_version ?? "")}<br />New condition. Delivery times are estimates, not guarantees. No reviews, ratings, or sales figures are shown (none verified).</footer>
+  <footer>Market: ${x(sf?.market ?? "")} &#183; Currency: ${x(sf?.currency?.display ?? "")} &#183; Template: ${x(sf?.template_family ?? "")} ${x(sf?.template_version ?? "")}</footer>
 </div>`;
 }
 
 Deno.serve(async (req: Request) => {
-  // CORS preflight for browser fetch() of the public JSON contract.
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: SECURITY_HEADERS });
   }
