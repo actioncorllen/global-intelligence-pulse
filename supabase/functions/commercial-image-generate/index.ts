@@ -122,7 +122,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
   if (!refUrl) return json(200, { status: "NOT_ELIGIBLE", reason: "NO_AUTHORIZED_REFERENCE", message: "No rights-cleared reference image is available to generate from." });
 
   // --- Build the product-preserving prompt from an allowlisted scene ---
-  const prompt = `Using the provided product photo as the exact reference, keep THIS SAME ${title} completely unchanged: identical shape, body, buttons and controls, lens or projector, accessories, proportions, materials and colour. Do not alter, redesign, add, remove or substitute any physical feature. ${SCENES[scene]} Do not add any text, words, letters, numbers, logos, badges, price tags, stickers, watermarks, UI overlays, ratings, reviews or promotional graphics.`;
+  // Product Asset Lock is enforced by the identity validator; this prompt only
+  // steers generation toward preserving the EXACT product (it never weakens the gate).
+  const prompt = `Reproduce the EXACT product from the provided reference photo, pixel-faithful, as the single subject. Keep THIS SAME ${title} completely unchanged and identical to the reference: same overall shape and silhouette, housing and body, the exact base and its control interface (do NOT add, remove, or change any buttons, switches, touch controls, ports or indicators — if the reference base is a smooth touch-control base, keep it smooth with no physical buttons), the lens/projector head, gooseneck/arm, wings/panels and every accessory, the same proportions, materials, textures, finish and colour, and the same projected pattern if any. Do NOT redesign, stylise, beautify, or substitute the product or any of its parts, and do NOT invent a different or generic ${title}. Only the surrounding scene may change: ${SCENES[scene]} Do not add any text, words, letters, numbers, logos, badges, price tags, stickers, watermarks, UI overlays, ratings, reviews, people's faces or promotional graphics.`;
 
   // --- Secure server-to-server generation (Gemini executor) ---
   const jobId = `cig-${requestId}`;
@@ -133,6 +135,18 @@ Deno.serve(async (req: Request): Promise<Response> => {
   const storagePath = String(gen.data.storage_path ?? "");
   const storageRef = String(gen.data.storage_ref ?? (storagePath ? `${BUCKET}/${storagePath}` : ""));
   if (!storagePath) return json(502, { status: "STORAGE_FAILED", detail: "no storage path returned" });
+
+  // --- Signed URL for in-app review/inspection (tenant-scoped, short lived) ---
+  // Computed for BOTH outcomes so a rejected candidate can be shown for
+  // inspection; it never authorizes use — only the server verdict does.
+  let signedUrl: string | null = null;
+  try {
+    const s = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/${BUCKET}/${storagePath}`, {
+      method: "POST", headers: { apikey: SERVICE_ROLE, authorization: `Bearer ${SERVICE_ROLE}`, "content-type": "application/json" },
+      body: JSON.stringify({ expiresIn: 3600 }),
+    });
+    if (s.ok) { const sj = await s.json(); if (sj?.signedURL) signedUrl = `${SUPABASE_URL}/storage/v1${sj.signedURL}`; }
+  } catch { /* non-fatal */ }
 
   // --- Product Asset Lock: mandatory identity validation ---
   let verdict: Record<string, unknown> = { verdict: "PENDING" };
@@ -154,26 +168,22 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
   const idState = String(reg.identity_validation_status ?? "PENDING_IDENTITY_VALIDATION");
   if (idState !== "IDENTITY_VALIDATED") {
+    // Server-authoritative rejection. The signed URL is returned only so the
+    // customer can inspect why it failed; the candidate is NOT usable.
     return json(200, { status: "IDENTITY_VALIDATION_FAILED", generated_asset_id: reg.generated_asset_id,
-      identity_validation: verdict, commercial_asset_status: reg.commercial_asset_status,
-      message: "Generated image did not preserve the product accurately. Try again." });
+      identity_validation_status: idState, identity_validation: verdict,
+      commercial_asset_status: reg.commercial_asset_status, signed_url: signedUrl, usable: false,
+      provider: "GOOGLE_GEMINI", model: "gemini-2.5-flash-image",
+      message: "The generated image changed the product too much and can't be used." });
   }
-
-  // --- Signed URL for in-app review (tenant-scoped, short lived) ---
-  let signedUrl: string | null = null;
-  try {
-    const s = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/${BUCKET}/${storagePath}`, {
-      method: "POST", headers: { apikey: SERVICE_ROLE, authorization: `Bearer ${SERVICE_ROLE}`, "content-type": "application/json" },
-      body: JSON.stringify({ expiresIn: 3600 }),
-    });
-    if (s.ok) { const sj = await s.json(); if (sj?.signedURL) signedUrl = `${SUPABASE_URL}/storage/v1${sj.signedURL}`; }
-  } catch { /* non-fatal */ }
 
   return json(200, {
     status: "READY_FOR_REVIEW",
     generated_asset_id: reg.generated_asset_id,
     commercial_asset_status: reg.commercial_asset_status,
+    identity_validation_status: idState,
     identity_validation: verdict,
+    usable: true,
     storage_ref: storageRef,
     signed_url: signedUrl,
     provider: "GOOGLE_GEMINI",
