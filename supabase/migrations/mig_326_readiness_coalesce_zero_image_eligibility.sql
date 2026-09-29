@@ -1,0 +1,15 @@
+-- ============================================================================
+-- mig_326_readiness_coalesce_zero_image_eligibility.sql
+-- Interim hardening of fn_product_commercial_asset_readiness: coalesce the
+-- product_image_assets aggregates (bool_or over zero rows is NULL) so zero-image
+-- products yield reference_eligible=false / execution_state=NOT_ELIGIBLE.
+--
+-- SUPERSEDED by mig_327, which adds the further coalesce on v_resolve_available
+-- (NULL when a product has imagery but no supplier). The authoritative function
+-- body lives in mig_327_readiness_resolve_available_coalesce.sql; applying that
+-- file reproduces the live state. This file is retained for migration-history
+-- parity and is a no-op once mig_327 runs.
+-- ============================================================================
+-- (Function body intentionally omitted here; see mig_327 for the authoritative,
+--  NULL-safe definition of fn_product_commercial_asset_readiness.)
+SELECT 1;
