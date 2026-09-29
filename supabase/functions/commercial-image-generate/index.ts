@@ -14,6 +14,13 @@ const BUCKET = "pulse-generated-media";
 const RATE_WINDOW_SEC = 600;
 const RATE_MAX = 12;
 
+// Browser-invoked (supabase.functions.invoke) — must answer the CORS preflight.
+const CORS_HEADERS: Record<string, string> = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+
 const SCENES: Record<string, string> = {
   CLEAN_STUDIO: "Place it on a clean seamless neutral studio background with soft even studio lighting and a subtle natural shadow; premium sharp e-commerce hero product photograph.",
   LIFESTYLE: "Place it in a tasteful, realistic lifestyle setting appropriate to this product, with warm natural lighting and a softly blurred background; premium e-commerce lifestyle photograph.",
@@ -21,7 +28,7 @@ const SCENES: Record<string, string> = {
 };
 
 function json(status: number, body: unknown): Response {
-  return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
+  return new Response(JSON.stringify(body), { status, headers: { ...CORS_HEADERS, "content-type": "application/json", "cache-control": "no-store" } });
 }
 
 async function rpc(fn: string, args: Record<string, unknown>): Promise<unknown> {
@@ -48,6 +55,8 @@ async function callWebhook(url: string, body: unknown): Promise<{ ok: boolean; s
 }
 
 Deno.serve(async (req: Request): Promise<Response> => {
+  // CORS preflight — the browser sends OPTIONS before the authenticated POST.
+  if (req.method === "OPTIONS") return new Response("ok", { status: 200, headers: CORS_HEADERS });
   if (req.method !== "POST") return json(405, { status: "METHOD_NOT_ALLOWED" });
   if (!SUPABASE_URL || !SERVICE_ROLE) return json(500, { status: "SERVER_NOT_CONFIGURED" });
 
