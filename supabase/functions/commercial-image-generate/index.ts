@@ -31,6 +31,26 @@ function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { ...CORS_HEADERS, "content-type": "application/json", "cache-control": "no-store" } });
 }
 
+// Operational pipeline failure (an EXPECTED runtime outcome on a legitimate,
+// authorized request — e.g. Gemini returns 200 with finishReason IMAGE_OTHER and
+// declines to render, the n8n executor errors, storage/provenance hiccups). These
+// return HTTP 200 with a discriminated `status` so the browser's
+// supabase.functions.invoke() RESOLVES cleanly: a non-2xx makes invoke THROW,
+// which hides this body from the client and trips the app's error overlay. The
+// frontend branches on `status` and shows the retryable technical-failure UX
+// ("Image generation didn't complete. Please try again." → Try again).
+// This is NEVER the identity gate: a generated candidate that fails Product Asset
+// Lock is IDENTITY_VALIDATION_FAILED (a real candidate to inspect), not this.
+function fail(status: string, detail: string): Response {
+  return json(200, {
+    status,
+    usable: false,
+    retryable: true,
+    detail,
+    message: "Image generation didn't complete. Please try again.",
+  });
+}
+
 async function rpc(fn: string, args: Record<string, unknown>): Promise<unknown> {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${fn}`, {
     method: "POST",
@@ -101,7 +121,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
   // --- Authoritative eligibility gate (server-side) ---
   let readiness: Record<string, unknown>;
   try { readiness = (await rpc("fn_product_commercial_asset_readiness", { p_product_id: productId, p_market: market })) as Record<string, unknown>; }
-  catch (e) { return json(502, { status: "ELIGIBILITY_CHECK_FAILED", detail: (e as Error).message }); }
+  catch (e) { return fail("ELIGIBILITY_CHECK_FAILED", (e as Error).message); }
   const ai = (readiness?.ai_generation ?? {}) as Record<string, unknown>;
   if (ai.reference_eligible !== true || ai.execution_state !== "AVAILABLE") {
     return json(200, { status: "NOT_ELIGIBLE", reason: readiness?.commercial_asset_readiness ?? "NOT_ELIGIBLE",
@@ -118,7 +138,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
       const primary = (resolved?.primary_image ?? {}) as Record<string, unknown>;
       refUrl = String(primary?.source_url ?? ""); refRights = "SUPPLIER_PROVIDED";
     }
-  } catch (e) { return json(502, { status: "REFERENCE_RESOLUTION_FAILED", detail: (e as Error).message }); }
+  } catch (e) { return fail("REFERENCE_RESOLUTION_FAILED", (e as Error).message); }
   if (!refUrl) return json(200, { status: "NOT_ELIGIBLE", reason: "NO_AUTHORIZED_REFERENCE", message: "No rights-cleared reference image is available to generate from." });
 
   // --- Build the product-preserving prompt from an allowlisted scene ---
@@ -130,11 +150,14 @@ Deno.serve(async (req: Request): Promise<Response> => {
   const jobId = `cig-${requestId}`;
   let gen: { ok: boolean; status: number; data: Record<string, unknown> };
   try { gen = await callWebhook(EXECUTOR_WEBHOOK, { job_id: jobId, source_image_url: refUrl, prompt, size: "1024x1024" }); }
-  catch (e) { return json(502, { status: "GENERATION_FAILED", detail: (e as Error).message }); }
-  if (!gen.ok || gen.data.ok === false) return json(502, { status: "GENERATION_FAILED", detail: String(gen.data.storage_path ?? gen.status) });
+  catch (e) { return fail("GENERATION_FAILED", (e as Error).message); }
+  // Gemini can return HTTP 200 yet decline to render (finishReason IMAGE_OTHER),
+  // which the executor surfaces as an error/non-ok result. That is a retryable
+  // technical failure, NOT an identity rejection — no candidate exists to review.
+  if (!gen.ok || gen.data.ok === false) return fail("GENERATION_FAILED", String(gen.data.detail ?? gen.data.storage_path ?? gen.status));
   const storagePath = String(gen.data.storage_path ?? "");
   const storageRef = String(gen.data.storage_ref ?? (storagePath ? `${BUCKET}/${storagePath}` : ""));
-  if (!storagePath) return json(502, { status: "STORAGE_FAILED", detail: "no storage path returned" });
+  if (!storagePath) return fail("STORAGE_FAILED", "no storage path returned");
 
   // --- Signed URL for in-app review/inspection (tenant-scoped, short lived) ---
   // Computed for BOTH outcomes so a rejected candidate can be shown for
@@ -164,7 +187,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
       p_generation: { provider: "GOOGLE_GEMINI", model: "gemini-2.5-flash-image", workflow: "OYjIUMd0GS7OanbY", job_id: jobId, bucket: BUCKET, mime: "image/png", width: 1024, height: 1024 },
       p_identity: verdict,
     })) as Record<string, unknown>;
-  } catch (e) { return json(502, { status: "PROVENANCE_FAILED", detail: (e as Error).message }); }
+  } catch (e) { return fail("PROVENANCE_FAILED", (e as Error).message); }
 
   const idState = String(reg.identity_validation_status ?? "PENDING_IDENTITY_VALIDATION");
   if (idState !== "IDENTITY_VALIDATED") {
