@@ -59,12 +59,23 @@ RLS all unchanged. 0 store writes; nothing published. Security advisors: 0 ERROR
 
 ## Lovable
 
-**Not required.** The frontend renders only what `page_copy`/`key_benefits`
-provide; removing unsupported claims server-side removes them from the page, and
-empty `faq`/`how_it_works` arrays hide those sections via the existing
-`gateSections`. (Optional future enhancement: map `page_copy.details` into the
-specifications section for an even richer factual product-info block — not a
-claim-safety requirement.)
+**Claim safety needs no Lovable change** — the frontend renders only what
+`page_copy`/`key_benefits` provide, empty `faq`/`how_it_works` hide those
+sections via `gateSections`, and `SHIPPING`/`DeliveryEstimate`/`Trust` render
+nothing when `content.shipping`/returns/support are null. Verified by reading
+`storefront-system.tsx`: no unsupported shipping/delivery/fulfilment/condition
+claim can render.
+
+**One small frontend polish IS required** for generic copy: the renderer's
+hardcoded section-heading defaults are generic filler — SOLUTION
+`"Designed around the use case"`, BENEFITS `"Small changes. A better ritual."`,
+PROBLEM `"Why this product matters"`, HOW_IT_WORKS `"From setup to glow"`.
+Replace them with product-based neutral headings from existing content
+(`content.productName`/`category`), e.g. SOLUTION → `About ${productName}`,
+BENEFITS → `Product highlights`, PROBLEM → `Why ${productName}`; and hide the
+TRUST section when it has zero entries. No backend change needed for this.
+(Optional: map `page_copy.details` into the specifications section for a richer
+factual product-info block.)
 
 ## Browser
 
