@@ -147,16 +147,35 @@ Deno.serve(async (req: Request): Promise<Response> => {
   const prompt = `Reproduce the EXACT product from the provided reference photo, pixel-faithful, as the single subject. Keep THIS SAME ${title} completely unchanged and identical to the reference: same overall shape and silhouette, housing and body, the exact base and its control interface (do NOT add, remove, or change any buttons, switches, touch controls, ports or indicators — if the reference base is a smooth touch-control base, keep it smooth with no physical buttons), the lens/projector head, gooseneck/arm, wings/panels and every accessory, the same proportions, materials, textures, finish and colour, and the same projected pattern if any. Do NOT redesign, stylise, beautify, or substitute the product or any of its parts, and do NOT invent a different or generic ${title}. Only the surrounding scene may change: ${SCENES[scene]} Do not add any text, words, letters, numbers, logos, badges, price tags, stickers, watermarks, UI overlays, ratings, reviews, people's faces or promotional graphics.`;
 
   // --- Secure server-to-server generation (Gemini executor) ---
-  const jobId = `cig-${requestId}`;
-  let gen: { ok: boolean; status: number; data: Record<string, unknown> };
-  try { gen = await callWebhook(EXECUTOR_WEBHOOK, { job_id: jobId, source_image_url: refUrl, prompt, size: "1024x1024" }); }
-  catch (e) { return fail("GENERATION_FAILED", (e as Error).message); }
-  // Gemini can return HTTP 200 yet decline to render (finishReason IMAGE_OTHER),
-  // which the executor surfaces as an error/non-ok result. That is a retryable
-  // technical failure, NOT an identity rejection — no candidate exists to review.
-  if (!gen.ok || gen.data.ok === false) return fail("GENERATION_FAILED", String(gen.data.detail ?? gen.data.storage_path ?? gen.status));
-  const storagePath = String(gen.data.storage_path ?? "");
-  const storageRef = String(gen.data.storage_ref ?? (storagePath ? `${BUCKET}/${storagePath}` : ""));
+  // Bounded resilience for Gemini's intermittent render refusal: Gemini can
+  // return HTTP 200 with finishReason IMAGE_OTHER and produce no image. The
+  // executor reports exactly that case as {ok:false, reason:"IMAGE_OTHER"}
+  // (no image, no storage object, no candidate). Retry it EXACTLY once, with the
+  // SAME server-resolved authorized reference and the SAME product-preservation
+  // prompt. No other outcome is ever retried (identity rejection, storage,
+  // provenance, eligibility, rights, auth, rate-limit and arbitrary provider
+  // errors all fall straight through). Hard cap: 2 Gemini attempts per action.
+  const baseJobId = `cig-${requestId}`;
+  const MAX_ATTEMPTS = 2;
+  let gen: { ok: boolean; status: number; data: Record<string, unknown> } | null = null;
+  let usedJobId = baseJobId;
+  let attempt = 0;
+  while (attempt < MAX_ATTEMPTS) {
+    attempt++;
+    usedJobId = `${baseJobId}-a${attempt}`;
+    try {
+      gen = await callWebhook(EXECUTOR_WEBHOOK, { job_id: usedJobId, source_image_url: refUrl, prompt, size: "1024x1024", attempt });
+    } catch (e) { return fail("GENERATION_FAILED", `attempt${attempt}:${(e as Error).message}`); }
+    const d = gen.data ?? {};
+    // Success: an image with a storage path.
+    if (gen.ok && d.ok !== false && d.storage_path) break;
+    // ONLY the IMAGE_OTHER render refusal is retried, and only once.
+    if (d.reason === "IMAGE_OTHER" && attempt < MAX_ATTEMPTS) continue;
+    // Second IMAGE_OTHER, or any other executor failure → stop; no more calls.
+    return fail("GENERATION_FAILED", `attempt${attempt}:${String(d.reason ?? d.detail ?? gen.status)}`);
+  }
+  const storagePath = String(gen!.data.storage_path ?? "");
+  const storageRef = String(gen!.data.storage_ref ?? (storagePath ? `${BUCKET}/${storagePath}` : ""));
   if (!storagePath) return fail("STORAGE_FAILED", "no storage path returned");
 
   // --- Signed URL for in-app review/inspection (tenant-scoped, short lived) ---
@@ -184,7 +203,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     reg = (await rpc("fn_register_generated_commercial_asset", {
       p_tenant: userId, p_product_id: productId, p_storage_ref: storageRef,
       p_reference: { url: refUrl, provider: refProvider, rights_state: refRights },
-      p_generation: { provider: "GOOGLE_GEMINI", model: "gemini-2.5-flash-image", workflow: "OYjIUMd0GS7OanbY", job_id: jobId, bucket: BUCKET, mime: "image/png", width: 1024, height: 1024 },
+      p_generation: { provider: "GOOGLE_GEMINI", model: "gemini-2.5-flash-image", workflow: "OYjIUMd0GS7OanbY", job_id: usedJobId, attempts: attempt, bucket: BUCKET, mime: "image/png", width: 1024, height: 1024 },
       p_identity: verdict,
     })) as Record<string, unknown>;
   } catch (e) { return fail("PROVENANCE_FAILED", (e as Error).message); }
