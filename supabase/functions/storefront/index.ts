@@ -1,4 +1,9 @@
-// PULSE-ECOM-P8-PULSE-HOSTED-PUBLIC-ENDPOINT-DEPLOY-001 + HTML-RENDER-FIX-001 + STOREFRONT-FINAL-ACCEPTANCE-001 + CORS-ACTIVATION-008 + PUBLISHED-PARITY-009
+// PULSE-ECOM-P8-PULSE-HOSTED-PUBLIC-ENDPOINT-DEPLOY-001 + HTML-RENDER-FIX-001 + STOREFRONT-FINAL-ACCEPTANCE-001 + CORS-ACTIVATION-008 + PUBLISHED-PARITY-009 + HTML-CONTENT-TYPE-FIX-010
+// HTML-CONTENT-TYPE-FIX-010: the deployed GET response served Content-Type: text/plain
+// (with X-Content-Type-Options: nosniff), so Chrome showed the HTML as raw source instead of
+// rendering it. Cause: headers passed as a plain object let the edge relay keep the string
+// body's default text/plain. Fixed by building an explicit Headers instance (buildHeaders) and
+// hard-setting Content-Type: text/html; charset=utf-8 on the GET/HTML response.
 // Thin, read-only public storefront HTTP endpoint:
 //   HTTP request -> validate slug -> invoke public-safe renderer -> render -> respond.
 // Exposes ONLY PUBLISHED storefronts via fn_public_storefront_render(slug) (allowlist-only,
@@ -31,6 +36,18 @@ const SECURITY_HEADERS: Record<string, string> = {
 const HTML_CT = "text/html; charset=utf-8";
 const JSON_CT = "application/json; charset=utf-8";
 
+// Build response headers as an explicit Headers instance and set Content-Type LAST.
+// Passing a plain object to `new Response(body, { headers })` let the edge relay serve the
+// string body as text/plain (browser then refuses to render HTML under X-Content-Type-Options:
+// nosniff and shows raw source). An explicit Headers object with a hard-set Content-Type is
+// preserved end-to-end.
+function buildHeaders(contentType?: string): Headers {
+  const h = new Headers();
+  for (const [k, v] of Object.entries(SECURITY_HEADERS)) h.set(k, v);
+  if (contentType) h.set("Content-Type", contentType);
+  return h;
+}
+
 function x(s: unknown): string {
   const str = String(s ?? "");
   let out = "";
@@ -59,7 +76,7 @@ function htmlResponse(bodyInner: string, status: number, title: string): Respons
     `</head>\n<body>\n${bodyInner}\n</body>\n</html>\n`;
   return new Response(doc, {
     status,
-    headers: { ...SECURITY_HEADERS, "Content-Type": HTML_CT },
+    headers: buildHeaders(HTML_CT),
   });
 }
 
@@ -191,10 +208,10 @@ function renderHtml(sf: any): string {
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: SECURITY_HEADERS });
+    return new Response(null, { status: 204, headers: buildHeaders() });
   }
   if (req.method !== "GET" && req.method !== "HEAD") {
-    return new Response("Method Not Allowed", { status: 405, headers: SECURITY_HEADERS });
+    return new Response("Method Not Allowed", { status: 405, headers: buildHeaders("text/plain; charset=utf-8") });
   }
   const url = new URL(req.url);
   const parts = url.pathname.split("/").filter(Boolean);
@@ -216,7 +233,7 @@ Deno.serve(async (req: Request) => {
     if (!resp.ok) return notFound();
     body = await resp.json();
   } catch (_e) {
-    return new Response("Service unavailable", { status: 503, headers: SECURITY_HEADERS });
+    return new Response("Service unavailable", { status: 503, headers: buildHeaders("text/plain; charset=utf-8") });
   }
 
   if (!body || body.status !== "OK" || !body.storefront) return notFound();
@@ -226,7 +243,7 @@ Deno.serve(async (req: Request) => {
   if (wantsJson) {
     return new Response(JSON.stringify(body), {
       status: 200,
-      headers: { ...SECURITY_HEADERS, "Content-Type": JSON_CT },
+      headers: buildHeaders(JSON_CT),
     });
   }
   return htmlResponse(
