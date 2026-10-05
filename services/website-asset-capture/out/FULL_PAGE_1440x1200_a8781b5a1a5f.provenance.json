@@ -1,0 +1,19 @@
+{
+  "tenant_id": "5351ad83-5ce8-47b1-aef6-23f64daf415f",
+  "source_url": "https://www.globalintelligenceactions.com/",
+  "canonical_url": "https://www.globalintelligenceactions.com/",
+  "route": "/",
+  "domain": "www.globalintelligenceactions.com",
+  "captured_at": "2026-10-05T20:19:57.953Z",
+  "capture_method": "playwright_chromium_headless",
+  "runtime": "playwright/unknown chromium 153.0.8010.12",
+  "viewport_width": 1440,
+  "viewport_height": 1200,
+  "capture_type": "FULL_PAGE",
+  "asset_hash": "a8781b5a1a5f494f9795db6c07d7e94e02dff7c3dad9279040117167cdbc7eda",
+  "mime_type": "image/png",
+  "width": 1440,
+  "height": 11505,
+  "page_title": "Strateloq — Global Intelligence for What’s Next",
+  "http_status": 200
+}
