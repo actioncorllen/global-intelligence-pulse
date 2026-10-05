@@ -19,6 +19,7 @@ import { createRequire } from 'node:module';
 import { createHash } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { validateCaptureUrl, assertNoRedirectEscape, DEFAULT_ALLOW_HOSTS } from './validate.mjs';
 
 const require = createRequire(import.meta.url);
@@ -164,8 +165,26 @@ export function toRegisterParams(cap, { tenantId }) {
   };
 }
 
+// Robust, cross-platform "is this module the entry script?" check.
+//
+// The naive `import.meta.url === `file://${process.argv[1]}`` comparison breaks on
+// Windows: process.argv[1] is a drive path (e.g. C:\Users\...\capture.mjs) that does
+// NOT stringify into a valid, normalized file URL — Node reports import.meta.url as
+// `file:///C:/Users/.../capture.mjs` (three slashes, forward slashes, percent-encoded),
+// so the manual-concat form never matches and the CLI block silently never runs
+// (exit 0, no output, no PNG). pathToFileURL encodes the path correctly on every
+// platform (POSIX and Windows alike), so this comparison is portable.
+export function isMainModule(moduleUrl = import.meta.url, scriptPath = process.argv[1]) {
+  if (!scriptPath) return false;
+  try {
+    return moduleUrl === pathToFileURL(scriptPath).href;
+  } catch {
+    return false;
+  }
+}
+
 // CLI
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMainModule()) {
   const args = Object.fromEntries(
     process.argv.slice(2).reduce((acc, a, i, arr) => {
       if (a.startsWith('--')) acc.push([a.slice(2), arr[i + 1] && !arr[i + 1].startsWith('--') ? arr[i + 1] : 'true']);

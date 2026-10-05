@@ -11,8 +11,13 @@
 // Run: node selftest.mjs
 
 import http from 'node:http';
+import os from 'node:os';
+import path from 'node:path';
+import { mkdtempSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { validateCaptureUrl } from './validate.mjs';
-import { capture } from './capture.mjs';
+import { capture, isMainModule } from './capture.mjs';
 
 const results = [];
 const check = (name, pass, extra) => { results.push({ case: name, pass: !!pass, ...(extra || {}) }); };
@@ -36,6 +41,37 @@ check('reject_private_172', !validateCaptureUrl('https://172.16.0.9/').ok);
 check('localhost_allowed_only_with_test_flag',
   !validateCaptureUrl('http://127.0.0.1:8781/').ok &&
   validateCaptureUrl('http://127.0.0.1:8781/', { allowInsecureLocalhostTest: true }).ok);
+
+// ---- 1b. Cross-platform CLI-entry detection (Windows regression) ---------------
+// The worker's CLI must fire when capture.mjs is the entry script on EVERY platform.
+// The old guard `import.meta.url === `file://${process.argv[1]}`` matched on POSIX by
+// luck (argv[1] already starts with "/") but never on Windows, where argv[1] is a
+// drive path (C:\...). isMainModule() uses pathToFileURL so it is portable.
+const capturePath = fileURLToPath(new URL('./capture.mjs', import.meta.url));
+const captureUrl = pathToFileURL(capturePath).href;
+check('cli_entry_matches_self', isMainModule(captureUrl, capturePath) === true);
+check('cli_entry_rejects_other_script',
+  isMainModule(captureUrl, fileURLToPath(new URL('./validate.mjs', import.meta.url))) === false);
+check('cli_entry_handles_missing_argv', isMainModule(captureUrl, undefined) === false);
+// Windows semantics, asserted portably with hardcoded strings (pathToFileURL on a
+// POSIX host cannot convert a Windows path, so we compare the known normalized forms):
+const winArgv1 = 'C:\\Users\\DELL\\global-intelligence-pulse\\services\\website-asset-capture\\capture.mjs';
+const winModuleUrl = 'file:///C:/Users/DELL/global-intelligence-pulse/services/website-asset-capture/capture.mjs';
+// Node reports import.meta.url as file:///C:/... — the OLD naive concat produced
+// "file://C:\Users\..." which never equals it (this is the exact Windows bug):
+check('cli_old_concat_broken_on_windows', (`file://${winArgv1}`) !== winModuleUrl);
+// The normalized Windows file URL uses a triple slash + forward slashes:
+check('cli_windows_fileurl_normalized_form', (`file:///${winArgv1.replace(/\\/g, '/')}`) === winModuleUrl);
+
+// ---- 1c. The CLI block actually fires when run as the entry script -------------
+// Spawn capture.mjs as the main module with a DISALLOWED url: it rejects before any
+// browser/network work and must print JSON + exit 1. Before the fix, on Windows this
+// returned to the prompt with NO output and exit 0 (the reported symptom).
+const cliTmp = mkdtempSync(path.join(os.tmpdir(), 'wac-cli-'));
+const cli = spawnSync(process.execPath, [capturePath, '--url', 'https://evil.example.com/', '--out', cliTmp], { encoding: 'utf8' });
+const cliOut = `${cli.stdout || ''}${cli.stderr || ''}`;
+check('cli_entry_runs_as_main_subprocess', cli.status === 1 && /url_rejected/.test(cliOut),
+  { status: cli.status, emitted: cliOut.trim().slice(0, 120) });
 
 // ---- 2. Real browser render proof (local JS fixture) --------------------------
 const PORT = 8781;
