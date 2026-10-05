@@ -1,0 +1,15 @@
+{
+  "name": "website-asset-capture",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "STRATELOQ-WEBSITE-ASSET-CAPTURE-001 — reusable headless-browser capture of real public Pulse pages into media_assets + Brand Asset Lock (UI_SCREENSHOT, PENDING). Public routes only.",
+  "scripts": {
+    "selftest": "node selftest.mjs",
+    "capture": "node capture.mjs"
+  },
+  "peerDependencies": {
+    "playwright": ">=1.40"
+  },
+  "notes": "Chromium + playwright are provided by the runtime (PLAYWRIGHT_BROWSERS_PATH, global playwright). If running elsewhere: npm i playwright && npx playwright install chromium."
+}
