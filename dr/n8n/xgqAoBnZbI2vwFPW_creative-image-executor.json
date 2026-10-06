@@ -1,0 +1,80 @@
+{
+  "id": "xgqAoBnZbI2vwFPW",
+  "name": "Strateloq - Creative Image Executor",
+  "active": true,
+  "description": "Launch-critical live CUSTOMER static-creative executor. Webhook {job_id, source_image_url, prompt, size}; downloads the authoritative Product Card image; normalizes its mimetype to an OpenAI-accepted type; runs the OpenAI gpt-image-1 product-preserving edit; returns the OpenAI JSON (b64 + usage) to the caller (the Supabase edge function creative-image-execute). Credential references only; no secret values.",
+  "settings": { "executionOrder": "v1" },
+  "nodes": [
+    {
+      "id": "87646cb7-9a78-4121-b748-6961e0086940",
+      "name": "Executor Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [0, 0],
+      "webhookId": "fd05c43d-cc9f-4229-8593-91ddfead8283",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "pulse-creative-image",
+        "responseMode": "lastNode",
+        "responseData": "firstEntryJson"
+      }
+    },
+    {
+      "id": "089998e3-42e7-495d-b1a0-557b9a5adc1c",
+      "name": "Download Product Card Image",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [224, 0],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.body.source_image_url }}",
+        "options": { "response": { "response": { "responseFormat": "file", "outputPropertyName": "source" } } }
+      }
+    },
+    {
+      "id": "66f036c2-e9ba-4e0e-8b0b-fd5badb138bb",
+      "name": "Normalize Image Mimetype",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [336, 0],
+      "notes": "Relabel downloaded product image to an OpenAI-accepted mimetype. CJ CDN serves JPEG bytes as image/jpg, which /v1/images/edits rejects. Bytes unchanged; only metadata corrected.",
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Normalize the downloaded Product Card image mimetype so OpenAI /v1/images/edits accepts it.\n// CJ's CDN serves JPEG bytes labelled 'image/jpg' (non-standard); OpenAI accepts only\n// image/jpeg, image/png, image/webp. We correct the label/filename only; bytes are unchanged.\nconst items = $input.all();\nfor (const item of items) {\n  const b = item.binary && item.binary.source;\n  if (!b) continue;\n  const mt = String(b.mimeType || '').toLowerCase();\n  if (mt === 'image/png') {\n    b.mimeType = 'image/png'; b.fileExtension = 'png'; b.fileName = 'product.png';\n  } else if (mt === 'image/webp') {\n    b.mimeType = 'image/webp'; b.fileExtension = 'webp'; b.fileName = 'product.webp';\n  } else {\n    // image/jpg, image/jpeg, or any non-canonical JPEG label -> canonical image/jpeg\n    b.mimeType = 'image/jpeg'; b.fileExtension = 'jpeg'; b.fileName = 'product.jpeg';\n  }\n}\nreturn items;"
+      }
+    },
+    {
+      "id": "bb53d62c-a122-4c64-bd85-1dcbfe1333d6",
+      "name": "OpenAI Product-Preserving Edit",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [560, 0],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/images/edits",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            { "parameterType": "formBinaryData", "name": "image", "inputDataFieldName": "source" },
+            { "parameterType": "formData", "name": "model", "value": "gpt-image-1" },
+            { "parameterType": "formData", "name": "prompt", "value": "={{ $('Executor Webhook').item.json.body.prompt }}" },
+            { "parameterType": "formData", "name": "size", "value": "={{ $('Executor Webhook').item.json.body.size }}" },
+            { "parameterType": "formData", "name": "quality", "value": "low" },
+            { "parameterType": "formData", "name": "n", "value": "1" }
+          ]
+        },
+        "options": { "response": { "response": { "fullResponse": false, "neverError": true, "responseFormat": "json" } } }
+      },
+      "credentials": { "openAiApi": { "id": "SDK3EMmV9OYoCPLm", "name": "OpenAI account" } }
+    }
+  ],
+  "connections": {
+    "Executor Webhook": { "main": [[{ "node": "Download Product Card Image", "type": "main", "index": 0 }]] },
+    "Download Product Card Image": { "main": [[{ "node": "Normalize Image Mimetype", "type": "main", "index": 0 }]] },
+    "Normalize Image Mimetype": { "main": [[{ "node": "OpenAI Product-Preserving Edit", "type": "main", "index": 0 }]] }
+  }
+}
