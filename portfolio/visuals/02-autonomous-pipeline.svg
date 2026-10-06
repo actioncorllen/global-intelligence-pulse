@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 330" font-family="'Bricolage Grotesque','Segoe UI',system-ui,sans-serif">
+  <defs>
+    <linearGradient id="bg2" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#100c22"/><stop offset="1" stop-color="#0b0918"/></linearGradient>
+    <style>
+      .st{fill:#efeafa;font-size:13.5px;font-weight:600}
+      .sd{font-family:'IBM Plex Mono',ui-monospace,monospace;fill:#aca2d6;font-size:10.5px}
+      .idx{font-family:'IBM Plex Mono',ui-monospace,monospace;fill:#f5b544;font-size:11px;font-weight:600}
+      .node{fill:#1e1843;stroke:#3a2f6e;stroke-width:1}
+    </style>
+    <marker id="ah2" markerWidth="10" markerHeight="10" refX="7.5" refY="5" orient="auto"><path d="M0,0 L9,5 L0,10 Z" fill="#9a7bf5"/></marker>
+  </defs>
+  <rect x="0" y="0" width="1000" height="330" fill="url(#bg2)"/>
+  <text x="20" y="28" fill="#f5b544" font-family="'IBM Plex Mono',ui-monospace,monospace" font-size="12" letter-spacing=".18em">AUTONOMOUS WEEKLY PIPELINE · MONDAY 07:00 UTC</text>
+
+  <g transform="translate(0,14)">
+    <g stroke="#7159c9" stroke-width="2" marker-end="url(#ah2)" fill="none">
+      <path d="M158,86 L188,86"/><path d="M346,86 L376,86"/><path d="M534,86 L564,86"/><path d="M722,86 L752,86"/>
+    </g>
+    <rect class="node" x="20" y="52" width="138" height="70" rx="11"/><text x="34" y="72" class="idx">01</text><text x="34" y="92" class="st">Discover</text><text x="34" y="108" class="sd">multi-source scan</text>
+    <rect class="node" x="208" y="52" width="138" height="70" rx="11"/><text x="222" y="72" class="idx">02</text><text x="222" y="92" class="st">Source</text><text x="222" y="108" class="sd">supplier + economics</text>
+    <rect class="node" x="396" y="52" width="138" height="70" rx="11"/><text x="410" y="72" class="idx">03</text><text x="410" y="92" class="st">Verify identity</text><text x="410" y="108" class="sd">exact vs comparable</text>
+    <rect class="node" x="584" y="52" width="138" height="70" rx="11"/><text x="598" y="72" class="idx">04</text><text x="598" y="92" class="st">Score + gate</text><text x="598" y="108" class="sd">product × market</text>
+    <rect class="node" x="772" y="52" width="208" height="70" rx="11"/><text x="786" y="72" class="idx">05</text><text x="786" y="92" class="st">Unified decision</text><text x="786" y="108" class="sd">explainable, by-reference</text>
+
+    <path d="M876,122 L876,150 L500,150 L500,168" stroke="#7159c9" stroke-width="2" fill="none" marker-end="url(#ah2)"/>
+    <text x="500" y="188" text-anchor="middle" class="sd" fill="#7d74ab">DECISION BANDS — score 0–100, capped pre-launch</text>
+
+    <g font-family="'IBM Plex Mono',ui-monospace,monospace" font-size="10.5" font-weight="600">
+      <rect x="60" y="200" width="140" height="34" rx="8" fill="rgba(229,106,134,.14)" stroke="rgba(229,106,134,.4)"/><text x="130" y="222" text-anchor="middle" fill="#f4b0c1">AVOID · 0–39</text>
+      <rect x="212" y="200" width="140" height="34" rx="8" fill="rgba(230,166,63,.14)" stroke="rgba(230,166,63,.4)"/><text x="282" y="222" text-anchor="middle" fill="#f4d69a">WATCH · 40–54</text>
+      <rect x="364" y="200" width="150" height="34" rx="8" fill="rgba(230,166,63,.10)" stroke="rgba(230,166,63,.32)"/><text x="439" y="222" text-anchor="middle" fill="#f4d69a">TRENDING · 55–69</text>
+      <rect x="526" y="200" width="150" height="34" rx="8" fill="rgba(111,155,242,.14)" stroke="rgba(111,155,242,.4)"/><text x="601" y="222" text-anchor="middle" fill="#b9cdfb">STRONG TEST · 70–79</text>
+      <rect x="688" y="200" width="176" height="34" rx="8" fill="rgba(75,199,140,.14)" stroke="rgba(75,199,140,.42)"/><text x="776" y="222" text-anchor="middle" fill="#9be9c4">HIGH-CONFIDENCE · 80–89</text>
+    </g>
+    <text x="60" y="262" class="sd" fill="#7d74ab">Any failed hard gate (stock · price · economics · compliance · fulfilment) forces AVOID — a strong score cannot buy past it.</text>
+    <text x="60" y="280" class="sd" fill="#7d74ab">Decision stays separate from execution readiness, and WINNER is reserved for real post-launch evidence.</text>
+  </g>
+</svg>

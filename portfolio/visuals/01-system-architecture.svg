@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 640" font-family="'Bricolage Grotesque','Segoe UI',system-ui,sans-serif">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#100c22"/><stop offset="1" stop-color="#0b0918"/>
+    </linearGradient>
+    <style>
+      .lbl{fill:#efeafa;font-size:14px;font-weight:600}
+      .sub{font-family:'IBM Plex Mono',ui-monospace,monospace;fill:#aca2d6;font-size:11px}
+      .lyr{font-family:'IBM Plex Mono',ui-monospace,monospace;fill:#7d74ab;font-size:11px;letter-spacing:.14em}
+      .node{fill:#1e1843;stroke:#3a2f6e;stroke-width:1}
+    </style>
+    <marker id="ah" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L8,4.5 L0,9 Z" fill="#6a5fa0"/></marker>
+  </defs>
+  <rect x="0" y="0" width="1000" height="640" fill="url(#bg)"/>
+  <text x="40" y="30" fill="#f5b544" font-family="'IBM Plex Mono',ui-monospace,monospace" font-size="12" letter-spacing=".18em">STRATELOQ · SYSTEM ARCHITECTURE</text>
+
+  <g transform="translate(0,14)">
+    <g stroke="#4a3f80" stroke-width="1.6" marker-end="url(#ah)" fill="none" opacity=".8">
+      <path d="M500,112 L500,140"/><path d="M500,214 L500,242"/><path d="M500,340 L500,368"/><path d="M500,442 L500,470"/>
+    </g>
+
+    <text x="40" y="44" class="lyr">01 · EXTERNAL SIGNALS</text>
+    <rect class="node" x="40" y="54" width="140" height="52" rx="9"/><text x="110" y="78" text-anchor="middle" class="lbl">Reddit</text><text x="110" y="94" text-anchor="middle" class="sub">community sweep</text>
+    <rect class="node" x="192" y="54" width="140" height="52" rx="9"/><text x="262" y="78" text-anchor="middle" class="lbl">eBay Browse</text><text x="262" y="94" text-anchor="middle" class="sub">marketplace</text>
+    <rect class="node" x="344" y="54" width="150" height="52" rx="9"/><text x="419" y="78" text-anchor="middle" class="lbl">CJ Dropshipping</text><text x="419" y="94" text-anchor="middle" class="sub">supplier / freight</text>
+    <rect class="node" x="506" y="54" width="150" height="52" rx="9"/><text x="581" y="78" text-anchor="middle" class="lbl">DataForSEO</text><text x="581" y="94" text-anchor="middle" class="sub">buyer intent</text>
+    <rect class="node" x="668" y="54" width="150" height="52" rx="9"/><text x="743" y="78" text-anchor="middle" class="lbl">Meta Ad Library</text><text x="743" y="94" text-anchor="middle" class="sub">ad intelligence</text>
+    <rect class="node" x="830" y="54" width="130" height="52" rx="9"/><text x="895" y="75" text-anchor="middle" class="lbl">TikTok</text><text x="895" y="92" text-anchor="middle" class="sub">research adlib</text>
+
+    <text x="40" y="164" class="lyr">02 · AUTOMATION — n8n workflows (credentials live here, never in the browser)</text>
+    <rect class="node" x="40" y="174" width="920" height="40" rx="9" fill="#171235"/>
+    <text x="60" y="199" class="sub" fill="#b7a0fb">Weekly Monday orchestrator</text>
+    <text x="250" y="199" class="sub">FX refresher (daily)</text>
+    <text x="390" y="199" class="sub">discovery + product-prep workers</text>
+    <text x="640" y="199" class="sub">provider executors &amp; receivers</text>
+    <text x="850" y="199" class="sub">Meta draft executor</text>
+
+    <text x="40" y="264" class="lyr">03 · GOVERNED BACKEND — Supabase</text>
+    <rect class="node" x="40" y="274" width="920" height="86" rx="11" fill="#150f30"/>
+    <rect class="node" x="58" y="292" width="270" height="52" rx="8"/><text x="193" y="315" text-anchor="middle" class="lbl">Postgres · 93 tables</text><text x="193" y="331" text-anchor="middle" class="sub">RLS deny-by-default · FORCE</text>
+    <rect class="node" x="343" y="292" width="300" height="52" rx="8"/><text x="493" y="315" text-anchor="middle" class="lbl">370+ SECURITY DEFINER fns</text><text x="493" y="331" text-anchor="middle" class="sub">75 policies · 24 triggers</text>
+    <rect class="node" x="658" y="292" width="284" height="52" rx="8"/><text x="800" y="315" text-anchor="middle" class="lbl">12 Edge functions</text><text x="800" y="331" text-anchor="middle" class="sub">storefront · CAPI · token broker</text>
+
+    <text x="40" y="392" class="lyr">04 · DECISION &amp; CREATIVE</text>
+    <rect class="node" x="40" y="402" width="300" height="56" rx="10"/><text x="190" y="426" text-anchor="middle" class="lbl">Opportunity Decision Engine</text><text x="190" y="443" text-anchor="middle" class="sub">score + fail-closed hard gates</text>
+    <rect class="node" x="352" y="402" width="296" height="56" rx="10"/><text x="500" y="426" text-anchor="middle" class="lbl">AI Marketing Director</text><text x="500" y="443" text-anchor="middle" class="sub">strategy brain · organic|paid</text>
+    <rect class="node" x="660" y="402" width="300" height="56" rx="10"/><text x="810" y="426" text-anchor="middle" class="lbl">AI Ad Creative Studio</text><text x="810" y="443" text-anchor="middle" class="sub">FFmpeg compositor + Veo/Gemini</text>
+
+    <rect x="300" y="474" width="400" height="34" rx="17" fill="rgba(245,181,68,.12)" stroke="#f5b544" stroke-width="1.2"/>
+    <text x="500" y="496" text-anchor="middle" class="lbl" fill="#f7c86f" font-size="12.5">◆ HUMAN APPROVAL GATE — no publish or spend without it</text>
+
+    <text x="40" y="536" class="lyr">05 · PUBLISHING &amp; ADVERTISING</text>
+    <rect class="node" x="40" y="546" width="220" height="50" rx="9"/><text x="150" y="568" text-anchor="middle" class="lbl">Hosted storefront</text><text x="150" y="584" text-anchor="middle" class="sub">conversion runtime</text>
+    <rect class="node" x="272" y="546" width="220" height="50" rx="9"/><text x="382" y="568" text-anchor="middle" class="lbl">Meta advertising</text><text x="382" y="584" text-anchor="middle" class="sub">PAUSED-only · CAPI</text>
+    <rect class="node" x="504" y="546" width="230" height="50" rx="9"/><text x="619" y="568" text-anchor="middle" class="lbl">Organic social</text><text x="619" y="584" text-anchor="middle" class="sub">foundation · execution off</text>
+    <rect class="node" x="746" y="546" width="214" height="50" rx="9"/><text x="853" y="568" text-anchor="middle" class="lbl">Performance loop</text><text x="853" y="584" text-anchor="middle" class="sub">CAPI → learning</text>
+  </g>
+</svg>

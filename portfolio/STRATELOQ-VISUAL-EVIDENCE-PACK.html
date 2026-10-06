@@ -1,0 +1,561 @@
+<title>Strateloq Evidence Pack</title>
+<meta name="description" content="Sanitized portfolio evidence for Strateloq — an autonomous e-commerce intelligence, decisioning and creative platform.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Mono:wght@400;500;600&family=Instrument+Sans:wght@400;500;600&display=swap">
+<style>
+  /* ---- Layout: single column of screenshot-ready "evidence panels" on a deep-space ground.
+         Deliberate single dark theme, grounded in the product's own galaxy palette. ---- */
+  :root{
+    color-scheme: dark;
+    --bg:#0b0918; --bg2:#100c22; --surface:#161130; --surface2:#1e1843; --raised:#241d4e;
+    --border:#2d2559; --border2:#3a2f6e;
+    --ink:#efeafa; --muted:#aca2d6; --faint:#7d74ab;
+    --gold:#f5b544; --gold-soft:#f7c86f; --violet:#9a7bf5; --violet-soft:#b7a0fb; --teal:#48c9c0; --cyan:#5bb8ef;
+    --good:#4bc78c; --warn:#e6a63f; --crit:#e56a86; --info:#6f9bf2;
+    --shadow: 0 18px 44px -22px rgba(0,0,0,.75);
+    --r:16px;
+    --f-display:"Bricolage Grotesque","Trebuchet MS",system-ui,sans-serif;
+    --f-body:"Instrument Sans",system-ui,-apple-system,sans-serif;
+    --f-mono:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:
+      radial-gradient(1100px 700px at 78% -8%, rgba(154,123,245,.16), transparent 60%),
+      radial-gradient(900px 620px at 8% 4%, rgba(72,201,192,.10), transparent 55%),
+      var(--bg);
+    color:var(--ink);font-family:var(--f-body);line-height:1.55;
+    -webkit-font-smoothing:antialiased;font-size:15.5px}
+  .wrap{max-width:1080px;margin:0 auto;padding-block:34px 60px;padding-inline:20px;
+    display:flex;flex-direction:column;gap:26px}
+  h1,h2,h3{font-family:var(--f-display);font-weight:700;text-wrap:balance;margin:0;letter-spacing:-.01em}
+  a{color:var(--gold-soft)}
+  p{margin:0}
+  .eyebrow{font-family:var(--f-mono);font-size:11.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--gold);
+    display:flex;align-items:center;gap:9px}
+  .eyebrow::before{content:"";width:22px;height:1.5px;background:linear-gradient(90deg,var(--gold),transparent)}
+
+  /* panel */
+  .panel{background:linear-gradient(180deg,var(--surface),var(--bg2));border:1px solid var(--border);
+    border-radius:var(--r);padding:26px 26px 28px;box-shadow:var(--shadow);position:relative;overflow:hidden}
+  .panel > .head{display:flex;flex-direction:column;gap:8px;margin-bottom:18px}
+  .panel h2{font-size:23px;line-height:1.15}
+  .lede{color:var(--muted);max-width:66ch;font-size:15px}
+
+  /* cover */
+  .cover{padding:40px 30px 34px;
+    background:
+      radial-gradient(120% 140% at 85% 0%, rgba(154,123,245,.22), transparent 55%),
+      linear-gradient(180deg,#171132,#0d0a20);
+    border:1px solid var(--border2)}
+  .cover .stars{position:absolute;inset:0;pointer-events:none;opacity:.9}
+  .cover .inner{position:relative;z-index:1}
+  .cover h1{font-size:clamp(38px,7vw,64px);line-height:.98;letter-spacing:-.03em;margin:14px 0 0}
+  .cover h1 .g{background:linear-gradient(92deg,#fff 8%,var(--gold-soft) 60%,var(--gold));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .cover .tag{font-family:var(--f-display);font-weight:600;font-size:clamp(16px,2.4vw,21px);color:var(--violet-soft);margin-top:12px}
+  .cover .desc{color:var(--muted);max-width:64ch;margin-top:14px;font-size:15.5px}
+  .chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}
+  .chip{font-family:var(--f-mono);font-size:11px;letter-spacing:.04em;color:var(--muted);
+    border:1px solid var(--border2);background:rgba(255,255,255,.02);border-radius:999px;padding:5px 11px;display:inline-flex;gap:7px;align-items:center}
+  .chip b{color:var(--ink);font-weight:600}
+  .chip .dot{width:7px;height:7px;border-radius:50%;background:var(--good);box-shadow:0 0 8px var(--good)}
+
+  /* stat tiles */
+  .stats{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-top:26px}
+  .stat{background:rgba(255,255,255,.02);border:1px solid var(--border);border-radius:13px;padding:15px 14px;text-align:left}
+  .stat .n{font-family:var(--f-mono);font-weight:600;font-size:27px;color:var(--gold);letter-spacing:-.02em;line-height:1;
+    font-variant-numeric:tabular-nums}
+  .stat .l{font-size:11.5px;color:var(--muted);margin-top:7px;line-height:1.3}
+  .microrow{margin-top:14px;display:flex;flex-wrap:wrap;gap:10px 18px;font-family:var(--f-mono);font-size:11.5px;color:var(--faint)}
+  .microrow b{color:var(--teal);font-weight:600}
+
+  /* capability grid */
+  .cards{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+  .card{background:rgba(255,255,255,.018);border:1px solid var(--border);border-radius:13px;padding:17px 16px}
+  .card .k{font-family:var(--f-mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--violet-soft)}
+  .card h3{font-size:16px;margin:9px 0 6px}
+  .card p{font-size:13.5px;color:var(--muted)}
+
+  /* generic figure */
+  figure{margin:0}
+  .fig{width:100%;border-radius:12px;border:1px solid var(--border);background:#0c0a1c;display:block}
+  figcaption{font-size:12.5px;color:var(--faint);margin-top:10px;font-family:var(--f-mono);letter-spacing:.01em}
+  .scroll{overflow-x:auto}
+
+  /* matrix / table */
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--border)}
+  thead th{font-family:var(--f-mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);font-weight:500}
+  tbody tr:hover{background:rgba(255,255,255,.02)}
+  td .src{font-family:var(--f-mono);font-size:11px;color:var(--faint)}
+  .pill{display:inline-flex;align-items:center;gap:6px;font-family:var(--f-mono);font-size:10.5px;font-weight:500;
+    padding:3px 9px;border-radius:999px;border:1px solid transparent;letter-spacing:.03em;white-space:nowrap}
+  .pill::before{content:"";width:6px;height:6px;border-radius:50%}
+  .p-good{color:#9be9c4;background:rgba(75,199,140,.12);border-color:rgba(75,199,140,.32)} .p-good::before{background:var(--good)}
+  .p-warn{color:#f4d69a;background:rgba(230,166,63,.12);border-color:rgba(230,166,63,.32)} .p-warn::before{background:var(--warn)}
+  .p-crit{color:#f4b0c1;background:rgba(229,106,134,.12);border-color:rgba(229,106,134,.32)} .p-crit::before{background:var(--crit)}
+  .p-info{color:#b9cdfb;background:rgba(111,155,242,.12);border-color:rgba(111,155,242,.3)} .p-info::before{background:var(--info)}
+  .p-neu{color:var(--muted);background:rgba(255,255,255,.03);border-color:var(--border2)} .p-neu::before{background:var(--faint)}
+
+  /* creative showcase */
+  .creative{display:grid;grid-template-columns:1fr 1.15fr;gap:18px;align-items:start}
+  .creative img{width:100%;border-radius:12px;border:1px solid var(--border2);display:block;background:#0c0a1c}
+  .creative .cap{font-size:12px;color:var(--faint);font-family:var(--f-mono);margin-top:8px}
+  .creative-sub{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+
+  /* callout list */
+  .guarantees{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+  .g{display:flex;gap:12px;align-items:flex-start;background:rgba(255,255,255,.018);border:1px solid var(--border);border-radius:12px;padding:14px 15px}
+  .g .mk{flex:0 0 auto;width:26px;height:26px;border-radius:8px;display:grid;place-items:center;background:rgba(154,123,245,.14);border:1px solid var(--border2);
+    color:var(--violet-soft);font-family:var(--f-mono);font-size:13px;font-weight:600}
+  .g h3{font-size:14px;margin:1px 0 4px} .g p{font-size:13px;color:var(--muted)}
+
+  /* evidence integrity two-column */
+  .split{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .col{border:1px solid var(--border);border-radius:13px;padding:16px 17px}
+  .col.built{background:rgba(75,199,140,.05);border-color:rgba(75,199,140,.28)}
+  .col.blocked{background:rgba(230,166,63,.05);border-color:rgba(230,166,63,.28)}
+  .col h3{font-size:15px;display:flex;align-items:center;gap:9px;margin-bottom:4px}
+  .col ul{margin:10px 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:9px}
+  .col li{font-size:13px;color:var(--muted);padding-left:18px;position:relative;line-height:1.45}
+  .col li::before{content:"";position:absolute;left:0;top:7px;width:7px;height:7px;border-radius:2px}
+  .col.built li::before{background:var(--good)}
+  .col.blocked li::before{background:var(--warn)}
+  .col li b{color:var(--ink);font-weight:600}
+  .note{font-family:var(--f-mono);font-size:11.5px;color:var(--faint);margin-top:12px;line-height:1.5}
+
+  .foot{color:var(--faint);font-size:12px;font-family:var(--f-mono);text-align:center;line-height:1.7;padding-top:6px}
+  .foot b{color:var(--muted);font-weight:500}
+
+  @media(max-width:820px){
+    .stats{grid-template-columns:repeat(3,1fr)}
+    .cards{grid-template-columns:1fr 1fr}
+    .creative,.split,.guarantees{grid-template-columns:1fr}
+  }
+  @media(max-width:520px){
+    .stats{grid-template-columns:repeat(2,1fr)}
+    .cards{grid-template-columns:1fr}
+    .creative-sub{grid-template-columns:1fr 1fr}
+    .panel{padding:20px 17px 22px}
+  }
+</style>
+
+<div class="wrap">
+
+  <!-- ============ COVER ============ -->
+  <header class="panel cover">
+    <svg class="stars" viewBox="0 0 1000 380" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+      <g fill="#ffffff">
+        <circle cx="120" cy="60" r="1.3" opacity=".7"/><circle cx="240" cy="120" r="1" opacity=".5"/>
+        <circle cx="360" cy="40" r="1.6" opacity=".8"/><circle cx="470" cy="150" r="1" opacity=".45"/>
+        <circle cx="600" cy="70" r="1.2" opacity=".6"/><circle cx="720" cy="130" r="1.5" opacity=".7"/>
+        <circle cx="820" cy="50" r="1" opacity=".5"/><circle cx="910" cy="110" r="1.7" opacity=".85"/>
+        <circle cx="150" cy="220" r="1" opacity=".4"/><circle cx="300" cy="280" r="1.3" opacity=".6"/>
+        <circle cx="540" cy="250" r="1" opacity=".4"/><circle cx="680" cy="300" r="1.5" opacity=".7"/>
+        <circle cx="860" cy="240" r="1.1" opacity=".5"/><circle cx="960" cy="300" r="1.3" opacity=".6"/>
+        <circle cx="60" cy="150" r="1.2" opacity=".5"/><circle cx="430" cy="330" r="1" opacity=".4"/>
+      </g>
+    </svg>
+    <div class="inner">
+      <div class="eyebrow">Portfolio Evidence Pack · Sanitized</div>
+      <h1><span class="g">Strateloq</span></h1>
+      <div class="tag">An autonomous e-commerce intelligence, decisioning &amp; creative platform</div>
+      <p class="desc">One system that scans global markets for real product opportunities, scores each product × market
+        against fail-closed economic gates, produces founder-quality ad creative from protected product identity, and
+        stages it for human-approved publishing — built on a governed Postgres backend with automation, disaster
+        recovery, and a paid-access foundation.</p>
+
+      <div class="stats">
+        <div class="stat"><div class="n">93</div><div class="l">Postgres tables</div></div>
+        <div class="stat"><div class="n">370+</div><div class="l">SQL functions (SECURITY DEFINER)</div></div>
+        <div class="stat"><div class="n">95</div><div class="l">DB migrations</div></div>
+        <div class="stat"><div class="n">12</div><div class="l">Edge functions</div></div>
+        <div class="stat"><div class="n">25+</div><div class="l">Automation workflows</div></div>
+        <div class="stat"><div class="n">6</div><div class="l">Intelligence sources</div></div>
+      </div>
+      <div class="microrow">
+        <span>Governance: <b>75</b> RLS policies</span><span><b>24</b> triggers</span>
+        <span><b>deny-by-default</b> RLS + FORCE</span><span>zero-cost integration tests</span>
+        <span>RPO ≤ <b>24h</b> · RTO ≤ <b>4h</b></span>
+      </div>
+      <div class="chips">
+        <span class="chip"><span class="dot"></span><b>Supabase</b> Postgres + Edge</span>
+        <span class="chip"><span class="dot" style="background:var(--violet);box-shadow:0 0 8px var(--violet)"></span><b>n8n</b> automation</span>
+        <span class="chip"><span class="dot" style="background:var(--teal);box-shadow:0 0 8px var(--teal)"></span><b>FFmpeg</b> native compositor</span>
+        <span class="chip"><span class="dot" style="background:var(--gold);box-shadow:0 0 8px var(--gold)"></span><b>Veo&nbsp;3.1</b> · Gemini · Claude</span>
+        <span class="chip"><span class="dot" style="background:var(--cyan);box-shadow:0 0 8px var(--cyan)"></span>Meta · TikTok · eBay · CJ · DataForSEO</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- ============ WHAT IT DOES ============ -->
+  <section class="panel">
+    <div class="head">
+      <div class="eyebrow">The platform in one view</div>
+      <h2>Five capabilities, one governed spine</h2>
+    </div>
+    <div class="cards">
+      <div class="card"><div class="k">Intelligence</div><h3>Multi-source discovery</h3>
+        <p>Live product &amp; market signals from Reddit, eBay, CJ Dropshipping, DataForSEO and the Meta Ad Library, ingested through canonical, provenance-tracked receivers.</p></div>
+      <div class="card"><div class="k">Decisioning</div><h3>Opportunity engine</h3>
+        <p>One explainable recommendation per product × market — composite score, component sub-scores, and hard economic gates that a strong score can never buy past.</p></div>
+      <div class="card"><div class="k">Creative</div><h3>AI Ad Creative Studio</h3>
+        <p>Founder-quality static &amp; multi-scene video ads composed by a native FFmpeg engine from protected product identity — never a generic "image → video" tool.</p></div>
+      <div class="card"><div class="k">Distribution</div><h3>Storefront, ads &amp; social</h3>
+        <p>Hosted conversion storefront, a PAUSED-only Meta ad executor, and an organic social-publishing foundation — all behind human approval.</p></div>
+      <div class="card"><div class="k">Reliability</div><h3>Backend &amp; DR</h3>
+        <p>Row-level-secured Postgres, provider-neutral paid entitlement, and a documented disaster-recovery posture with schema snapshots and runbooks.</p></div>
+      <div class="card"><div class="k">Orchestration</div><h3>AI Marketing Director</h3>
+        <p>A single strategy "brain" turns intelligence into an organic-or-paid strategy and hands off to creative production — it decides, it never renders.</p></div>
+    </div>
+  </section>
+
+  <!-- ============ ARCHITECTURE ============ -->
+  <section class="panel">
+    <div class="head">
+      <div class="eyebrow">System architecture</div>
+      <h2>How the layers fit together</h2>
+      <p class="lede">External signals flow up through automation into a governed backend; a decision engine and creative studio sit on top; every outbound action passes a human-approval gate. Credentials never leave the secret stores.</p>
+    </div>
+    <figure>
+      <div class="scroll">
+      <svg class="fig" viewBox="0 0 1000 620" role="img" aria-label="Layered system architecture diagram">
+        <defs>
+          <style>
+            .lbl{font-family:var(--f-body);fill:#efeafa;font-size:14px;font-weight:600}
+            .sub{font-family:var(--f-mono);fill:#aca2d6;font-size:11px}
+            .lyr{font-family:var(--f-mono);fill:#7d74ab;font-size:11px;letter-spacing:.14em}
+            .node{fill:#1e1843;stroke:#3a2f6e;stroke-width:1}
+          </style>
+          <marker id="ah" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
+            <path d="M0,0 L8,4.5 L0,9 Z" fill="#6a5fa0"/></marker>
+        </defs>
+
+        <!-- vertical flow arrows (behind) -->
+        <g stroke="#4a3f80" stroke-width="1.6" marker-end="url(#ah)" fill="none" opacity=".8">
+          <path d="M500,112 L500,140"/><path d="M500,214 L500,242"/>
+          <path d="M500,340 L500,368"/><path d="M500,442 L500,470"/>
+        </g>
+
+        <!-- Layer 1: External sources -->
+        <text x="40" y="44" class="lyr">01 · EXTERNAL SIGNALS</text>
+        <g>
+          <rect class="node" x="40" y="54" width="140" height="52" rx="9"/><text x="110" y="78" text-anchor="middle" class="lbl">Reddit</text><text x="110" y="94" text-anchor="middle" class="sub">community sweep</text>
+          <rect class="node" x="192" y="54" width="140" height="52" rx="9"/><text x="262" y="78" text-anchor="middle" class="lbl">eBay Browse</text><text x="262" y="94" text-anchor="middle" class="sub">marketplace</text>
+          <rect class="node" x="344" y="54" width="150" height="52" rx="9"/><text x="419" y="78" text-anchor="middle" class="lbl">CJ Dropshipping</text><text x="419" y="94" text-anchor="middle" class="sub">supplier / freight</text>
+          <rect class="node" x="506" y="54" width="150" height="52" rx="9"/><text x="581" y="78" text-anchor="middle" class="lbl">DataForSEO</text><text x="581" y="94" text-anchor="middle" class="sub">buyer intent</text>
+          <rect class="node" x="668" y="54" width="150" height="52" rx="9"/><text x="743" y="78" text-anchor="middle" class="lbl">Meta Ad Library</text><text x="743" y="94" text-anchor="middle" class="sub">ad intelligence</text>
+          <rect class="node" x="830" y="54" width="130" height="52" rx="9"/><text x="895" y="75" text-anchor="middle" class="lbl">TikTok</text><text x="895" y="92" text-anchor="middle" class="sub">research adlib</text>
+        </g>
+
+        <!-- Layer 2: Automation -->
+        <text x="40" y="164" class="lyr">02 · AUTOMATION — n8n workflows (credentials live here, never in the browser)</text>
+        <rect class="node" x="40" y="174" width="920" height="40" rx="9" fill="#171235" stroke="#3a2f6e"/>
+        <text x="60" y="199" class="sub" fill="#b7a0fb">Weekly Monday orchestrator</text>
+        <text x="250" y="199" class="sub">FX refresher (daily)</text>
+        <text x="390" y="199" class="sub">discovery + product-prep workers</text>
+        <text x="640" y="199" class="sub">provider executors &amp; receivers</text>
+        <text x="850" y="199" class="sub">Meta draft executor</text>
+
+        <!-- Layer 3: Backend -->
+        <text x="40" y="264" class="lyr">03 · GOVERNED BACKEND — Supabase</text>
+        <rect class="node" x="40" y="274" width="920" height="86" rx="11" fill="#150f30"/>
+        <rect class="node" x="58" y="292" width="270" height="52" rx="8"/><text x="193" y="315" text-anchor="middle" class="lbl">Postgres · 93 tables</text><text x="193" y="331" text-anchor="middle" class="sub">RLS deny-by-default · FORCE</text>
+        <rect class="node" x="343" y="292" width="300" height="52" rx="8"/><text x="493" y="315" text-anchor="middle" class="lbl">370+ SECURITY DEFINER fns</text><text x="493" y="331" text-anchor="middle" class="sub">75 policies · 24 triggers</text>
+        <rect class="node" x="658" y="292" width="284" height="52" rx="8"/><text x="800" y="315" text-anchor="middle" class="lbl">12 Edge functions</text><text x="800" y="331" text-anchor="middle" class="sub">storefront · CAPI · token broker</text>
+
+        <!-- Layer 4: Brains -->
+        <text x="40" y="392" class="lyr">04 · DECISION &amp; CREATIVE</text>
+        <rect class="node" x="40" y="402" width="300" height="56" rx="10"/><text x="190" y="426" text-anchor="middle" class="lbl">Opportunity Decision Engine</text><text x="190" y="443" text-anchor="middle" class="sub">score + fail-closed hard gates</text>
+        <rect class="node" x="352" y="402" width="296" height="56" rx="10"/><text x="500" y="426" text-anchor="middle" class="lbl">AI Marketing Director</text><text x="500" y="443" text-anchor="middle" class="sub">strategy brain · organic|paid</text>
+        <rect class="node" x="660" y="402" width="300" height="56" rx="10"/><text x="810" y="426" text-anchor="middle" class="lbl">AI Ad Creative Studio</text><text x="810" y="443" text-anchor="middle" class="sub">FFmpeg compositor + Veo/Gemini</text>
+
+        <!-- gate -->
+        <rect x="300" y="474" width="400" height="34" rx="17" fill="rgba(245,181,68,.12)" stroke="#f5b544" stroke-width="1.2"/>
+        <text x="500" y="496" text-anchor="middle" class="lbl" fill="#f7c86f" font-size="12.5">◆ HUMAN APPROVAL GATE — no publish or spend without it</text>
+
+        <!-- Layer 5: Outbound -->
+        <text x="40" y="536" class="lyr">05 · PUBLISHING &amp; ADVERTISING</text>
+        <g>
+          <rect class="node" x="40" y="546" width="220" height="50" rx="9"/><text x="150" y="568" text-anchor="middle" class="lbl">Hosted storefront</text><text x="150" y="584" text-anchor="middle" class="sub">conversion runtime</text>
+          <rect class="node" x="272" y="546" width="220" height="50" rx="9"/><text x="382" y="568" text-anchor="middle" class="lbl">Meta advertising</text><text x="382" y="584" text-anchor="middle" class="sub">PAUSED-only · CAPI</text>
+          <rect class="node" x="504" y="546" width="230" height="50" rx="9"/><text x="619" y="568" text-anchor="middle" class="lbl">Organic social</text><text x="619" y="584" text-anchor="middle" class="sub">foundation · execution off</text>
+          <rect class="node" x="746" y="546" width="214" height="50" rx="9"/><text x="853" y="568" text-anchor="middle" class="lbl">Performance loop</text><text x="853" y="584" text-anchor="middle" class="sub">CAPI → learning</text>
+        </g>
+      </svg>
+      </div>
+      <figcaption>Evidence: supabase/migrations (95) · supabase/functions (12) · dr/schema/*.sql · dr/n8n workflow inventory.</figcaption>
+    </figure>
+  </section>
+
+  <!-- ============ PIPELINE ============ -->
+  <section class="panel">
+    <div class="head">
+      <div class="eyebrow">The autonomous weekly pipeline</div>
+      <h2>From a market scan to an approval-ready decision</h2>
+      <p class="lede">A single canonical orchestrator runs every Monday 07:00 UTC. Each product × market is processed with per-market failure isolation — a failed source is recorded and the run continues rather than fabricating evidence.</p>
+    </div>
+    <figure>
+      <div class="scroll">
+      <svg class="fig" viewBox="0 0 1000 300" role="img" aria-label="Weekly product opportunity pipeline">
+        <defs>
+          <style>
+            .st{font-family:var(--f-body);fill:#efeafa;font-size:13.5px;font-weight:600}
+            .sd{font-family:var(--f-mono);fill:#aca2d6;font-size:10.5px}
+            .idx{font-family:var(--f-mono);fill:#f5b544;font-size:11px;font-weight:600}
+          </style>
+          <marker id="ah2" markerWidth="10" markerHeight="10" refX="7.5" refY="5" orient="auto"><path d="M0,0 L9,5 L0,10 Z" fill="#9a7bf5"/></marker>
+        </defs>
+        <g stroke="#7159c9" stroke-width="2" marker-end="url(#ah2)" fill="none">
+          <path d="M158,86 L188,86"/><path d="M346,86 L376,86"/><path d="M534,86 L564,86"/><path d="M722,86 L752,86"/>
+        </g>
+        <!-- row 1 -->
+        <g>
+          <rect class="node" x="20" y="52" width="138" height="70" rx="11" fill="#1e1843" stroke="#3a2f6e"/>
+          <text x="34" y="72" class="idx">01</text><text x="34" y="92" class="st">Discover</text><text x="34" y="108" class="sd">multi-source scan</text>
+
+          <rect class="node" x="208" y="52" width="138" height="70" rx="11" fill="#1e1843" stroke="#3a2f6e"/>
+          <text x="222" y="72" class="idx">02</text><text x="222" y="92" class="st">Source</text><text x="222" y="108" class="sd">supplier + economics</text>
+
+          <rect class="node" x="396" y="52" width="138" height="70" rx="11" fill="#1e1843" stroke="#3a2f6e"/>
+          <text x="410" y="72" class="idx">03</text><text x="410" y="92" class="st">Verify identity</text><text x="410" y="108" class="sd">exact vs comparable</text>
+
+          <rect class="node" x="584" y="52" width="138" height="70" rx="11" fill="#1e1843" stroke="#3a2f6e"/>
+          <text x="598" y="72" class="idx">04</text><text x="598" y="92" class="st">Score + gate</text><text x="598" y="108" class="sd">product × market</text>
+
+          <rect class="node" x="772" y="52" width="208" height="70" rx="11" fill="#1e1843" stroke="#3a2f6e"/>
+          <text x="786" y="72" class="idx">05</text><text x="786" y="92" class="st">Unified decision</text><text x="786" y="108" class="sd">explainable, by-reference</text>
+        </g>
+        <!-- connector down to bands -->
+        <path d="M876,122 L876,150 L500,150 L500,168" stroke="#7159c9" stroke-width="2" fill="none" marker-end="url(#ah2)"/>
+        <!-- decision bands -->
+        <text x="500" y="188" text-anchor="middle" class="sd" fill="#7d74ab">DECISION BANDS — score 0–100, capped pre-launch</text>
+        <g font-family="var(--f-mono)" font-size="10.5" font-weight="600">
+          <rect x="60" y="200" width="140" height="34" rx="8" fill="rgba(229,106,134,.14)" stroke="rgba(229,106,134,.4)"/><text x="130" y="222" text-anchor="middle" fill="#f4b0c1">AVOID · 0–39</text>
+          <rect x="212" y="200" width="140" height="34" rx="8" fill="rgba(230,166,63,.14)" stroke="rgba(230,166,63,.4)"/><text x="282" y="222" text-anchor="middle" fill="#f4d69a">WATCH · 40–54</text>
+          <rect x="364" y="200" width="150" height="34" rx="8" fill="rgba(230,166,63,.10)" stroke="rgba(230,166,63,.32)"/><text x="439" y="222" text-anchor="middle" fill="#f4d69a">TRENDING · 55–69</text>
+          <rect x="526" y="200" width="150" height="34" rx="8" fill="rgba(111,155,242,.14)" stroke="rgba(111,155,242,.4)"/><text x="601" y="222" text-anchor="middle" fill="#b9cdfb">STRONG TEST · 70–79</text>
+          <rect x="688" y="200" width="176" height="34" rx="8" fill="rgba(75,199,140,.14)" stroke="rgba(75,199,140,.42)"/><text x="776" y="222" text-anchor="middle" fill="#9be9c4">HIGH-CONFIDENCE · 80–89</text>
+        </g>
+        <text x="60" y="258" class="sd" fill="#7d74ab">Any failed hard gate (stock · price · economics · compliance · fulfilment) forces AVOID — a strong score cannot buy past it.</text>
+        <text x="60" y="276" class="sd" fill="#7d74ab">Decision stays separate from execution readiness, and WINNER is reserved for real post-launch evidence.</text>
+      </svg>
+      </div>
+      <figcaption>Evidence: PULSE-ECOM-MONDAY-PIPELINE-CLOSEOUT-001 · PULSE-ECOM-UNIFIED-PRODUCT-OPPORTUNITY-DECISION-001 (bands pod_v1).</figcaption>
+    </figure>
+  </section>
+
+  <!-- ============ INTELLIGENCE SOURCES ============ -->
+  <section class="panel">
+    <div class="head">
+      <div class="eyebrow">Multi-source intelligence</div>
+      <h2>Real providers, truthful availability</h2>
+      <p class="lede">Each source has a preflight state. Blocked providers are reported as blocked — the system never manufactures substitute evidence, and no external credential is reachable from the browser.</p>
+    </div>
+    <div class="scroll">
+    <table>
+      <thead><tr><th>Source</th><th>Role</th><th>Access</th><th>State</th></tr></thead>
+      <tbody>
+        <tr><td><b>eBay Browse API</b></td><td>Marketplace demand &amp; competitor comparables</td><td class="src">free · OAuth</td><td><span class="pill p-good">READY · live-proven</span></td></tr>
+        <tr><td><b>Reddit</b></td><td>Community product-attention sweep</td><td class="src">public JSON</td><td><span class="pill p-good">READY</span></td></tr>
+        <tr><td><b>CJ Dropshipping</b></td><td>Supplier match, stock &amp; landed freight</td><td class="src">API key</td><td><span class="pill p-good">READY</span></td></tr>
+        <tr><td><b>Meta Ad Library</b></td><td>Ad-platform intelligence (EU/UK)</td><td class="src">free</td><td><span class="pill p-good">READY</span></td></tr>
+        <tr><td><b>DataForSEO</b></td><td>Search / buyer-intent demand</td><td class="src">vault · paid</td><td><span class="pill p-info">READY · cost-gated</span></td></tr>
+        <tr><td><b>TikTok Commercial Content</b></td><td>Ad-library <i>research</i> (not publishing)</td><td class="src">client-cred broker</td><td><span class="pill p-warn">RESEARCH ONLY</span></td></tr>
+        <tr><td><b>Google Ads</b></td><td>Keyword demand (intended)</td><td class="src">dev token</td><td><span class="pill p-crit">SOURCE BLOCKED</span></td></tr>
+      </tbody>
+    </table>
+    </div>
+    <figcaption style="margin-top:12px">Evidence: STRATELOQ-…-DEEP-RESEARCH-ORCHESTRATOR-013J (provider preflight) · canonical receivers fn_ingest_*.</figcaption>
+  </section>
+
+  <!-- ============ CREATIVE STUDIO ============ -->
+  <section class="panel">
+    <div class="head">
+      <div class="eyebrow">AI Ad Creative Studio</div>
+      <h2>Founder-quality creative from protected identity</h2>
+      <p class="lede">Product identity is authoritative and protected — generation models are renderers only, never the product source. A native FFmpeg compositor assembles multi-scene ads; the real device is shown from Product-Card pixels, environment scenes are generated, and anything with a generated device stays <span style="font-family:var(--f-mono);color:var(--warn)">IDENTITY_REVIEW_REQUIRED</span>.</p>
+    </div>
+
+    <figure style="margin-bottom:22px">
+      <div class="scroll">
+      <svg class="fig" viewBox="0 0 1000 210" role="img" aria-label="Creative Studio production pipeline">
+        <defs>
+          <style>.cst{font-family:var(--f-body);fill:#efeafa;font-size:12.5px;font-weight:600}.csd{font-family:var(--f-mono);fill:#aca2d6;font-size:10px}</style>
+          <marker id="ah3" markerWidth="10" markerHeight="10" refX="7.5" refY="5" orient="auto"><path d="M0,0 L9,5 L0,10 Z" fill="#48c9c0"/></marker>
+        </defs>
+        <g stroke="#2f9d96" stroke-width="2" marker-end="url(#ah3)" fill="none">
+          <path d="M150,74 L176,74"/><path d="M304,74 L330,74"/><path d="M458,74 L484,74"/><path d="M612,74 L638,74"/><path d="M766,74 L792,74"/>
+        </g>
+        <g>
+          <rect class="node" x="18" y="44" width="132" height="60" rx="10" fill="#1e1843" stroke="#3a2f6e"/><text x="30" y="70" class="cst">Product Card</text><text x="30" y="86" class="csd">canonical identity</text>
+          <rect class="node" x="176" y="44" width="128" height="60" rx="10" fill="#1e1843" stroke="#3a2f6e"/><text x="188" y="70" class="cst">Storyboard</text><text x="188" y="86" class="csd">data-driven scenes</text>
+          <rect class="node" x="330" y="44" width="128" height="60" rx="10" fill="#1e1843" stroke="#3a2f6e"/><text x="342" y="70" class="cst">Generate</text><text x="342" y="86" class="csd">Veo 3.1 · Gemini</text>
+          <rect class="node" x="484" y="44" width="128" height="60" rx="10" fill="#1e1843" stroke="#3a2f6e"/><text x="496" y="70" class="cst">Composite</text><text x="496" y="86" class="csd">native FFmpeg</text>
+          <rect class="node" x="638" y="44" width="128" height="60" rx="10" fill="#1e1843" stroke="#3a2f6e"/><text x="650" y="70" class="cst">Identity review</text><text x="650" y="86" class="csd">exact-SKU lock</text>
+          <rect class="node" x="792" y="44" width="190" height="60" rx="10" fill="rgba(245,181,68,.1)" stroke="#f5b544"/><text x="804" y="70" class="cst" fill="#f7c86f">Human approval</text><text x="804" y="86" class="csd">launch-safe gate</text>
+        </g>
+        <!-- 6-beat strip -->
+        <text x="18" y="140" class="csd" fill="#7d74ab">PROVEN 6-BEAT STRUCTURE — 17.2s · 1080×1920 · crossfaded</text>
+        <g font-family="var(--f-mono)" font-size="9.5">
+          <rect x="18" y="150" width="150" height="30" rx="7" fill="#171235" stroke="#3a2f6e"/><text x="93" y="169" text-anchor="middle" fill="#b7a0fb">HOOK 2.6s</text>
+          <rect x="176" y="150" width="150" height="30" rx="7" fill="#171235" stroke="#3a2f6e"/><text x="251" y="169" text-anchor="middle" fill="#aca2d6">INTRO 3.0s</text>
+          <rect x="334" y="150" width="150" height="30" rx="7" fill="#171235" stroke="#3a2f6e"/><text x="409" y="169" text-anchor="middle" fill="#aca2d6">ACTION 3.6s</text>
+          <rect x="492" y="150" width="150" height="30" rx="7" fill="#171235" stroke="#3a2f6e"/><text x="567" y="169" text-anchor="middle" fill="#aca2d6">TRANSFORM 4.0s</text>
+          <rect x="650" y="150" width="150" height="30" rx="7" fill="#171235" stroke="#3a2f6e"/><text x="725" y="169" text-anchor="middle" fill="#aca2d6">OUTCOME 3.6s</text>
+          <rect x="808" y="150" width="174" height="30" rx="7" fill="#171235" stroke="#3a2f6e"/><text x="895" y="169" text-anchor="middle" fill="#f7c86f">CTA 2.4s</text>
+        </g>
+      </svg>
+      </div>
+      <figcaption>Evidence: STRATELOQ-…-CREATIVE-STUDIO-015T / 015U · STRATELOQ-CREATIVE-STUDIO-QUALITY-STANDARD (LOCKED).</figcaption>
+    </figure>
+
+    <div class="creative">
+      <figure>
+        <img src="assets/creative-static-ad.jpg" alt="Composited static ad: a star-projector night light on a galaxy background with headline and CTA">
+        <div class="cap">Real output — static ad composed from the Product Card (9:16).</div>
+      </figure>
+      <div>
+        <div class="creative-sub">
+          <figure>
+            <img src="assets/creative-product-cutout.png" alt="Isolated product cutout used as the compositor's authoritative source">
+            <div class="cap">Compositor input — protected product pixels.</div>
+          </figure>
+          <figure>
+            <img src="assets/creative-video-frames.png" alt="Six sampled frames from the generated multi-scene video showing the light effect building">
+            <div class="cap">Video evidence — sampled beats of the motion ad.</div>
+          </figure>
+        </div>
+        <div class="g" style="margin-top:12px">
+          <div class="mk">$</div>
+          <div><h3>Cost discipline is engineered, not hoped for</h3>
+            <p>Video generation runs under a hard per-run cap (≈$1.20/scene, ≤$4 authorized) and integration tests execute end-to-end at <b>$0.00</b> with publishing and spend disabled by contract.</p></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ MARKETING DIRECTOR LINEAGE ============ -->
+  <section class="panel">
+    <div class="head">
+      <div class="eyebrow">Orchestration &amp; the organic / paid boundary</div>
+      <h2>One strategy brain, a hard channel boundary</h2>
+      <p class="lede">The AI Marketing Director consumes real decisions and emits a structured strategy — then hands off to creative production. Organic and advertising are modelled as disjoint lineages; a connection row is never both, and automation is never inferred from a connection.</p>
+    </div>
+    <figure>
+      <div class="scroll">
+      <svg class="fig" viewBox="0 0 1000 250" role="img" aria-label="Marketing Director to publishing lineage">
+        <defs>
+          <style>.mt{font-family:var(--f-body);fill:#efeafa;font-size:12.5px;font-weight:600}.md{font-family:var(--f-mono);fill:#aca2d6;font-size:10px}</style>
+          <marker id="ah4" markerWidth="10" markerHeight="10" refX="7.5" refY="5" orient="auto"><path d="M0,0 L9,5 L0,10 Z" fill="#9a7bf5"/></marker>
+        </defs>
+        <g stroke="#7159c9" stroke-width="2" marker-end="url(#ah4)" fill="none">
+          <path d="M198,60 L226,60"/><path d="M404,60 L432,60"/><path d="M610,60 L638,60"/>
+        </g>
+        <rect class="node" x="20" y="34" width="178" height="52" rx="10" fill="#1e1843" stroke="#3a2f6e"/><text x="34" y="58" class="mt">Intelligence + Decision</text><text x="34" y="74" class="md">real product × market</text>
+        <rect class="node" x="226" y="34" width="178" height="52" rx="10" fill="#1e1843" stroke="#3a2f6e"/><text x="240" y="58" class="mt">AI Marketing Director</text><text x="240" y="74" class="md">MARKETING_DIRECTOR_STRATEGY</text>
+        <rect class="node" x="432" y="34" width="178" height="52" rx="10" fill="#1e1843" stroke="#3a2f6e"/><text x="446" y="58" class="mt">Creative Production</text><text x="446" y="74" class="md">request → studio</text>
+        <rect x="638" y="34" width="200" height="52" rx="10" fill="rgba(245,181,68,.1)" stroke="#f5b544"/><text x="652" y="58" class="mt" fill="#f7c86f">Human approval</text><text x="652" y="74" class="md">publish=false by default</text>
+
+        <!-- split into two lineages -->
+        <path d="M738,86 L738,118 L360,118 L360,140" stroke="#4bc78c" stroke-width="1.8" fill="none" marker-end="url(#ah4)" opacity=".9"/>
+        <path d="M738,86 L738,118 L760,118 L760,140" stroke="#6f9bf2" stroke-width="1.8" fill="none" marker-end="url(#ah4)" opacity=".9"/>
+
+        <rect x="60" y="146" width="600" height="80" rx="12" fill="rgba(75,199,140,.06)" stroke="rgba(75,199,140,.34)"/>
+        <text x="80" y="170" class="mt" fill="#9be9c4">ORGANIC lineage</text>
+        <text x="80" y="190" class="md">Facebook · Instagram · TikTok · LinkedIn — foundation built, execution disabled by constraint</text>
+        <text x="80" y="208" class="md" fill="#7d74ab">capabilities: READ_PROFILE · PUBLISH_TEXT/IMAGE/VIDEO/CAROUSEL — per platform</text>
+
+        <rect x="676" y="146" width="264" height="80" rx="12" fill="rgba(111,155,242,.06)" stroke="rgba(111,155,242,.34)"/>
+        <text x="696" y="170" class="mt" fill="#b9cdfb">ADVERTISING lineage</text>
+        <text x="696" y="190" class="md">Meta ad account (separate)</text>
+        <text x="696" y="208" class="md" fill="#7d74ab">PAUSED-only executor · deferred</text>
+      </svg>
+      </div>
+      <figcaption>Evidence: STRATELOQ-016A (director → creative bridge, mig_290) · STRATELOQ-016B (social foundation, mig_291).</figcaption>
+    </figure>
+  </section>
+
+  <!-- ============ SECURITY & GOVERNANCE ============ -->
+  <section class="panel">
+    <div class="head">
+      <div class="eyebrow">Security &amp; governance model</div>
+      <h2>Safe by construction</h2>
+      <p class="lede">The guarantees below are enforced in the schema and functions, not left to convention — verified in each unit's self-tests.</p>
+    </div>
+    <div class="guarantees">
+      <div class="g"><div class="mk">◍</div><div><h3>Deny-by-default RLS + FORCE</h3><p>Both new social tables (and the rest) enable RLS with FORCE and zero permissive policies; all access flows through SECURITY DEFINER functions with an empty search_path.</p></div></div>
+      <div class="g"><div class="mk">⌘</div><div><h3>No plaintext secrets in the database</h3><p>Connection rows store a non-secret <span style="font-family:var(--f-mono)">secret_ref</span> only; a CHECK constraint rejects token-shaped values. Real credentials live in the n8n / edge secret stores.</p></div></div>
+      <div class="g"><div class="mk">⛒</div><div><h3>Fail-closed decisioning</h3><p>Any failed stock, price, economics, compliance or fulfilment gate forces AVOID. Economics never borrows certainty from a different product (identity resolver).</p></div></div>
+      <div class="g"><div class="mk">◆</div><div><h3>Human approval before every outbound action</h3><p>Publish, activation and spend all default to false; automatic publishing requires an explicit grant and is never inferred from an account connection.</p></div></div>
+      <div class="g"><div class="mk">⧉</div><div><h3>Server-authoritative paid access</h3><p>Provider-neutral entitlement store; the browser can neither read nor write entitlement. Authentication alone and verification alone do not grant access.</p></div></div>
+      <div class="g"><div class="mk">⊞</div><div><h3>Tenant isolation</h3><p>Every model is tenant-scoped; the platform is not hard-coded to any single business — real accounts appear only as tenant data in tests.</p></div></div>
+    </div>
+  </section>
+
+  <!-- ============ DR POSTURE ============ -->
+  <section class="panel">
+    <div class="head">
+      <div class="eyebrow">Disaster recovery posture</div>
+      <h2>A recovery plan with honest status</h2>
+      <p class="lede">Targets: RPO ≤ 24h, RTO ≤ 4h. Each component carries a candid protection status — the DR inventory does not overstate what is fully protected versus what still depends on a provider or an operator step.</p>
+    </div>
+    <div class="scroll">
+    <table>
+      <thead><tr><th>Component</th><th>Backup method</th><th>RPO / RTO</th><th>Status</th></tr></thead>
+      <tbody>
+        <tr><td><b>Source / Git</b></td><td>Remote + independent encrypted bundle</td><td class="src">min / 15m</td><td><span class="pill p-warn">PARTIAL</span></td></tr>
+        <tr><td><b>DB schema</b> (93 tbl / 370 fn)</td><td>Committed SQL snapshots + manifest</td><td class="src">commit / 1h</td><td><span class="pill p-good">PROTECTED</span></td></tr>
+        <tr><td><b>DB data (logical)</b></td><td>pg_dump -Fc, gpg-encrypted</td><td class="src">24h / 2h</td><td><span class="pill p-warn">PARTIAL</span></td></tr>
+        <tr><td><b>Edge functions</b> (12)</td><td>Git — all recovered into repo</td><td class="src">commit / 1h</td><td><span class="pill p-good">PROTECTED</span></td></tr>
+        <tr><td><b>Storage media</b></td><td>Backup script + object manifest</td><td class="src">24h / 1h</td><td><span class="pill p-warn">PARTIAL</span></td></tr>
+        <tr><td><b>Automation workflows</b></td><td>Inventory + committed critical defs</td><td class="src">7d / 2h</td><td><span class="pill p-warn">PARTIAL</span></td></tr>
+        <tr><td><b>Secrets / config</b></td><td>References only — recreation runbook</td><td class="src">— / 1h</td><td><span class="pill p-warn">PARTIAL</span></td></tr>
+        <tr><td><b>Provider DB (PITR)</b></td><td>Managed by provider (verify in console)</td><td class="src">unknown</td><td><span class="pill p-neu">PROVIDER DEP.</span></td></tr>
+        <tr><td><b>Approved schedules</b></td><td>Committed defs + cadence recovery</td><td class="src">commit / 30m</td><td><span class="pill p-good">PROTECTED</span></td></tr>
+      </tbody>
+    </table>
+    </div>
+    <figcaption style="margin-top:12px">Evidence: dr/runbook/DR-INVENTORY.md · dr/schema/*.sql · dr/manifests · scripts/dr/*.sh.</figcaption>
+  </section>
+
+  <!-- ============ EVIDENCE INTEGRITY ============ -->
+  <section class="panel">
+    <div class="head">
+      <div class="eyebrow">Evidence integrity</div>
+      <h2>What this pack proves — and what still needs a live capture</h2>
+      <p class="lede">Every visual above is derived directly from repository evidence (migrations, schema snapshots, edge functions, workflow inventory, delivery records and real generated creative). The items on the right genuinely require the authenticated live UI or automation canvas and were deliberately <b>not</b> recreated as if they were real screenshots.</p>
+    </div>
+    <div class="split">
+      <div class="col built">
+        <h3><span class="pill p-good">Completed now</span></h3>
+        <ul>
+          <li><b>System architecture</b> — from 95 migrations, 12 edge functions, schema snapshots</li>
+          <li><b>Decision engine &amp; bands</b> — from the unified-decision and Monday-pipeline records</li>
+          <li><b>Intelligence source matrix</b> — from the research-orchestrator preflight</li>
+          <li><b>Creative Studio pipeline + real ad output</b> — from committed creative artifacts</li>
+          <li><b>Marketing Director / organic-vs-paid lineage</b> — from mig_290 / mig_291</li>
+          <li><b>Security &amp; governance model</b> — from RLS, policies, CHECK constraints, self-tests</li>
+          <li><b>Disaster-recovery posture</b> — from the DR inventory and scripts</li>
+        </ul>
+      </div>
+      <div class="col blocked">
+        <h3><span class="pill p-warn">Needs authenticated live capture</span></h3>
+        <ul>
+          <li><b>Strateloq app UI</b> — opportunity / product / creative dashboards (hosted front end, login required)</li>
+          <li><b>n8n canvas</b> — the workflow graphs and a successful execution run</li>
+          <li><b>Supabase dashboard</b> — table editor, RLS policy list, logs</li>
+          <li><b>Meta Business Suite</b> — the PAUSED-only ad object and CAPI events view</li>
+          <li><b>Live hosted storefront</b> — the rendered public conversion page</li>
+        </ul>
+        <p class="note">Capture &amp; sanitization guidance for each of these is in <b>portfolio/README.md</b> — redact account IDs, project refs, hostnames, tokens and any customer data before use.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer class="foot">
+    <b>STRATELOQ-UPWORK-PORTFOLIO-VISUAL-EVIDENCE-PACK-001</b><br>
+    Sanitized portfolio evidence — no credentials, secrets, tokens, project identifiers or customer data. All figures trace to committed repository evidence.
+  </footer>
+
+</div>
