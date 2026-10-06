@@ -1,0 +1,74 @@
+{
+  "_dr_note": "CONTRACT ONLY — this is the intended n8n workflow shape for the premium Veo 3.1 Fast per-scene executor. It is NOT deployed and NOT active on the n8n instance. No credential values appear here (references only). It MUST NOT be activated until the founder authorizes a bounded generation run; the DB gate fn_video_generation_authorization_state must return dispatch_allowed=true (provider enabled + founder authorization + within the per-run cap) before any paid Veo call is made.",
+  "name": "Strateloq - Veo Scene Executor (CONTRACT, inactive)",
+  "active": false,
+  "description": "Premium hybrid per-scene generative executor. For ONE planned shot: receives {scene_id, video_job_id, mode, prompt, aspect_ratio, duration_s, seed_image_ref}. For plate/no-product scenes (mode=TEXT_TO_VIDEO) NO product seed is sent — the prompt explicitly excludes the product so Veo renders only the environment plate. For the reference-motion mode (mode=IMAGE_TO_VIDEO) the authoritative Product Card is the first-frame seed; identity is NOT guaranteed, so the scene stays IDENTITY_REVIEW_REQUIRED. Calls the Gemini API predictLongRunning on the EXISTING Gemini credential (no new account), polls the operation, downloads the clip, uploads it to the private pulse-generated-media bucket, then calls the DB completion function with identity_state=IDENTITY_REVIEW_REQUIRED for a generated clip.",
+  "settings": { "executionOrder": "v1" },
+  "nodes": [
+    {
+      "id": "CONTRACT-webhook",
+      "name": "Scene Executor Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [0, 0],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "pulse-veo-scene",
+        "responseMode": "lastNode",
+        "responseData": "firstEntryJson"
+      },
+      "notes": "Body: {scene_id, video_job_id, mode, prompt, aspect_ratio:'9:16', duration_s, seed_image_ref|null}. The edge function video-scene-execute only reaches this AFTER the DB cost/authorization gate returns dispatch_allowed=true."
+    },
+    {
+      "id": "CONTRACT-dispatch",
+      "name": "Veo predictLongRunning (dispatch)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [224, 0],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://generativelanguage.googleapis.com/v1beta/models/veo-3.1-fast-generate-preview:predictLongRunning",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "contentType": "json",
+        "jsonBody": "={\n  \"instances\": [{\n    \"prompt\": \"{{ $json.body.prompt }}\"\n  }],\n  \"parameters\": {\n    \"aspectRatio\": \"{{ $json.body.aspect_ratio }}\",\n    \"durationSeconds\": {{ $json.body.duration_s }}\n  }\n}"
+      },
+      "credentials": { "googlePalmApi": { "name": "Gemini account (EXISTING; reference only — no key value stored here)" } },
+      "notes": "For mode=IMAGE_TO_VIDEO (reference-motion only), the instance also carries the Product Card as the seed image; for plate/no-product scenes NO image is sent. Veo 3.1 Fast = cheapest premium tier. Returns a long-running operation name."
+    },
+    {
+      "id": "CONTRACT-poll",
+      "name": "Poll Operation Until Done",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [448, 0],
+      "parameters": {},
+      "notes": "Poll GET on the returned operation name until done:true, then read the generated clip URI. (Wait/IF loop; omitted in the contract shape.)"
+    },
+    {
+      "id": "CONTRACT-upload",
+      "name": "Upload Clip to pulse-generated-media",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [672, 0],
+      "parameters": {},
+      "notes": "Download the clip bytes and upload to the PRIVATE pulse-generated-media Supabase Storage bucket; keep it private (generated content, identity-review-required)."
+    },
+    {
+      "id": "CONTRACT-complete",
+      "name": "Call DB scene-complete",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [896, 0],
+      "parameters": {},
+      "notes": "POST to the DB scene-completion RPC with {scene_id, video_job_id, provider_operation_id, storage_ref, mime, width, height, duration, cost, currency}. The completion function records the scene asset with identity_state=IDENTITY_REVIEW_REQUIRED — a generated clip is NEVER auto-launch-safe. Identity validation (fn_video_identity_validate_decision) runs next."
+    }
+  ],
+  "connections": {
+    "Scene Executor Webhook": { "main": [[{ "node": "Veo predictLongRunning (dispatch)", "type": "main", "index": 0 }]] },
+    "Veo predictLongRunning (dispatch)": { "main": [[{ "node": "Poll Operation Until Done", "type": "main", "index": 0 }]] },
+    "Poll Operation Until Done": { "main": [[{ "node": "Upload Clip to pulse-generated-media", "type": "main", "index": 0 }]] },
+    "Upload Clip to pulse-generated-media": { "main": [[{ "node": "Call DB scene-complete", "type": "main", "index": 0 }]] }
+  }
+}

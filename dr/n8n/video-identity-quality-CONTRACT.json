@@ -1,0 +1,46 @@
+{
+  "_dr_note": "CONTRACT ONLY — intended n8n workflow shape for the premium video identity validator + rendered-video quality judge. NOT deployed, NOT active. Credential references only, no values. These are PAID Gemini-vision calls that run downstream of generation, so they stay inactive until the founder authorizes a bounded run. The DB decision functions (fn_video_identity_validate_decision, fn_video_quality_judge_decision) are pure and already tested with zero spend; this workflow only supplies their structured inputs.",
+  "name": "Strateloq - Video Identity + Quality Judge (CONTRACT, inactive)",
+  "active": false,
+  "description": "Two related Gemini-vision roles. (1) IDENTITY VALIDATOR: given the authoritative Product Card image + a frame of the composited/seeded scene, returns {product_match 0..1, shape_match, color_match, logo_legible, severe_artifacts}; the DB turns that into IDENTITY_PASS/REVIEW/FAIL (IDENTITY_FAIL hard-blocks launch; a generated/seeded scene needs IDENTITY_PASS to be launch-safe; reference-motion is never auto-PASS). (2) QUALITY JUDGE: given the rendered 9:16 mp4 (sampled frames) + the quality_family + shot plan, returns per-dimension 0..1 scores; the DB computes a 0..100 score and a PASS/REVIEW/FAIL band vs the family benchmark.",
+  "settings": { "executionOrder": "v1" },
+  "nodes": [
+    {
+      "id": "CONTRACT-webhook",
+      "name": "Judge Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [0, 0],
+      "parameters": { "httpMethod": "POST", "path": "pulse-video-judge", "responseMode": "lastNode", "responseData": "firstEntryJson" },
+      "notes": "Body: {role:'IDENTITY'|'QUALITY', product_card_ref?, scene_frame_ref?, rendered_video_ref?, quality_family?, shot_plan?}."
+    },
+    {
+      "id": "CONTRACT-vision",
+      "name": "Gemini Vision Assess",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [224, 0],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi"
+      },
+      "credentials": { "googlePalmApi": { "name": "Gemini account (EXISTING; reference only — no key value stored here)" } },
+      "notes": "IDENTITY role: prompt returns STRICT JSON {product_match, shape_match, color_match, logo_legible, severe_artifacts}. QUALITY role: prompt returns STRICT JSON of per-dimension 0..1 scores matching the family's dimensions (cinematic: hook_strength, motion_realism, product_clarity, pacing, premium_finish, story_coherence; ugc: hook_strength, authenticity, product_clarity, pacing, retention, story_coherence). Model id is indicative; confirm the current Gemini vision model at activation."
+    },
+    {
+      "id": "CONTRACT-return",
+      "name": "Return Structured Assessment",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [448, 0],
+      "parameters": {},
+      "notes": "Parse + validate the JSON, then return it to the caller edge function, which passes it to the DB decision function. The DB (not this workflow) makes the PASS/REVIEW/FAIL decision."
+    }
+  ],
+  "connections": {
+    "Judge Webhook": { "main": [[{ "node": "Gemini Vision Assess", "type": "main", "index": 0 }]] },
+    "Gemini Vision Assess": { "main": [[{ "node": "Return Structured Assessment", "type": "main", "index": 0 }]] }
+  }
+}
