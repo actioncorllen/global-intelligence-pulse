@@ -26,8 +26,10 @@ BEGIN
 
   v := v || jsonb_build_object('check','01_MARKET_ALONE_INITIATES','pass',((p->>'ok')::boolean AND (p->'runnable_autonomous_lanes') ? 'SEARCH'));
   v := v || jsonb_build_object('check','02_MULTIPLE_LANES_COEXIST','pass',((p->>'lane_count')::int >= 2));
+  -- 03: unavailable lanes stay explicit (SOCIAL) AND the former product-native COMMERCE gap is now CLOSED (Kalodata READY)
   v := v || jsonb_build_object('check','03_UNAVAILABLE_LANE_EXPLICIT','pass',
-    EXISTS(SELECT 1 FROM jsonb_array_elements(p->'lanes') e WHERE e->>'lane'='COMMERCE' AND e->>'status'='GAP_NO_PRODUCT_NATIVE_PROVIDER'));
+    (EXISTS(SELECT 1 FROM jsonb_array_elements(p->'lanes') e WHERE e->>'lane'='SOCIAL' AND e->>'status'='BLOCKED_EXTERNAL_APPROVAL')
+     AND EXISTS(SELECT 1 FROM jsonb_array_elements(p->'lanes') e WHERE e->>'lane'='COMMERCE' AND e->>'status'='READY' AND e->>'provider'='KALODATA')));
   v := v || jsonb_build_object('check','04_ZERO_RESULT_LANE_NOT_FATAL','pass',
     ((p->>'lane_count')::int = 5 AND jsonb_array_length(p->'runnable_autonomous_lanes') >= 1));
   v := v || jsonb_build_object('check','05_PRODUCT_NATIVE_ENTERS_NORMALIZATION','pass',
@@ -36,8 +38,10 @@ BEGIN
     ((ns->>'search_demand')::numeric=2400 AND EXISTS(SELECT 1 FROM jsonb_array_elements(p->'lanes') e WHERE e->>'lane'='SEARCH' AND e->>'status'='READY')));
   v := v || jsonb_build_object('check','07_CROSS_LANE_DUP_COLLAPSES','pass',
     (lower(nc->>'product_identity')=lower(ns->>'product_identity') AND coalesce(d,'') ~* 'dedup'));
+  -- 08: country isolation by SEARCH lane location (robust to lane ordering): DE=2276, GB=2826
   v := v || jsonb_build_object('check','08_COUNTRY_ISOLATION','pass',
-    (nc->>'market'='DE' AND (p->'lanes'->0->>'location_code')='2276'
+    (nc->>'market'='DE'
+     AND EXISTS(SELECT 1 FROM jsonb_array_elements(p->'lanes') e WHERE e->>'lane'='SEARCH' AND e->>'location_code'='2276')
      AND EXISTS(SELECT 1 FROM jsonb_array_elements(pg->'lanes') e WHERE e->>'lane'='SEARCH' AND e->>'location_code'='2826')));
   v := v || jsonb_build_object('check','09_UNAVAILABLE_METRIC_NOT_ZERO','pass',
     ((nm->'revenue') = 'null'::jsonb AND (nm->'sales_units') = 'null'::jsonb AND (nm->'creator_count') = 'null'::jsonb));
@@ -51,7 +55,7 @@ BEGIN
   v := v || jsonb_build_object('check','15_SPEND_BOUNDED','pass',((pw->>'lane_count')::int <= 10));
   v := v || jsonb_build_object('check','16_IDEMPOTENT_NO_DUP_RESEARCH','pass',(coalesce(core,'') ~* 'CACHE_REUSED_IN_FLIGHT'));
 
-  SELECT count(*) INTO n_fail FROM jsonb_array_elements(v) x WHERE NOT (x->>'pass')::boolean;
+  SELECT count(*) INTO n_fail FROM jsonb_array_elements(v) x WHERE (x->>'pass') IS DISTINCT FROM 'true';
   RETURN jsonb_build_object('suite','multi_lane_discovery','contract','stage1_multi_lane_discovery_v1',
     'total',jsonb_array_length(v),'failed',n_fail,'all_pass',(n_fail=0),'results',v);
 END; $function$;

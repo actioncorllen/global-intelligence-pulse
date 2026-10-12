@@ -31,6 +31,7 @@ DECLARE
   v_concept uuid; v_tenant uuid; v_tour jsonb;
   v_scorer_touches_images boolean;
   v_discover_src text;
+  v_kalodata_src text;
   v_de jsonb; v_us jsonb; v_gb jsonb; v_mkt jsonb;
   v_has_concept boolean;
   v_candidate_no_decision boolean;
@@ -59,6 +60,11 @@ BEGIN
   FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
   WHERE n.nspname='public' AND p.proname='fn_dataforseo_discover_candidates';
 
+  -- Source of the commerce (Kalodata) discovery adapter (used by invariant 3).
+  SELECT string_agg(pg_get_functiondef(p.oid), E'\n') INTO v_kalodata_src
+  FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+  WHERE n.nspname='public' AND p.proname='fn_kalodata_ingest_candidates';
+
   -- (1) DISCOVERY != MONITORING: distinct stores (commerce_products for candidate
   -- discovery, monday_opportunity_registry for monitoring), bridged by the
   -- discovery RPC which promotes a candidate and registers it for monitoring.
@@ -72,9 +78,13 @@ BEGIN
   v := v || jsonb_build_object('check','NEW_PRODUCT_AUTOREGISTERS_NO_MANUAL_INSERT',
     'pass', (coalesce(v_discover_src,'') ~* 'insert into public\.monday_opportunity_registry'));
 
-  -- (3) NEW CANDIDATE != QUALIFIED OPPORTUNITY: registration never writes a
-  -- decision (the discovery RPC does not touch product_opportunity_decisions),
-  -- and an active registered candidate can exist with zero decisions.
+  -- (3) NEW CANDIDATE != QUALIFIED OPPORTUNITY. The true invariant is STRUCTURAL:
+  -- neither the search discovery RPC nor the commerce (Kalodata) discovery adapter
+  -- ever writes product_opportunity_decisions, so registration can never
+  -- auto-qualify a candidate. Whether an undecided registered candidate currently
+  -- exists is a transient snapshot (the research bridge legitimately decides
+  -- candidates over time, so the set can be empty in a healthy DB) and is reported
+  -- as detail only — never required, so the regression is not data-snapshot flaky.
   SELECT EXISTS(
     SELECT 1 FROM public.monday_opportunity_registry r
     WHERE r.active AND NOT EXISTS(
@@ -82,8 +92,13 @@ BEGIN
   INTO v_candidate_no_decision;
   v := v || jsonb_build_object('check','CANDIDATE_NOT_AUTOMATICALLY_QUALIFIED',
     'pass', (coalesce(v_discover_src,'') !~* 'product_opportunity_decisions'
-             AND v_candidate_no_decision),
-    'detail', jsonb_build_object('active_registered_without_decision', v_candidate_no_decision));
+             AND coalesce(v_kalodata_src,'') !~* 'product_opportunity_decisions'
+             AND coalesce(v_discover_src,'') ~* 'monday_opportunity_registry'),
+    'detail', jsonb_build_object(
+      'active_registered_without_decision', v_candidate_no_decision,
+      'search_discovery_never_writes_decisions', (coalesce(v_discover_src,'') !~* 'product_opportunity_decisions'),
+      'commerce_discovery_never_writes_decisions', (coalesce(v_kalodata_src,'') !~* 'product_opportunity_decisions'),
+      'note','registration is separate from the opportunity decision; neither search nor commerce discovery auto-qualifies'));
 
   -- (4) OPPORTUNITY CONCEPT != CONCRETE PRODUCT and (5) VOLUME alone does not
   -- qualify: a concept-only candidate WITH recorded search volume is globally
@@ -151,7 +166,7 @@ BEGIN
     'detail', jsonb_build_object('evaluation_keyed_by_country', v_has_country_col,
       'product_with_multi_country_evals_present', v_multi_country));
 
-  SELECT count(*) INTO n_fail FROM jsonb_array_elements(v) x WHERE NOT (x->>'pass')::boolean;
+  SELECT count(*) INTO n_fail FROM jsonb_array_elements(v) x WHERE (x->>'pass') IS DISTINCT FROM 'true';
   RETURN jsonb_build_object('suite','stage1_product_opportunity_invariants',
     'contract','stage1_state_separation_v1',
     'total', jsonb_array_length(v), 'failed', n_fail, 'all_pass', (n_fail=0),
