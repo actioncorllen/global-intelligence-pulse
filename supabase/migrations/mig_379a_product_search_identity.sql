@@ -56,8 +56,14 @@ BEGIN
 END; $function$;
 GRANT EXECUTE ON FUNCTION public.fn_product_search_identity(text) TO authenticated, service_role;
 
--- Research request core v3: derive the concise product-search query from the (often noisy,
+-- Research request core v4: derive the concise product-search query from the (often noisy,
 -- local-language) provider title/registry query before dispatch; preserve the raw title.
+-- v4 adds the FUNCTION-LEVEL idempotency guard (companion to the DB-level partial unique index in
+-- mig_380): a transaction advisory lock on the logical key (tenant+product+market) serialises all
+-- callers, and in-flight reuse is ALWAYS applied (moved out of the `freshness>0` block) so a
+-- freshness=0 replay / duplicate RPC evaluation / double-click / webhook/n8n/worker retry /
+-- concurrent caller reuses the running execution and returns CACHE_REUSED_IN_FLIGHT
+-- (already_dispatched=true) instead of creating a second paid execution.
 CREATE OR REPLACE FUNCTION public.fn_research_request_core(p_user_id uuid, p_product_id uuid, p_market text, p_freshness_hours integer DEFAULT 168, p_trigger text DEFAULT 'on_demand_user_request'::text)
  RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path TO ''
 AS $function$
@@ -66,7 +72,7 @@ DECLARE
   v_prod public.commerce_products%rowtype;
   v_mkt text := upper(btrim(coalesce(p_market,'')));
   v_ccy text; v_run_id uuid; v_fresh record; v_inflight record;
-  v_query text; v_raw_query text; v_ident jsonb; v_supplier uuid;
+  v_query text; v_raw_query text; v_ident jsonb; v_supplier uuid; v_suppress boolean;
   v_expected int := 0; v_manifest jsonb := '[]'::jsonb; v_dispatch jsonb;
   cat record;
 BEGIN
@@ -82,6 +88,12 @@ BEGIN
       'note','market not present / not ecommerce-eligible in ecommerce_market_universe');
   END IF;
 
+  -- IDEMPOTENCY/COST BOUNDARY: serialize all callers for the same logical research key
+  -- (tenant+product+market), so SQL double-evaluation, double-click, webhook/n8n/worker retry
+  -- and concurrent callers cannot create two paid executions. The advisory lock is released at
+  -- transaction end; it is re-entrant within a transaction.
+  PERFORM pg_advisory_xact_lock(hashtextextended('commerce_research:'||v_uid::text||':'||p_product_id::text||':'||v_mkt, 0));
+
   IF coalesce(p_freshness_hours,168) > 0 THEN
     SELECT * INTO v_fresh FROM public.commerce_research_run
       WHERE tenant_id=v_uid AND product_id=p_product_id AND market=v_mkt
@@ -90,18 +102,21 @@ BEGIN
         AND completed_at > now() - make_interval(hours => p_freshness_hours)
       ORDER BY completed_at DESC LIMIT 1;
     IF FOUND THEN
-      RETURN jsonb_build_object('status','CACHE_REUSED','run_id',v_fresh.id,'market',v_mkt,
+      RETURN jsonb_build_object('status','CACHE_REUSED','run_id',v_fresh.id,'market',v_mkt,'idempotent',true,
         'reused_completed_at',v_fresh.completed_at,'freshness_hours',p_freshness_hours,
         'note','fresh completed run reused; no new provider dispatch, no paid calls');
     END IF;
-    SELECT * INTO v_inflight FROM public.commerce_research_run
-      WHERE tenant_id=v_uid AND product_id=p_product_id AND market=v_mkt
-        AND status='RESEARCHING' AND started_at > now() - interval '1 hour'
-      ORDER BY started_at DESC LIMIT 1;
-    IF FOUND THEN
-      RETURN jsonb_build_object('status','CACHE_REUSED_IN_FLIGHT','run_id',v_inflight.id,'market',v_mkt,
-        'started_at',v_inflight.started_at,'note','a research run for this product+market is already in progress; not duplicated, not re-dispatched');
-    END IF;
+  END IF;
+
+  -- in-flight dedup ALWAYS applies (even when freshness=0 forces fresh completed research): an
+  -- already-running execution for this logical key is reused, never duplicated. (ALREADY_DISPATCHED)
+  SELECT * INTO v_inflight FROM public.commerce_research_run
+    WHERE tenant_id=v_uid AND product_id=p_product_id AND market=v_mkt
+      AND status='RESEARCHING' AND started_at > now() - interval '1 hour'
+    ORDER BY started_at DESC LIMIT 1;
+  IF FOUND THEN
+    RETURN jsonb_build_object('status','CACHE_REUSED_IN_FLIGHT','already_dispatched',true,'run_id',v_inflight.id,'market',v_mkt,
+      'started_at',v_inflight.started_at,'note','a research run for this product+market is already in progress; idempotent, not duplicated, not re-dispatched');
   END IF;
 
   SELECT (m.value->>'price_query') AS pq, r.supplier_id AS sup INTO v_raw_query, v_supplier
@@ -109,8 +124,6 @@ BEGIN
        CROSS JOIN LATERAL jsonb_array_elements(r.markets) m
   WHERE r.product_id = p_product_id AND (m.value->>'country') = v_mkt LIMIT 1;
   v_raw_query := coalesce(v_raw_query, v_prod.title);
-  -- Derive a concise product-search identity so sources search a usable query, not the full
-  -- marketing sentence. Raw title preserved in provenance.
   v_ident := public.fn_product_search_identity(v_raw_query);
   v_query := coalesce(nullif(btrim(v_ident->>'search_query'),''), v_raw_query);
 
@@ -160,13 +173,20 @@ BEGIN
 
   UPDATE public.commerce_research_run SET sources_expected=v_expected, updated_at=now() WHERE id=v_run_id;
 
-  v_dispatch := public.fn_research_dispatch(v_run_id);
+  -- suppress-aware dispatch (same contract as fn_auto_dispatch_candidate_research): a suppressed
+  -- session creates the run but makes no paid provider call.
+  v_suppress := coalesce(current_setting('pulse.suppress_dispatch', true),'') = 'on';
+  IF v_suppress THEN
+    v_dispatch := jsonb_build_object('status','DISPATCH_SUPPRESSED','note','pulse.suppress_dispatch=on; no paid provider call');
+  ELSE
+    v_dispatch := public.fn_research_dispatch(v_run_id);
+  END IF;
 
   RETURN jsonb_build_object('status','RESEARCHING','run_id',v_run_id,
     'product_id',p_product_id,'product_title',v_prod.title,'market',v_mkt,'market_currency',v_ccy,
     'raw_query',v_raw_query,'price_query',v_query,'search_identity',v_ident,
     'sources_expected',v_expected,'dispatch_manifest',v_manifest,
     'auto_dispatch',v_dispatch->>'status','dispatch',v_dispatch,'trigger',p_trigger,
-    'tiktok','BLOCKED_EXTERNAL_ACCESS','contract','pulse_research_request_v3_evidence_identity');
+    'tiktok','BLOCKED_EXTERNAL_ACCESS','contract','pulse_research_request_v4_idempotent');
 END; $function$;
 GRANT EXECUTE ON FUNCTION public.fn_research_request_core(uuid, uuid, text, integer, text) TO authenticated, service_role;
