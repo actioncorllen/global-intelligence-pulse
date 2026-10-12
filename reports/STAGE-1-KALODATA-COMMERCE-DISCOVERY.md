@@ -1,145 +1,118 @@
 # STAGE 1 — Kalodata Product-Native COMMERCE Discovery (Permanent Production Integration)
 
-**Date:** 2026-10-12 · **Tenant:** 7c8ddf9d-… · **Project:** nxaunmyihhjixxxljcqt (live prod) · **Branch:** claude/cool-faraday-kgudh1
-**Scope:** Fill the EXISTING multi-lane COMMERCE lane with Kalodata as the product-native provider. Stage 1 only — Stage 2 NOT started. No parallel pipeline.
+**Updated:** 2026-10-12 · **Tenant:** 7c8ddf9d-… · **Project:** nxaunmyihhjixxxljcqt (live prod) · **Branch:** claude/cool-faraday-kgudh1
+**Scope:** Fill the EXISTING multi-lane COMMERCE lane with Kalodata as the product-native provider, reusing the eligibility gate → auto_fresh_discovery bridge → concrete resolution → opportunity evaluation. Stage 1 only — Stage 2 NOT started. No parallel pipeline. Kalodata DISCOVERS; it never decides opportunity.
 
 ---
 
 ## 1. ROOT CAUSE CLOSED
-The COMMERCE discovery lane was `GAP_NO_PRODUCT_NATIVE_PROVIDER`: no connected provider could return
-market product entities **without a seed** (DataForSEO is keyword-level; eBay Browse is research-only;
-ad libraries are query-seeded ad records; TikTok organic is approval-gated; CJ is supplier-only).
-Kalodata's TikTok-Shop `product/rank` endpoint is product-native and seed-free (founder-proven live for
-DE: region DE / currency EUR / `revenue_growth_rate DESC` / `launch_date<30`, 0.1 credit / 10 products,
-real German product entities, NO keyword/category/product/shop/creator/video/livestream). The gap is now
-**filled at the provider layer** (data-driven market config + a secret-free DB adapter + a secure backend
-broker), reusing the existing eligibility gate → auto_fresh_discovery research bridge → concrete resolution
-→ opportunity evaluation. Kalodata **discovers candidates only**; it never decides opportunity.
+COMMERCE was `GAP_NO_PRODUCT_NATIVE_PROVIDER` (no seed-free product-native provider). Kalodata's
+TikTok-Shop `product/rank` is product-native + seed-free, now wired into the existing lane via a
+data-driven market config + secret-free DB adapter + a secure backend broker. The founder has set
+`KALODATA_SECRET_KEY`; a real DE run executed end-to-end.
 
-## 2. FILES / MIGRATIONS CHANGED
-- `supabase/migrations/mig_374a_kalodata_provider_market_config.sql` — `discovery_provider_market_config`
-  table (RLS on, fail-closed) + 10 Kalodata markets + COMMERCE lane flip (GAP → AVAILABLE/KALODATA).
-- `supabase/migrations/mig_374b_kalodata_ingest_candidates.sql` — `fn_kalodata_ingest_candidates`
-  (secret-free ingest adapter; noise gate → normalize → register → auto-dispatch research).
-- `supabase/migrations/mig_374c_kalodata_request_and_plan_v2.sql` — `fn_kalodata_discovery_request`
-  (seed-free request builder), `fn_multi_lane_discovery_plan` v2 (COMMERCE lane wired, independent per-lane
-  status), `fn_kalodata_record_usage` + `fn_kalodata_record_lane_outcome` (telemetry; never store the key).
-- `supabase/migrations/mig_374d_kalodata_commerce_adapter_selftest.sql` — `fn_kalodata_commerce_adapter_selftest`
-  (16-invariant regression).
-- `supabase/functions/kalodata-discovery/index.ts` — secure backend broker (holds the secret only in env;
-  deployed live, ACTIVE v2, `verify_jwt=true`, trusted-server gated, fail-closed).
-- `supabase/migrations/mig_373b_multi_lane_discovery_selftest.sql` — updated: COMMERCE gap is now CLOSED,
-  so check 03 asserts the gap is filled (Kalodata READY) while SOCIAL stays explicitly unavailable; check
-  08 country isolation hardened to find the SEARCH lane by key (robust to lane re-ordering); null-pass
-  loophole in the counter closed.
-- `supabase/migrations/mig_369_stage1_product_opportunity_invariants_selftest.sql` — updated: the
-  "candidate ≠ qualified" check is now the true STRUCTURAL invariant (neither search **nor commerce/Kalodata**
-  discovery writes `product_opportunity_decisions`), not a transient data snapshot.
+## 2. MARKET CONFIG CORRECTION
+Provider support is data-driven from authoritative Kalodata capability evidence, not Strateloq's
+country list. **IE removed** (`supported=false, enabled=false`): IE is not an established Kalodata
+region (authoritative regions: US/BR/MX/ID/JP/MY/PH/SG/TH/VN/GB/ES/DE/FR/IT). IE now returns
+`UNSUPPORTED_MARKET` at request + ingest + COMMERCE-lane level — never substituted by GB/DE
+(IE is Strateloq-supported, so the plan still runs; only the Kalodata COMMERCE lane is UNSUPPORTED).
+**Enabled Kalodata markets after correction (9):** DE, ES, FR, GB, IT, MY, PH, SG, US — all within
+the authoritative list. No market added without evidence (BR/MX/ID/JP/TH/VN left unconfigured; can be
+enabled later via the same data-driven mechanism). Regression `17_IE_NOT_SILENTLY_SUPPORTED` proves IE
+cannot silently become supported.
 
-## 3. KALODATA PROVIDER CONFIG (data-driven; not prompt/memory)
-`discovery_provider_market_config (provider, market, supported, region, language, currency, capabilities,
-enabled, last_verified_at, note)`, PK(provider, market), RLS on with no public policy.
-10 Kalodata TikTok-Shop markets supported+enabled: **DE (verified live)**, GB (GBP), US (USD), FR, IT, ES,
-IE (EUR), MY (MYR), PH (PHP), SG (SGD) — all `language=en-US`, 9 `last_verified_at=NULL` until their first
-live call. COMMERCE lane: `availability=AVAILABLE`, `provider=KALODATA`, `discovery_mode=AUTONOMOUS`,
-`capability_class=DISCOVERY_CAPABLE`. A Strateloq-supported market Kalodata does not cover (e.g. NO, JP)
-returns `UNSUPPORTED_MARKET` — never a substitution, never zero, never cross-market contamination.
+## 3. SECRET
+`secret_available = YES` (broker probe returned `{"secret_present":true}`). Value never printed,
+returned, logged or persisted. Lives only in the `KALODATA_SECRET_KEY` Edge Function env; the broker
+`redact()`s outputs and returns only the ingest summary. DB adapter is secret-free (ingests
+provider-fetched rows).
 
-## 4. SECRET HANDLING — **EXTERNAL BLOCKER (action required)**
-The Kalodata secret is **NOT present in the backend**: no `kalodata` edge function existed, no Vault secret
-(`vault.secrets` has none matching), no `server_integration_config` row. The task forbids placing the raw
-key in database rows, so the correct mechanism is the existing **Supabase Edge Function secret** pattern
-(same as `tiktok-commercial-token`): the key lives only in the Edge Function environment, read at runtime
-by the broker, never persisted, never returned, never logged (the broker `redact()`s outputs and returns
-only the ingest summary).
+## 4. FILES / MIGRATIONS CHANGED (this unit, on top of commit a5f015a)
+- `mig_375_kalodata_market_config_correction.sql` — disable IE (data-driven correction).
+- `mig_376_kalodata_invoke_orchestrator.sql` — secure DB→broker trigger: single-use 244-bit capability
+  nonce (`kalodata_invoke_nonce`, `fn_kalodata_consume_invoke_nonce`, `fn_kalodata_run_discovery`). The
+  COMMERCE lane's backend trigger (the SEARCH lane has n8n 013Q); broker stays verify_jwt=true, no
+  shared secret exposed.
+- `mig_377_kalodata_product_native_gate.sql` — `fn_is_product_native_entity` (language/script-agnostic
+  product-native noise gate) + adapter now uses it and sets `identity_basis='platform_id'`.
+- `mig_374d_…selftest.sql` — adapter regression extended to 17 checks (adds `17_IE_NOT_SILENTLY_SUPPORTED`).
+- `supabase/functions/kalodata-discovery/index.ts` — broker now also trusts a valid capability nonce
+  (service-role path unchanged); deployed ACTIVE v4.
 
-**Exact secret location required (set this, then the real DE run can execute):**
-- **Supabase → Project `nxaunmyihhjixxxljcqt` → Project Settings → Edge Functions → Manage secrets**
-  (equivalently `supabase secrets set KALODATA_SECRET_KEY=<key> --project-ref nxaunmyihhjixxxljcqt`).
-- Required: **`KALODATA_SECRET_KEY`** = the Kalodata OpenAPI secret key.
-- Optional: `KALODATA_SECRET_HEADER` (HTTP header name; default `secret-key`) and `KALODATA_BASE_URL`
-  (default `https://www.kalodata.com/openapi/v1/tiktok/product/rank`).
+## 5. REAL DE DISCOVERY (bounded, market-only; no product/keyword/category/fixture)
+Invoked via `fn_kalodata_run_discovery(tenant, 'DE', 10, anon)` → broker → Kalodata `product/rank`.
 
-The broker `kalodata-discovery` is already deployed ACTIVE and **fail-closed** — until the secret is set it
-returns `lane_status=AUTH_FAILED` (`server_secret_unavailable`) and never fabricates candidates. No secret
-was requested in chat and none is stored anywhere in the repo or DB. The raw key is NEVER exposed to
-frontend, DB rows, logs, reports, API responses or analytics.
+- **First real run** surfaced two internally-controllable defects (fixed, then re-run):
+  1. The adapter reused `fn_is_sellable_product_entity` (an English keyword-noun gate): all 10 real
+     German titles rejected → `fn_is_product_native_entity` (language-agnostic) added.
+  2. `identity_basis='provider_product_native'` violated a CHECK constraint → use `platform_id`
+     (Kalodata product_id is a platform id); provenance retained in `extended.provider_product_native`.
+- **Verified real run** — discovery run `559f3a89-7ecb-4ea1-9eca-d4e6db50014c`:
+  - Kalodata provider calls: 3 total across diagnosis/fix/verify (10-product `product/rank` each).
+  - Observed credit/cost: provider response exposed no credit field (`provider_usage=null`); founder's
+    prior observation ≈ 0.1 credit per 10-product ranking (treated as observation, not a universal price).
+  - Raw candidates: **10** · deduped: **10 distinct provider ids (0 duplicates)** · eligible/promoted:
+    **10** · rejected: **0** (lane_status `SUCCESS_WITH_CANDIDATES`).
+  - Real DE products discovered (no seed): More/ Makita/ Ankerkraut Adventskalender 2026, DJI Osmo
+    Pocket 4P (€599), DJI Mini 5 Pro drone (€799), ESN Proteinriegel, ONE MEMORY Damenparfum, MERODA
+    foundation, SOPAMI Flachmopp, "Hit the Slab".
 
-## 5. NORMALIZED FIELD MAPPING (via existing `fn_discovery_signal_normalize`; UNKNOWN → NULL, never 0)
-| Kalodata field | Normalized discovery signal |
-|---|---|
-| `product_id` | provider product id (`extended.kalodata_product_id`; dedup key) |
-| `product_name` | `product_identity` |
-| `revenue` | `revenue` (commerce_revenue) |
-| `revenue_growth_rate` | `revenue_growth_rate` |
-| `sales_volumn` *(provider typo)* | `sales_units` |
-| `unit_price` | `price` / `observed_price` |
-| `launch_date` | `first_seen` |
-| `seller_id` / `seller_name` | `extended.kalodata_seller_id` / `kalodata_seller_name` |
-| `live_revenue` / `video_revenue` / `showcase_revenue` | evidence `channel_revenue` (jsonb_strip_nulls) |
-| `master_image_url` | NOT used for qualification (image-independent; see §8) |
-| `sku_count` / missing metrics | remain **NULL** — never coerced to 0 |
+## 6. AUTO-RESEARCH
+All 10 survivors entered the existing auto_fresh_discovery bridge automatically (each got a research
+run; `research_auto_dispatch=RESEARCHING`).
+- Research runs: **10** (7 COMPLETE, 3 INSUFFICIENT_EVIDENCE).
+- Sources attempted per product (multi-source): **DATAFORSEO, EBAY, CJ, META_AD_LIBRARY, REDDIT, TIKTOK**.
+- Source outcomes (evidence_found / no_evidence): DataForSEO 4/6 · eBay 4/6 · CJ 4/6 · Meta Ad Library
+  2/8 · Reddit 0/10 · TikTok 0/10.
 
-Proven in dry-run: a metric-less product promotes with `revenue=null, sales_units=null, price=null,
-revenue_growth_rate=null` (UNKNOWN ≠ 0), and `master_image_url=null` / `seller_name=""` / `sku_count=null`
-never block promotion or imply "bad".
+## 7. CONCRETE RESOLUTION
+Concrete resolution (`fn_assemble_real_product_market`) ran for all 10 → 10 country-isolated DE
+`product_market_evaluations` produced. None reached a benchmark-qualified CONCRETE_RESOLVED state:
+price/stock/economics/compliance/fulfilment gates are all `WATCH` (local market evidence insufficient;
+supplier economics are Stage-2 territory).
 
-## 6. REGRESSION RESULTS (all live, all green)
-- **`fn_kalodata_commerce_adapter_selftest` = 16/16 all_pass** — 01 DE invokes Kalodata with no
-  keyword/category/product/shop/creator/video/livestream seed · 02 product ids become candidates · 03
-  country isolation (DE=DE/EUR, GB=GB, normalized market stays DE) · 04 unsupported market explicit
-  (JP request + ingest + NO-lane) · 05 UNKNOWN≠0 · 06 Kalodata ≠ CONCRETE_RESOLVED · 07 Kalodata ≠ supplier
-  SKU · 08 high revenue cannot bypass qualification · 09 extreme growth cannot bypass · 10 image
-  presence/absence irrelevant · 11 DataForSEO failure not fatal to COMMERCE · 12 Kalodata
-  failure/unsupported does not corrupt other lanes (NO plan keeps 5 lanes, SEARCH READY) + explicit
-  SUCCESS_ZERO_CANDIDATES / PROVIDER_UNAVAILABLE statuses · 13 dedup by provider id · 14 survivors enter
-  auto_fresh_discovery bridge · 15 idempotent (CACHE_REUSED core + pre-dispatch dedup) · 16 secret never
-  persisted.
-- `fn_multi_lane_discovery_selftest` = **16/16** (updated: gap closed; country isolation hardened).
-- `fn_stage1_product_opportunity_invariants_selftest` = **8/8** (updated: structural candidate≠qualified).
-- `fn_autonomous_discovery_selftest` = **12/12**; `fn_stage1_research_bridge_selftest` = **8/8**;
-  `fn_product_image_selftest` = **10/10** (image independence durable).
+## 8. OPPORTUNITY EVALUATION
+10 decisions produced; **every candidate = WATCH (none QUALIFIED/WIN)** — the gates held:
+| Product | Price | Band | Mkt score | Decision | Key blockers |
+|---|---|---|---|---|---|
+| More Adventskalender 2026 | €130.06 | STRONG_TEST | 77.6 | WATCH | SATURATION_VERY_HIGH, PRICE_NOT_LOCALLY_VALIDATED, ECONOMICS/COMPLIANCE/FULFILMENT/STOCK unknown |
+| Makita Adventskalender 2026 | €129.98 | WATCH | 53.0 | WATCH | economics/price/compliance/fulfilment/stock unknown |
+| ESN Proteinriegel | €30.91 | WATCH | 49.7 | WATCH | SATURATION_VERY_HIGH + unknowns |
+| Ankerkraut Adventskalender | €69.92 | AVOID | 22.7 | WATCH | unknowns |
+| Hit the Slab | €80.05 | AVOID | 10.0 | WATCH | SATURATION_UNKNOWN_FAIL_CLOSED + unknowns |
+| DJI Mini 5 Pro / Osmo Pocket 4P / ONE MEMORY / SOPAMI / MERODA | €21–799 | INSUFFICIENT | n/a | WATCH | evidence NONE; fail-closed |
 
-## 7. REAL DE RUN — **BLOCKED (external: missing Kalodata secret)**
-A bounded market-only DE run was NOT executed because the provider call cannot be made:
-- **Discovery run ID:** none created (fail-closed before any provider call).
-- **Kalodata calls:** 0. **Observed credit/cost:** n/a (no call).
-- **Raw / deduped / eligible / rejected candidates:** n/a. **Research run IDs / source outcomes /
-  concrete-resolution / opportunity evaluations:** n/a.
-- **Reason:** `KALODATA_SECRET_KEY` is not set in the backend (see §4); the broker returns
-  `lane_status=AUTH_FAILED` (`server_secret_unavailable`). Also, this execution sandbox's egress proxy does
-  not allowlist the Supabase Functions host, so the broker cannot be invoked from here regardless.
+Critically, the highest-growth / highest-revenue items (DJI €799 drone, €599 camera, Makita) did **not**
+bypass qualification — all WATCH/INSUFFICIENT with explicit blockers. UNKNOWN stayed UNKNOWN. No
+thresholds weakened.
 
-**Everything internally controllable is proven and live.** The DB path (request builder → normalize →
-gate → ingest → register → auto-dispatch) is verified end-to-end via dry-run + the 16/16 regression; the
-candidate→research→evidence→concrete-resolution→evaluation path was proven end-to-end in prior bounded runs.
-The ONE remaining step — a real Kalodata HTTP call — needs the secret above. Once set:
-`POST /functions/v1/kalodata-discovery` (service role) `{"market":"DE","user_id":"<tenant>","candidate_limit":10}`.
+## 9. REGRESSIONS (all green, live)
+Kalodata adapter **17/17** · multi-lane **16/16** · autonomous **12/12** · research bridge **8/8** ·
+Stage-1 invariants **8/8** · product-image independence **10/10**. No null-pass loopholes (pass
+counters treat non-`true` as failure).
 
-## 8. COUNTRY ISOLATION RESULT
-Hard invariant holds. Request/region/currency resolve per market from config (DE→DE/EUR, GB→GB/GBP,
-US→US/USD …). Normalized signals are market-scoped (`market=DE`), `cross_market_reference` is never local
-validation, and an unsupported market returns `UNSUPPORTED_MARKET` with no substitution. Proven by adapter
-checks 03/04 and the multi-lane NO-market test (COMMERCE=UNSUPPORTED while SEARCH stays READY). Image/asset
-qualification is untouched (Product Asset Lock unchanged).
+## 10. RECURRENCE PREVENTED: YES
+Data-driven provider/market config (IE correction + `17_IE_NOT_SILENTLY_SUPPORTED`), language-agnostic
+product-native gate (fixes the English-keyword-gate false-negative generically for all markets),
+constraint-valid identity basis, secure backend trigger, explicit persisted lane outcomes, and the
+17-check regression. DataForSEO stays an independent SEARCH lane; provider failure is never converted
+to "zero market demand"; qualification thresholds untouched.
 
-## 9. RECURRENCE PREVENTED: **YES**
-Data-driven provider/market config + secret-free adapter + fail-closed secure broker + explicit lane
-outcomes (SUCCESS_WITH_CANDIDATES / SUCCESS_ZERO_CANDIDATES / UNSUPPORTED_MARKET / AUTH_FAILED /
-RATE_LIMITED / PAYMENT_REQUIRED / PROVIDER_UNAVAILABLE / FAILED, persisted via
-`fn_kalodata_record_lane_outcome`) + 16-invariant regression. DataForSEO remains an independent SEARCH lane
-(402/zero/rate-limit cannot stop COMMERCE); Kalodata failure cannot corrupt other lanes; provider failure
-is never converted to "zero market demand". Qualification thresholds were NOT weakened.
+## 11. VERDICTS
+- **KALODATA_COMMERCE_ADAPTER = PASS** — real provider, real DE product-native entities, full path
+  (discover → normalize → dedup → eligibility → auto-research → concrete resolution → evaluation).
+- **AUTONOMOUS_PRODUCT_DISCOVERY = PASS** — market (DE) alone produced real product candidates that
+  automatically traversed the research + evaluation path, with no founder product/keyword/category/fixture.
+- **STAGE_1_PRODUCT_OPPORTUNITY_INTELLIGENCE = BLOCKED_QUALITY_OR_EVIDENCE** — Kalodata discovered real
+  products, but none reached CONCRETE_RESOLVED + benchmark-qualified: all WATCH/INSUFFICIENT with honest
+  evidence/saturation blockers. Per the PASS rule this is valid and truthful; the system was not weakened
+  to turn it green.
 
-## 10. KALODATA_COMMERCE_ADAPTER VERDICT: **PASS**
-The production integration is implemented, deployed, and fully regression-proven on every internally
-controllable surface (adapter 16/16; multi-lane, invariants, bridge, autonomous, image suites all green;
-broker ACTIVE and fail-closed; live==repo). The only unexecuted step is the real provider HTTP call, which
-is gated solely by the missing `KALODATA_SECRET_KEY` backend secret (§4) — a genuine external blocker.
-
-## 11. OVERALL STAGE 1 VERDICT: **BLOCKED_QUALITY_OR_EVIDENCE / external secret**
-No genuinely newly discovered product has yet reached CONCRETE_RESOLVED **and** benchmark-qualified
-opportunity from a real Kalodata-discovered candidate, because the real DE run is blocked on the missing
-secret. Per the task's PASS rules this is the acceptable, truthful state: **KALODATA_COMMERCE_ADAPTER =
-PASS**, **STAGE_1 = BLOCKED** (pending the secret, then one bounded real DE run). No thresholds were
-weakened to manufacture a pass. Stage 2 remains not started.
+## 12. NEXT PINNED STAGE (inside Stage 1)
+Stage 2 NOT started (correctly blocked). Remaining inside Stage 1 to reach a genuine PASS: a discovered
+product must clear local-market price validation + saturation + evidence sufficiency and reach
+benchmark-qualified CONCRETE_RESOLVED. Levers (no threshold weakening): broaden/rotate the Kalodata
+ranking windows (e.g., lower price bands, additional `launch_date`/sort strategies) so candidates skew
+toward lower-saturation, dropship-viable products rather than high-priced branded SKUs (DJI/Makita);
+and ensure local-market research evidence (DataForSEO/eBay/CJ) is sufficient when provider credit allows.

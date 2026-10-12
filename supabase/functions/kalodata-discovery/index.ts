@@ -98,7 +98,17 @@ async function recordOutcome(userId: string, market: string, laneStatus: string,
 
 Deno.serve(async (req) => {
   if (req.method !== "POST") return jsonResponse(405, { ok: false, error: "method_not_allowed" });
-  if (!isTrustedServer(req)) return jsonResponse(403, { ok: false, error: "forbidden_requires_service_role" });
+  // Trusted either by the service role, OR by a single-use capability nonce created by the
+  // DB orchestrator (fn_kalodata_run_discovery) and validated via our own service-role DB
+  // access. No shared secret is exposed; the nonce is 244-bit, single-use and 5-min TTL.
+  let trusted = isTrustedServer(req);
+  if (!trusted) {
+    const nonce = req.headers.get("x-pulse-nonce");
+    if (nonce && nonce.length >= 32) {
+      try { const nr = await rpc("fn_kalodata_consume_invoke_nonce", { p_token: nonce }); trusted = nr.ok && (nr.body === true || nr.body === "true"); } catch { trusted = false; }
+    }
+  }
+  if (!trusted) return jsonResponse(403, { ok: false, error: "forbidden_requires_service_role_or_valid_nonce" });
 
   let payload: any = {};
   const raw = await req.text();

@@ -1,15 +1,13 @@
--- mig_374d — Kalodata COMMERCE adapter regression (16 invariants)
+-- mig_374d — Kalodata COMMERCE adapter regression (17 invariants)
 --
 -- Read-only / dry-run: exercises the real request builder, multi-lane plan, normalizer and
 -- ingest adapter (dry_run=true, no persistence) plus function-definition introspection. No
--- research runs, no commerce rows, no provider calls, no writes to live prod. Proves the 16
--- required Stage 1 Kalodata invariants. Consistent with the fn_autonomous_discovery_selftest
--- / fn_multi_lane_discovery_selftest style.
+-- research runs, no commerce rows, no provider calls, no writes to live prod.
 --
 --  01 DE invokes Kalodata with NO keyword/category/product/shop/creator/video/livestream seed
 --  02 returned product ids become discovery candidates (dry-run promote)
 --  03 country isolation (DE request=DE/EUR; GB request=GB; normalized market stays DE)
---  04 unsupported market explicit (JP request + ingest + plan lane -> UNSUPPORTED_MARKET)
+--  04 unsupported market explicit (IE request + ingest -> UNSUPPORTED_MARKET; NO lane UNSUPPORTED)
 --  05 UNKNOWN != 0 (metric-less product promotes; revenue/sales/price/growth stay NULL)
 --  06 Kalodata product != CONCRETE_RESOLVED (no assemble/concrete-resolution in adapter)
 --  07 Kalodata product != supplier SKU (identity_basis=provider_product_native; no supplier asset write)
@@ -22,6 +20,7 @@
 --  14 survivors enter existing auto_fresh_discovery bridge
 --  15 no duplicate research runs (idempotent CACHE_REUSED core + pre-dispatch dedup)
 --  16 secret never persisted (adapter is secret-free: p_products input; no secret literal; request body has no auth field)
+--  17 IE cannot silently become supported without provider capability config (data-driven; UNSUPPORTED_MARKET, never substituted)
 --
 -- check_function_bodies disabled for this CREATE only (managed-instance validation path).
 
@@ -34,27 +33,32 @@ DECLARE
   v jsonb := '[]'::jsonb; n_fail int;
   uid uuid := '7c8ddf9d-172c-4a89-a402-bb7066228b61'::uuid;
   prods jsonb := '[{"product_id":"kd_sel_1","product_name":"Mini Neck Fan","revenue":"1000","revenue_growth_rate":"4190.39","sales_volumn":"22","unit_price":"26.16","launch_date":"2026-09-20","live_revenue":"300","video_revenue":"500","showcase_revenue":"200","master_image_url":"https://x/y.jpg","seller_id":"s1","seller_name":"ACME","sku_count":"3"},{"product_id":"kd_sel_2","product_name":"Portable Blender Bottle","master_image_url":null,"seller_name":"","sku_count":null},{"product_id":"","product_name":"missing id"},{"product_id":"kd_sel_4","product_name":"the best cheap deals near me how to"}]'::jsonb;
-  req_de jsonb; req_jp jsonb; plan_de jsonb; plan_gb jsonb; plan_no jsonb;
-  dry_de jsonb; dry_jp jsonb; dry_de_empty jsonb; dry_de_nonarray jsonb;
-  lane_de_com jsonb; lane_gb_com jsonb; lane_no_com jsonb; lane_no_search jsonb;
+  req_de jsonb; req_ie jsonb; plan_de jsonb; plan_gb jsonb; plan_no jsonb; plan_ie jsonb;
+  dry_de jsonb; dry_ie jsonb; dry_de_empty jsonb; dry_de_nonarray jsonb;
+  lane_de_com jsonb; lane_gb_com jsonb; lane_no_com jsonb; lane_no_search jsonb; lane_ie_com jsonb;
   pr_fan jsonb; pr_blender jsonb;
   d_ing text; d_core text; d_plan text; img boolean; has_pp boolean;
+  ie_supported boolean; ie_enabled boolean; ie_in_enabled_set boolean;
 BEGIN
   req_de := public.fn_kalodata_discovery_request('DE');
-  req_jp := public.fn_kalodata_discovery_request('JP');
+  req_ie := public.fn_kalodata_discovery_request('IE');
   plan_de := public.fn_multi_lane_discovery_plan('DE',5,uid);
   plan_gb := public.fn_multi_lane_discovery_plan('GB',5,NULL);
   plan_no := public.fn_multi_lane_discovery_plan('NO',5,NULL);
+  plan_ie := public.fn_multi_lane_discovery_plan('IE',5,NULL);
   dry_de := public.fn_kalodata_ingest_candidates(uid,'DE',NULL,10,prods,true);
-  dry_jp := public.fn_kalodata_ingest_candidates(uid,'JP',NULL,10,prods,true);
+  dry_ie := public.fn_kalodata_ingest_candidates(uid,'IE',NULL,10,prods,true);
   dry_de_empty := public.fn_kalodata_ingest_candidates(uid,'DE',NULL,10,'[]'::jsonb,true);
   dry_de_nonarray := public.fn_kalodata_ingest_candidates(uid,'DE',NULL,10,'{}'::jsonb,true);
   SELECT e INTO lane_de_com FROM jsonb_array_elements(plan_de->'lanes') e WHERE e->>'lane'='COMMERCE';
   SELECT e INTO lane_gb_com FROM jsonb_array_elements(plan_gb->'lanes') e WHERE e->>'lane'='COMMERCE';
   SELECT e INTO lane_no_com FROM jsonb_array_elements(plan_no->'lanes') e WHERE e->>'lane'='COMMERCE';
   SELECT e INTO lane_no_search FROM jsonb_array_elements(plan_no->'lanes') e WHERE e->>'lane'='SEARCH';
+  SELECT e INTO lane_ie_com FROM jsonb_array_elements(plan_ie->'lanes') e WHERE e->>'lane'='COMMERCE';
   SELECT e INTO pr_fan FROM jsonb_array_elements(dry_de->'promoted') e WHERE e->>'product_id'='kd_sel_1';
   SELECT e INTO pr_blender FROM jsonb_array_elements(dry_de->'promoted') e WHERE e->>'product_id'='kd_sel_2';
+  SELECT supported, enabled INTO ie_supported, ie_enabled FROM public.discovery_provider_market_config WHERE provider='KALODATA' AND market='IE';
+  ie_in_enabled_set := coalesce(ie_supported,false) AND coalesce(ie_enabled,false);
   SELECT pg_get_functiondef(p.oid) INTO d_ing FROM pg_proc p JOIN pg_namespace nn ON nn.oid=p.pronamespace WHERE nn.nspname='public' AND p.proname='fn_kalodata_ingest_candidates';
   SELECT pg_get_functiondef(p.oid) INTO d_core FROM pg_proc p JOIN pg_namespace nn ON nn.oid=p.pronamespace WHERE nn.nspname='public' AND p.proname='fn_research_request_core';
   SELECT pg_get_functiondef(p.oid) INTO d_plan FROM pg_proc p JOIN pg_namespace nn ON nn.oid=p.pronamespace WHERE nn.nspname='public' AND p.proname='fn_multi_lane_discovery_plan';
@@ -78,8 +82,8 @@ BEGIN
      AND lane_gb_com->'kalodata_request'->>'region'='GB'
      AND pr_fan->'normalized'->>'market'='DE' AND pr_blender->'normalized'->>'market'='DE'));
   v := v || jsonb_build_object('check','04_UNSUPPORTED_MARKET_EXPLICIT','pass',
-    (req_jp->>'reason'='UNSUPPORTED_MARKET' AND dry_jp->>'status'='UNSUPPORTED_MARKET'
-     AND NOT (dry_jp ? 'promoted') AND lane_no_com->>'status'='UNSUPPORTED_MARKET'));
+    (req_ie->>'reason'='UNSUPPORTED_MARKET' AND dry_ie->>'status'='UNSUPPORTED_MARKET'
+     AND NOT (dry_ie ? 'promoted') AND lane_no_com->>'status'='UNSUPPORTED_MARKET'));
   v := v || jsonb_build_object('check','05_UNKNOWN_NOT_ZERO','pass',
     (pr_blender IS NOT NULL
      AND (pr_blender->'normalized'->'revenue')='null'::jsonb
@@ -119,8 +123,17 @@ BEGIN
      AND NOT (req_de->'request_body' ? 'secret') AND NOT (req_de->'request_body' ? 'key')
      AND NOT (req_de->'request_body' ? 'token') AND NOT (req_de->'request_body' ? 'authorization')
      AND NOT (req_de->'request_body' ? 'auth')));
+  -- IE was wrongly inserted as supported; prove it cannot silently become supported without
+  -- provider capability config: IE is explicitly disabled in config, not in the enabled set,
+  -- and Kalodata refuses IE at request + COMMERCE-lane level even though Strateloq supports IE
+  -- (plan runs) -> UNSUPPORTED_MARKET, never substituted.
+  v := v || jsonb_build_object('check','17_IE_NOT_SILENTLY_SUPPORTED','pass',
+    (ie_supported IS FALSE AND ie_enabled IS FALSE AND ie_in_enabled_set IS FALSE
+     AND req_ie->>'reason'='UNSUPPORTED_MARKET'
+     AND (plan_ie->>'ok')::boolean AND lane_ie_com->>'status'='UNSUPPORTED_MARKET'),
+    'detail', jsonb_build_object('ie_supported',ie_supported,'ie_enabled',ie_enabled,'strateloq_supports_ie',(plan_ie->>'ok')::boolean));
 
-  SELECT count(*) INTO n_fail FROM jsonb_array_elements(v) x WHERE NOT (x->>'pass')::boolean;
+  SELECT count(*) INTO n_fail FROM jsonb_array_elements(v) x WHERE (x->>'pass') IS DISTINCT FROM 'true';
   RETURN jsonb_build_object('suite','kalodata_commerce_adapter','contract','stage1_kalodata_commerce_v1',
     'total',jsonb_array_length(v),'failed',n_fail,'all_pass',(n_fail=0),'results',v);
 END; $function$;
