@@ -1,4 +1,4 @@
--- mig_378e — FastMoss COMMERCE adapter regression (18 invariants)
+-- mig_378e — FastMoss COMMERCE adapter regression (19 invariants)
 --
 -- Read-only / dry-run + introspection: exercises the real request builder, multi-lane plan,
 -- normalizer, branded/IP screen and ingest adapter (dry_run=true, no persistence, NO live
@@ -13,6 +13,7 @@
 --  14 provider secret cannot reach DB/client/logs · 15 unverified launch_time != first_seen
 --  16 eligible candidate enters auto_fresh_discovery · 17 repeated ingestion idempotent
 --  18 existing Kalodata/multi-lane/bridge/Stage-1/image/autonomous suites remain green
+--  19 New Listed date contract: date_info.value = 3 days ago (UTC), offset invariant = 3
 --
 -- check_function_bodies disabled for this CREATE only (managed-instance validation path).
 SET check_function_bodies = off;
@@ -106,6 +107,11 @@ BEGIN
      AND (public.fn_stage1_product_opportunity_invariants_selftest()->>'all_pass')::boolean
      AND (public.fn_product_image_selftest()->>'all_pass')::boolean
      AND (public.fn_autonomous_discovery_selftest()->>'all_pass')::boolean));
+  v := v || jsonb_build_object('check','19_DATE_CONTRACT_3_DAYS_AGO','pass',
+    ((req_de->>'date_offset_days')::int = 3
+     AND req_de->'request_body'->'filter'->'date_info'->>'type' = 'day'
+     AND req_de->'request_body'->'filter'->'date_info'->>'value' = to_char(((now() AT TIME ZONE 'UTC')::date - 3),'YYYY-MM-DD')),
+    'detail', jsonb_build_object('request_date', req_de->'request_body'->'filter'->'date_info'->>'value','offset_days', req_de->>'date_offset_days'));
 
   SELECT count(*) INTO n_fail FROM jsonb_array_elements(v) x WHERE (x->>'pass') IS DISTINCT FROM 'true';
   RETURN jsonb_build_object('suite','fastmoss_commerce_adapter','contract','stage1_fastmoss_commerce_v1',

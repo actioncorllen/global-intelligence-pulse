@@ -1,12 +1,16 @@
 -- mig_378b — FastMoss request builder + branded/IP screen + lane-outcome recorder
 --             + multi-lane plan v3 (additive: COMMERCE lane exposes both providers).
 
--- Seed-free New Listed request builder. date_info.value is DERIVED (yesterday UTC, a
--- completed provider day) per the FastMoss contract, never the hardcoded test date.
+-- Seed-free New Listed request builder. date_info.value is DERIVED as 3 days ago (UTC) per the
+-- FastMoss New Listed contract; the offset is centralized + exposed as an explicit invariant
+-- (date_offset_days) so it cannot silently drift. Never a hardcoded calendar date.
 CREATE OR REPLACE FUNCTION public.fn_fastmoss_discovery_request(p_market text)
  RETURNS jsonb LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path TO ''
 AS $function$
-DECLARE c record; v_date text := to_char(((now() AT TIME ZONE 'UTC')::date - 1), 'YYYY-MM-DD');
+DECLARE
+  c record;
+  v_offset_days int := 3;  -- FastMoss New Listed contract: date_info.value = 3 days ago (UTC)
+  v_date text := to_char(((now() AT TIME ZONE 'UTC')::date - v_offset_days), 'YYYY-MM-DD');
 BEGIN
   SELECT * INTO c FROM public.discovery_provider_market_config
     WHERE provider='FASTMOSS' AND market=upper(btrim(coalesce(p_market,''))) AND supported AND enabled;
@@ -16,14 +20,14 @@ BEGIN
   RETURN jsonb_build_object('ok',true,'provider','FASTMOSS','market',c.market,'region',c.region,'currency',c.currency,
     'endpoint','POST https://openapi.fastmoss.com/product/v1/rank/newListed',
     'auth','Authorization: Bearer <client_secret> (backend broker only; never in DB/logs/response)',
-    'strategy','new_listed_early',
+    'strategy','new_listed_early','date_offset_days',v_offset_days,
     'request_body', jsonb_build_object(
       'filter', jsonb_build_object('region', c.region, 'date_info', jsonb_build_object('type','day','value',v_date)),
       'orderby', jsonb_build_array(jsonb_build_object('field','day3_units_sold','order','desc')),
       'page', 1, 'pagesize', 10),
-    'date_rule','day; anchored to yesterday (UTC), a completed provider day (derived, not hardcoded)',
+    'date_rule','day; value = 3 days ago (UTC) per FastMoss New Listed contract (derived via date_offset_days, not hardcoded)',
     'note','new-listed early discovery; candidates only, never opportunity. No keyword/category/product/shop/creator/video seed.',
-    'contract','pulse_fastmoss_request_v1');
+    'contract','pulse_fastmoss_request_v2');
 END; $function$;
 GRANT EXECUTE ON FUNCTION public.fn_fastmoss_discovery_request(text) TO authenticated, service_role;
 
