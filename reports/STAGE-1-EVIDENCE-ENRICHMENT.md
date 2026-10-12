@@ -53,4 +53,4 @@ No FastMoss/Kalodata discovery calls. Research bridge re-dispatched for the 6 ex
 Country-local demand/price evidence is insufficient for these DE new-listed items: `metric_scope = LOCAL_UNVALIDATED`, `overall_evidence_confidence = NONE`. DataForSEO (search demand) and eBay-DE (marketplace price) returned no evidence even for clean German queries — consistent with DataForSEO credit scarcity and thin marketplace presence for brand-new TikTok-Shop items; Meta ad evidence alone yields a score but not confidence or a validated local price. A Stage-1 PASS needs a discovered product whose Stage-1-owned local evidence (validated local price + demand confidence + manageable saturation) clears the existing thresholds — likely requiring DataForSEO credit restored and/or candidates skewed toward items with real German search/marketplace footprint.
 
 ## 16. Commit hash
-(to be filled by the commit)
+`9a002df` (branch `claude/cool-faraday-kgudh1`); this line added in the follow-up commit.
