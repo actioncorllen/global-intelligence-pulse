@@ -62,7 +62,9 @@ BEGIN
       IF (v_gate->>'verdict') <> 'ACCEPT' THEN
         v_skipped := v_skipped || jsonb_build_array(jsonb_build_object('product_id',v_kid,'product_name',v_name,'reason','not_product_entity')); CONTINUE; END IF;
       v_qualified := v_qualified + 1;
-      v_family := v_gate->>'normalized_name';
+      -- family key: conservative decoration-stripping (so provider tags like [Y] do not split
+      -- a product into independent families); see mig_379a fn_product_family_key.
+      v_family := public.fn_product_family_key(v_name);
       v_brand := public.fn_is_branded_or_ip_sensitive(v_name);
       v_screen := v_brand->>'screening_state';
       v_dispatch := NOT (v_brand->>'flagged')::boolean;
