@@ -1,59 +1,74 @@
 {
-  "_dr_note": "STRATELOQ DR n8n workflow manifest (Stage-2E). Credential values NEVER included — only references {id,name}. Recreate credentials per dr/runbook/SECRETS-RECOVERY.md, then regenerate the workflow from the committed SDK source 'nnoDjxtEeTqwC6q6_stage2-cj-supplier-search.sdk.js' via the n8n MCP create_workflow_from_code (authoritative definition). This manifest documents structure + contracts; full node jsCode lives in the .sdk.js sibling. Node jsCode is intentionally not duplicated here to avoid drift.",
+  "_dr_note": "STRATELOQ DR n8n workflow manifest (Stage-2E, hardened). Credential values NEVER included — only references {id,name}. Full DR regeneration requires BOTH: (1) apply supabase migration mig_292_stage2_cj_search_idempotency.sql, (2) recreate this 14-node workflow per the structure below (claim gate + IF branch + webhook header auth). The sibling *.sdk.js is the INITIAL 9-node build only; the hardening (claim gate, complete, duplicate-replay, header auth, required request_id) was applied via workflow update ops + mig_292 and is described authoritatively here. The live n8n workflow is the source of truth.",
   "id": "nnoDjxtEeTqwC6q6",
   "name": "Pulse — Stage-2 CJ Supplier Search (search-only)",
   "stage": "STAGE_2E",
   "active": false,
   "published": false,
-  "deployment_note": "Built, validated, fixture-tested. INACTIVE/unpublished by design — webhook endpoint is not live until the founder explicitly publishes. Test/manual executions work while inactive.",
+  "deployment_note": "Built, validated, fixture-tested, hardened. INACTIVE/unpublished by design — activation + a live auth probe is the founder-gated step (webhook auth rejection is only provable against a live endpoint).",
+  "depends_on_migration": "mig_292_stage2_cj_search_idempotency.sql",
   "trigger": {
     "type": "n8n-nodes-base.webhook",
     "httpMethod": "POST",
     "path": "stage2-cj-supplier-search",
-    "responseMode": "lastNode"
+    "responseMode": "lastNode",
+    "authentication": "headerAuth",
+    "auth_header_name": "x-pulse-webhook-secret",
+    "auth_note": "Reuses the shared inbound webhook credential used by existing Pulse webhook workers. Secret value lives only in the n8n credential store (never in repo/JSON/logs)."
   },
   "settings": { "executionOrder": "v1" },
   "credential_refs": [
+    { "type": "httpHeaderAuth", "id": "ew4z88ejs40FCkqi", "name": "Header Auth account 4", "role": "inbound webhook auth (x-pulse-webhook-secret)" },
     { "type": "httpCustomAuth", "id": "2IV5tXPu9jAItjKh", "name": "CJ Dropshipping API", "reused_from": "Pulse — Research Executor: CJ (013K)" },
-    { "type": "supabaseApi", "id": "jMhzgwaHX9jwZ7rA", "name": "Supabase account", "reused": true }
+    { "type": "supabaseApi", "id": "jMhzgwaHX9jwZ7rA", "name": "Supabase account" }
   ],
   "connections": {
     "Stage-2 Search Request": "Validate Input",
     "Validate Input": "Verify Owner",
     "Verify Owner": "Assert Owned",
-    "Assert Owned": "CJ Auth",
+    "Assert Owned": "Claim Request",
+    "Claim Request": "Assert Claim OK",
+    "Assert Claim OK": "IF Proceed",
+    "IF Proceed[0 true]": "CJ Auth",
+    "IF Proceed[1 false]": "Duplicate Replay Response",
     "CJ Auth": "CJ Search",
     "CJ Search": "Build Candidates",
     "Build Candidates": "Resolve Identity",
-    "Resolve Identity": "Build Response"
+    "Resolve Identity": "Complete Request",
+    "Complete Request": "Build Response"
   },
   "nodes": [
-    { "name": "Stage-2 Search Request", "type": "n8n-nodes-base.webhook", "typeVersion": 2.1, "role": "runtime input (tenant_id, product_id, market, search_query, request_id, persist)" },
-    { "name": "Validate Input", "type": "n8n-nodes-base.code", "typeVersion": 2, "role": "fail-closed validation: uuid tenant_id+product_id, non-empty market+search_query; normalize market upper, persist default false" },
-    { "name": "Verify Owner", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.5, "credential_ref": "supabaseApi", "role": "tenant-ownership check: GET commerce_products?id=eq&user_id=eq (Accept: vnd.pgrst.object+json)" },
-    { "name": "Assert Owned", "type": "n8n-nodes-base.code", "typeVersion": 2, "role": "fail closed (STAGE2_TENANT_PRODUCT_NOT_OWNED) unless returned id == product_id; before any CJ call" },
-    { "name": "CJ Auth", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.5, "credential_ref": "httpCustomAuth", "role": "CJ getAccessToken (reused existing CJ connection)" },
-    { "name": "CJ Search", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.5, "role": "CJ product/list with RUNTIME productNameEn = search_query (no hardcoded query); single call per invocation" },
-    { "name": "Build Candidates", "type": "n8n-nodes-base.code", "typeVersion": 2, "role": "normalize to Stage-2 candidate shape + build resolver rpc_body (does NOT judge matches)" },
-    { "name": "Resolve Identity", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.5, "credential_ref": "supabaseApi", "role": "POST rpc/fn_resolve_concrete_supplier_identity (EXISTING resolver, unchanged); p_persist from input" },
-    { "name": "Build Response", "type": "n8n-nodes-base.code", "typeVersion": 2, "role": "envelope: echo request_id, candidate_count, resolver verdict, bound" }
+    { "name": "Stage-2 Search Request", "type": "n8n-nodes-base.webhook", "typeVersion": 2.1, "role": "runtime input + header auth (x-pulse-webhook-secret) enforced before any node" },
+    { "name": "Validate Input", "type": "n8n-nodes-base.code", "typeVersion": 2, "role": "fail-closed validation; request_id REQUIRED (regex [A-Za-z0-9._:-]{8,200}); uuid tenant/product; non-empty market+search_query; persist default false" },
+    { "name": "Verify Owner", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.5, "credential_ref": "supabaseApi", "role": "tenant-ownership check (commerce_products, Accept vnd.pgrst.object+json)" },
+    { "name": "Assert Owned", "type": "n8n-nodes-base.code", "typeVersion": 2, "role": "fail closed (STAGE2_TENANT_PRODUCT_NOT_OWNED)" },
+    { "name": "Claim Request", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.5, "credential_ref": "supabaseApi", "role": "ATOMIC idempotency gate: rpc/fn_stage2_cj_search_claim (INSERT ON CONFLICT DO NOTHING)" },
+    { "name": "Assert Claim OK", "type": "n8n-nodes-base.code", "typeVersion": 2, "role": "fail closed on claim rejection (STAGE2_CLAIM_REJECTED)" },
+    { "name": "IF Proceed", "type": "n8n-nodes-base.if", "typeVersion": 2.2, "role": "proceed==true -> CJ path (first claimer only); else -> duplicate replay (no CJ)" },
+    { "name": "CJ Auth", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.5, "credential_ref": "httpCustomAuth", "role": "CJ getAccessToken" },
+    { "name": "CJ Search", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.5, "role": "CJ product/list, RUNTIME productNameEn = search_query; one call per invocation" },
+    { "name": "Build Candidates", "type": "n8n-nodes-base.code", "typeVersion": 2, "role": "normalize to Stage-2 candidate shape + build resolver rpc_body (no match decision)" },
+    { "name": "Resolve Identity", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.5, "credential_ref": "supabaseApi", "role": "EXISTING resolver fn_resolve_concrete_supplier_identity (unchanged); p_persist from input" },
+    { "name": "Complete Request", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.5, "credential_ref": "supabaseApi", "role": "rpc/fn_stage2_cj_search_complete: store result on the claimed row (enables duplicate replay)" },
+    { "name": "Build Response", "type": "n8n-nodes-base.code", "typeVersion": 2, "role": "proceed-path envelope (idempotent_replay=false, provider_called=true)" },
+    { "name": "Duplicate Replay Response", "type": "n8n-nodes-base.code", "typeVersion": 2, "role": "duplicate-path envelope (idempotent_replay=true) returning cached result; CJ never called" }
   ],
   "runtime_input_contract": {
     "tenant_id": "uuid (required)",
     "product_id": "uuid (required)",
     "market": "text (required, upper-cased)",
     "search_query": "non-empty text (required) — NEVER hardcoded",
-    "request_id": "idempotency key (optional, echoed)",
+    "request_id": "REQUIRED idempotency key, regex [A-Za-z0-9._:-]{8,200}; fail closed if missing/malformed; never server-generated",
     "persist": "boolean (optional, default false)"
   },
-  "output_candidate_contract": {
-    "supplier": "CJ",
-    "supplier_product_id": "string",
-    "sku": "string|null",
-    "title": "string",
-    "category": "string|null",
-    "variant": "null",
-    "supplier_reference": "sku || supplier_product_id"
+  "idempotency": {
+    "logical_key": ["tenant_id", "opportunity_product_id", "market", "request_id"],
+    "store": "public.commerce_stage2_search_request (unique on logical_key)",
+    "gate": "fn_stage2_cj_search_claim — INSERT ON CONFLICT DO NOTHING; only the winning INSERT returns proceed=true",
+    "concurrency": "two near-simultaneous identical claims: the unique index serializes; exactly one proceeds, the other gets duplicate=true (no CJ)",
+    "duplicate_replay": "returns the stored result (or in-progress status) without reaching CJ",
+    "different_request_id": "new authorized search",
+    "cross_tenant_or_product_or_market": "isolated (distinct logical key; cross-tenant also fails closed via ownership check)"
   },
   "boundaries": {
     "search_only": true,

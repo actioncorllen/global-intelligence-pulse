@@ -1,3 +1,10 @@
+// NOTE (Stage-2E hardening): this is the INITIAL 9-node build of workflow nnoDjxtEeTqwC6q6.
+// The LIVE production workflow is the hardened 14-node version: it adds a required request_id,
+// an atomic persistent-idempotency claim gate (Claim Request -> Assert Claim OK -> IF Proceed),
+// Complete Request, Duplicate Replay Response, and webhook header auth (x-pulse-webhook-secret).
+// Those changes depend on supabase migration mig_292_stage2_cj_search_idempotency.sql and are
+// described authoritatively in the sibling manifest nnoDjxtEeTqwC6q6_stage2-cj-supplier-search.json.
+// The live n8n workflow is the source of truth; regenerate = apply mig_292 + rebuild per the manifest.
 import { workflow, trigger, node, expr } from '@n8n/workflow-sdk';
 
 const webhookTrigger = trigger({

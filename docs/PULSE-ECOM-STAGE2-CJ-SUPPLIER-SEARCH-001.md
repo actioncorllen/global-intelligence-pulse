@@ -115,3 +115,69 @@ non-IP product.
 `Pulse — Research Executor: CJ (013K)` remains the **Stage-1** research executor (unchanged). The Stage-2
 search path is now this separate workflow. 013K does not need changing for Stage-2 and should not be
 repurposed; if Stage-1 ever needs a parameterized term, that is a separate change.
+
+---
+
+## Stage-2E hardening addendum (persistent idempotency + webhook auth)
+
+The initial build relied on caller-side `request_id` echo, which does not guarantee that one logical request
+cannot fan out into multiple CJ searches. This addendum closes that defect durably.
+
+### Durable, concurrency-safe idempotency (`mig_292`)
+
+New ledger `public.commerce_stage2_search_request` with `UNIQUE (tenant_id, opportunity_product_id, market,
+request_id)` and two SECURITY DEFINER functions (mirrors the `social_publish_attempts.idempotency_key` pattern):
+
+- `fn_stage2_cj_search_claim(tenant, product, market, request_id, search_query)` — atomic
+  `INSERT … ON CONFLICT DO NOTHING`. Returns `proceed=true` to the single caller whose INSERT wins; every other
+  caller for the same logical key gets `duplicate=true, proceed=false` with the stored result. Fails closed if the
+  tenant does not own the product or any key field is missing. The unique index serializes concurrent identical
+  claims, so two near-simultaneous duplicates can never both proceed.
+- `fn_stage2_cj_search_complete(tenant, product, market, request_id, result, provider_called)` — records the
+  result on the claimed row, enabling duplicate replays to return the cached result with no CJ call.
+
+### Hardened flow
+
+```
+Webhook (header auth: x-pulse-webhook-secret)
+  -> Validate Input      (request_id now REQUIRED; fail closed)
+  -> Verify Owner -> Assert Owned
+  -> Claim Request       (atomic idempotency gate)
+  -> Assert Claim OK     (fail closed on claim rejection)
+  -> IF Proceed
+       true  -> CJ Auth -> CJ Search -> Build Candidates -> Resolve Identity -> Complete Request -> Build Response
+       false -> Duplicate Replay Response   (cached result; CJ NEVER called)
+```
+
+### Webhook authentication
+
+The webhook uses n8n header auth bound to the shared inbound credential `Header Auth account 4`
+(header `x-pulse-webhook-secret`) — the same credential guarding existing production Pulse webhook workers.
+The secret value lives only in the n8n credential store (never in repo, workflow JSON, query string, logs, or
+response bodies). Auth is enforced at the webhook layer before any node runs, so it precedes CJ.
+
+### Hardening test results (fixtures / SQL dry-run — zero live CJ calls)
+
+| # | test | result |
+|---|---|---|
+| 1 | valid authenticated request accepted | PASS (proceed path, exec 30476) |
+| 2 | missing/invalid auth rejected before CJ | CONFIG-ENFORCED (headerAuth bound); provable only by live probe post-activation |
+| 3 | missing request_id rejected | PASS (STAGE2_INPUT_INVALID: request_id_missing_or_malformed) |
+| 4 | first logical request allowed | PASS (claim proceed=true) |
+| 5 | exact duplicate does NOT reach CJ | PASS (exec 30477: only Duplicate Replay Response ran; CJ Auth/Search/Resolve/Complete absent) |
+| 6 | concurrent duplicate cannot both acquire | PASS (unique index + ON CONFLICT DO NOTHING; 1 row per key) |
+| 7 | same request_id + different tenant cannot collide | PASS (distinct key; cross-tenant also fails closed) |
+| 8 | same request_id + different product cannot collide | PASS (distinct key → proceed=true) |
+| 9 | different request_id may execute independently | PASS (proceed=true) |
+| 10 | p_persist=false cannot bind | PASS (resolver dry-run; persist passed through false) |
+| 11 | Stage-1 ingest absent | PASS (no fn_research_ingest_source node) |
+| 12 | sourcing/order absent | PASS (no such nodes) |
+| 13 | existing 013K unchanged | PASS (not touched) |
+| 14 | no secrets exposed | PASS (credential refs by id; secret in n8n store; header NAME is not a secret value) |
+
+### Activation status (post-hardening)
+
+Idempotency is deployed (`mig_292` live) and fully verified. Webhook auth is deployed (bound to the production
+inbound-webhook credential). The workflow remains **INACTIVE/unpublished**: the auth *rejection* can only be
+proven against a live endpoint, so activation + a one-shot live auth probe (missing header → 401; valid header →
+200) is the single founder-gated remaining step before the first authorized live CJ smoke test.
