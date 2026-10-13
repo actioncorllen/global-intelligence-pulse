@@ -102,22 +102,22 @@ BEGIN
   v:=v||jsonb_build_object('check','12_images_not_a_data_source','pass',(coalesce(d_derive,'') !~* 'image_url|supplier_product_assets|asset_type|product_image|_image|gallery'));
   v:=v||jsonb_build_object('check','13_ebay_path_still_works','pass',((d_ebay->>'concrete_state')='CONCRETE_RESOLVED' AND (d_ebay->'concrete_identity'->'evidence_sources'->>'primary')='EBAY_BROWSE'));
   v:=v||jsonb_build_object('check','14_keyword_overlap_not_equivalence','pass',(r_fig->>'identity_result')='NO_VALID_CJ_MATCH');
-  v:=v||jsonb_build_object('check','16_ambiguous_stays_ambiguous','pass',(r_amb->>'identity_result')='CONCRETE_PRODUCT_AMBIGUOUS');
-  v:=v||jsonb_build_object('check','17_exact_requires_supplier_identity','pass',((r_de->>'identity_result')='EXACT_SUPPLIER_IDENTITY_RESOLVED' AND (r_de->>'bound')='true'));
-  v:=v||jsonb_build_object('check','18_stage1_unchanged','pass',(coalesce(d_oppq,'') ~ 'pulse_stage1_opportunity_qualification_v1'));
-  v:=v||jsonb_build_object('check','19_commercial_gate_unchanged','pass',(coalesce(d_cv,'') ~ 'fn_stage1_opportunity_qualified'));
+  v:=v||jsonb_build_object('check','15_ambiguous_stays_ambiguous','pass',(r_amb->>'identity_result')='CONCRETE_PRODUCT_AMBIGUOUS');
+  v:=v||jsonb_build_object('check','16_exact_requires_supplier_identity','pass',((r_de->>'identity_result')='EXACT_SUPPLIER_IDENTITY_RESOLVED' AND (r_de->>'bound')='true'));
+  v:=v||jsonb_build_object('check','17_stage1_unchanged','pass',(coalesce(d_oppq,'') ~ 'pulse_stage1_opportunity_qualification_v1'));
+  v:=v||jsonb_build_object('check','18_commercial_gate_unchanged','pass',(coalesce(d_cv,'') ~ 'fn_stage1_opportunity_qualified'));
   -- Stage-2C cross-language
-  v:=v||jsonb_build_object('check','20_source_canonical_eligible','pass',((d_con->'match_spec'->>'canonical_cross_language')='true' AND jsonb_array_length(d_con->'match_spec'->'canonical_attr_all')=3));
-  v:=v||jsonb_build_object('check','21_source_phrase_provenance_preserved','pass',((d_con->'concrete_identity'->>'concrete_phrase')='beleuchtete krippen wanddekoration' AND jsonb_array_length(d_con->'concrete_identity'->'source_language_tokens')=3));
-  v:=v||jsonb_build_object('check','22_en_equiv_reaches_and_qualifies','pass',((r_en->>'identity_result')='EXACT_SUPPLIER_IDENTITY_RESOLVED' AND (r_en->>'bound')='true' AND (r_en->'candidates_considered'->0->'evidence'->>'match_language')='CROSS_LANGUAGE_CANONICAL'));
-  v:=v||jsonb_build_object('check','23_fr_equiv_cross_language','pass',(r_fr->>'identity_result')='EXACT_SUPPLIER_IDENTITY_RESOLVED');
-  v:=v||jsonb_build_object('check','24_generic_translated_keyword_rejects','pass',(r_xmas->>'identity_result')='NO_VALID_CJ_MATCH');
-  v:=v||jsonb_build_object('check','25_led_wall_light_form_conflict_rejects','pass',((r_led->>'identity_result')='NO_VALID_CJ_MATCH' AND jsonb_array_length(r_led->'contradictory_evidence')>=1));
-  v:=v||jsonb_build_object('check','26_nativity_projector_rejects','pass',((r_proj->>'identity_result')='NO_VALID_CJ_MATCH' AND jsonb_array_length(r_proj->'contradictory_evidence')>=1));
-  v:=v||jsonb_build_object('check','27_translation_cannot_manufacture_missing_attr','pass',(r_snow->>'identity_result')='NO_VALID_CJ_MATCH');
-  v:=v||jsonb_build_object('check','28_cross_language_eligibility_guard','pass',((d_one->'match_spec'->>'canonical_cross_language')='false' AND jsonb_array_length(d_one->'match_spec'->'canonical_attr_all')=0));
-  v:=v||jsonb_build_object('check','29_de_same_product_same_language','pass',((r_de->'candidates_considered'->0->'evidence'->>'match_language')='SAME_LANGUAGE'));
-  v:=v||jsonb_build_object('check','30_contradictory_figurine_form_rejects','pass',((r_fig->>'identity_result')='NO_VALID_CJ_MATCH' AND jsonb_array_length(r_fig->'contradictory_evidence')>=1));
+  v:=v||jsonb_build_object('check','19_source_canonical_eligible','pass',((d_con->'match_spec'->>'canonical_cross_language')='true' AND jsonb_array_length(d_con->'match_spec'->'canonical_attr_all')=3));
+  v:=v||jsonb_build_object('check','20_source_phrase_provenance_preserved','pass',((d_con->'concrete_identity'->>'concrete_phrase')='beleuchtete krippen wanddekoration' AND jsonb_array_length(d_con->'concrete_identity'->'source_language_tokens')=3));
+  v:=v||jsonb_build_object('check','21_en_equiv_reaches_and_qualifies','pass',((r_en->>'identity_result')='EXACT_SUPPLIER_IDENTITY_RESOLVED' AND (r_en->>'bound')='true' AND (r_en->'candidates_considered'->0->'evidence'->>'match_language')='CROSS_LANGUAGE_CANONICAL'));
+  v:=v||jsonb_build_object('check','22_fr_equiv_cross_language','pass',(r_fr->>'identity_result')='EXACT_SUPPLIER_IDENTITY_RESOLVED');
+  v:=v||jsonb_build_object('check','23_generic_translated_keyword_rejects','pass',(r_xmas->>'identity_result')='NO_VALID_CJ_MATCH');
+  v:=v||jsonb_build_object('check','24_led_wall_light_form_conflict_rejects','pass',((r_led->>'identity_result')='NO_VALID_CJ_MATCH' AND jsonb_array_length(r_led->'contradictory_evidence')>=1));
+  v:=v||jsonb_build_object('check','25_nativity_projector_rejects','pass',((r_proj->>'identity_result')='NO_VALID_CJ_MATCH' AND jsonb_array_length(r_proj->'contradictory_evidence')>=1));
+  v:=v||jsonb_build_object('check','26_translation_cannot_manufacture_missing_attr','pass',(r_snow->>'identity_result')='NO_VALID_CJ_MATCH');
+  v:=v||jsonb_build_object('check','27_cross_language_eligibility_guard','pass',((d_one->'match_spec'->>'canonical_cross_language')='false' AND jsonb_array_length(d_one->'match_spec'->'canonical_attr_all')=0));
+  v:=v||jsonb_build_object('check','28_de_same_product_same_language','pass',((r_de->'candidates_considered'->0->'evidence'->>'match_language')='SAME_LANGUAGE'));
+  v:=v||jsonb_build_object('check','29_contradictory_figurine_form_rejects','pass',((r_fig->>'identity_result')='NO_VALID_CJ_MATCH' AND jsonb_array_length(r_fig->'contradictory_evidence')>=1));
 
   DELETE FROM public.commerce_signals WHERE product_id IN (p_cat,p_kw,p_metrics,p_ads,p_con,p_pid,p_multi,p_gb,p_kalo,p_ebay,p_one);
   DELETE FROM public.commerce_products WHERE id IN (p_cat,p_kw,p_metrics,p_ads,p_con,p_pid,p_multi,p_gb,p_kalo,p_ebay,p_one);
