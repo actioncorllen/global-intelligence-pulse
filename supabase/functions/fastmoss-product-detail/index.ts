@@ -1,48 +1,30 @@
-// STRATELOQ-FASTMOSS-PRODUCT-DETAIL-BROKER (Stage-2 product-native enrichment)
-//
-// Bounded, product-specific FastMoss detail broker. Same trusted-server pattern as the FastMoss
-// discovery broker: gateway verify_jwt=true; the FastMoss client secret is read ONLY from the Edge
-// Function env, never logged/returned/persisted. Trusted by the service role OR by a single-use
-// capability nonce (fn_kalodata_consume_invoke_nonce). Fail closed.
-//
-// Unlike discovery (market-wide rank), this calls the documented product-by-id endpoints:
-//   POST /product/v1/search     body { filter: { product_id, region } }   -> product detail
-//   POST /product/v1/videoList  body { product_id }                        -> associated videos
-// It performs NO broad discovery and NO ingest. v1 returns the raw (secret-redacted) provider
-// payloads + HTTP statuses so the exact response schema and entitlement can be verified before
-// any persistence mapping is built. One product per invocation.
-//
-// STATUS (2026-10-13): deployed + verified reachable. The provisioned FASTMOSS_CLIENT_SECRET is
-// authenticated (it works for /product/v1/rank/newListed) but the account's plan does NOT entitle
-// the product-detail module: both /product/v1/search and /product/v1/videoList return an
-// application-level { code: 403, message: "can not access current endpoint" }. This broker is the
-// ready activation point; it stays dormant (nothing auto-invokes it) until FastMoss grants the
-// product-detail / product-video endpoints. Persistence/identity/media wiring is intentionally
-// deferred until a real entitled response schema can be observed (never mapped from a guess).
-//
-// Secret (name only; value lives solely as an Edge Function secret, shared project-wide):
-//   FASTMOSS_CLIENT_SECRET
-// Optional env overrides:
-//   FASTMOSS_SEARCH_URL     (default https://openapi.fastmoss.com/product/v1/search)
-//   FASTMOSS_VIDEOLIST_URL  (default https://openapi.fastmoss.com/product/v1/videoList)
+// STRATELOQ-PROVIDER-MEDIA/DETAIL-BROKER
+// Trusted-server pattern: gateway verify_jwt=true; provider secrets read ONLY from Edge env,
+// never logged/returned/persisted. Trusted by service role OR single-use nonce. Fail closed.
+// Modes:
+//  - mode:"rank_raw" (provider FASTMOSS|KALODATA): call the ENTITLED discovery rank endpoint and
+//    return raw rows (no ingest) to confirm product-native image fields + recover cover URLs.
+//  - default: FastMoss product-by-id detail (/product/v1/search + /product/v1/videoList) — NOT
+//    entitled on current plan (code 403 'can not access current endpoint'); dormant activation point.
 
 const SEARCH_DEFAULT = "https://openapi.fastmoss.com/product/v1/search";
 const VIDEOLIST_DEFAULT = "https://openapi.fastmoss.com/product/v1/videoList";
-const SECRET_ENV = "FASTMOSS_CLIENT_SECRET";
+const FM_SECRET_ENV = "FASTMOSS_CLIENT_SECRET";
+const KL_SECRET_ENV = "KALODATA_SECRET_KEY";
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 }
 function redact(input: unknown): string {
   let s = typeof input === "string" ? input : JSON.stringify(input ?? "");
-  const v = Deno.env.get(SECRET_ENV);
-  if (v && v.length > 0) { s = s.split(v).join("[REDACTED]"); const t = v.trim(); if (t.length > 0 && t !== v) s = s.split(t).join("[REDACTED]"); }
+  for (const envk of [FM_SECRET_ENV, KL_SECRET_ENV]) {
+    const v = Deno.env.get(envk);
+    if (v && v.length > 0) { s = s.split(v).join("[REDACTED]"); const t = v.trim(); if (t.length > 0 && t !== v) s = s.split(t).join("[REDACTED]"); }
+  }
   s = s.replace(/("?(?:client_secret|secret[_-]?key|api[_-]?key|access_token|authorization|bearer)"?\s*[:=]\s*)("?[^"&,}\s]+)/gi, "$1[REDACTED]");
   return s;
 }
-function redactJson(body: unknown): unknown {
-  try { return JSON.parse(redact(JSON.stringify(body ?? null))); } catch { return null; }
-}
+function redactJson(body: unknown): unknown { try { return JSON.parse(redact(JSON.stringify(body ?? null))); } catch { return null; } }
 function timingSafeEqual(a: string, b: string): boolean {
   if (a.length !== b.length || a.length === 0) return false;
   let out = 0; for (let i = 0; i < a.length; i++) out |= a.charCodeAt(i) ^ b.charCodeAt(i); return out === 0;
@@ -81,48 +63,60 @@ Deno.serve(async (req) => {
   const raw = await req.text();
   if (raw && raw.trim().length > 0) { try { payload = JSON.parse(raw); } catch { return jsonResponse(400, { ok: false, error: "invalid_json" }); } }
 
-  const secret = (Deno.env.get(SECRET_ENV) ?? "").trim();
-  if (payload.probe === true) return jsonResponse(200, { ok: true, mode: "probe", secret_present: Boolean(secret) });
+  const fmSecret = (Deno.env.get(FM_SECRET_ENV) ?? "").trim();
+  if (payload.probe === true) return jsonResponse(200, { ok: true, mode: "probe", fastmoss_secret_present: Boolean(fmSecret), kalodata_secret_present: Boolean((Deno.env.get(KL_SECRET_ENV) ?? "").trim()) });
+
+  if (payload.mode === "rank_raw") {
+    const market0 = String(payload.market ?? "").trim().toUpperCase();
+    const provider0 = String(payload.provider ?? "FASTMOSS").trim().toUpperCase();
+    if (!market0) return jsonResponse(400, { ok: false, error: "missing_market" });
+    if (provider0 === "KALODATA") {
+      const ks = (Deno.env.get(KL_SECRET_ENV) ?? "").trim();
+      if (!ks) return jsonResponse(424, { ok: false, provider: "KALODATA", lane_status: "AUTH_FAILED", error: "server_secret_unavailable" });
+      const rb0 = await rpc("fn_kalodata_discovery_request", { p_market: market0 });
+      const body0 = (rb0.body as any);
+      if (!body0 || body0.ok !== true) return jsonResponse(502, { ok: false, error: "request_builder_failed", reason: body0?.reason ?? null });
+      const url = String(body0.endpoint || "").replace(/^POST\s+/i, "").trim() || "https://www.kalodata.com/openapi/v1/tiktok/product/rank";
+      try {
+        const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json", "secret-key": ks }, body: JSON.stringify(body0.request_body ?? {}) });
+        return jsonResponse(200, { ok: r.ok, mode: "rank_raw", provider: "KALODATA", market: market0, http_status: r.status, raw: redactJson(await r.json().catch(() => ({}))) });
+      } catch (e) { return jsonResponse(502, { ok: false, mode: "rank_raw", provider: "KALODATA", error: redact((e as Error).message) }); }
+    }
+    if (!fmSecret) return jsonResponse(424, { ok: false, provider: "FASTMOSS", lane_status: "AUTH_FAILED", error: "server_secret_unavailable" });
+    const rb0 = await rpc("fn_fastmoss_discovery_request", { p_market: market0 });
+    const body0 = (rb0.body as any);
+    if (!body0 || body0.ok !== true) return jsonResponse(502, { ok: false, error: "request_builder_failed", reason: body0?.reason ?? null });
+    const rankUrl = (Deno.env.get("FASTMOSS_BASE_URL") || "https://openapi.fastmoss.com/product/v1/rank/newListed").trim();
+    try {
+      const r = await fetch(rankUrl, { method: "POST", headers: { "content-type": "application/json", authorization: "Bearer " + fmSecret }, body: JSON.stringify(body0.request_body ?? {}) });
+      return jsonResponse(200, { ok: r.ok, mode: "rank_raw", provider: "FASTMOSS", market: market0, http_status: r.status, raw: redactJson(await r.json().catch(() => ({}))) });
+    } catch (e) { return jsonResponse(502, { ok: false, mode: "rank_raw", provider: "FASTMOSS", error: redact((e as Error).message) }); }
+  }
 
   const market = String(payload.market ?? "").trim().toUpperCase();
   const productId = String(payload.product_id ?? "").trim();
   const withVideos = payload.with_videos === true;
   if (!market) return jsonResponse(400, { ok: false, error: "missing_market" });
   if (!productId) return jsonResponse(400, { ok: false, error: "missing_product_id" });
-  if (!secret) return jsonResponse(424, { ok: false, provider: "FASTMOSS", lane_status: "AUTH_FAILED", error: "server_secret_unavailable" });
+  if (!fmSecret) return jsonResponse(424, { ok: false, provider: "FASTMOSS", lane_status: "AUTH_FAILED", error: "server_secret_unavailable" });
 
-  // region (secret-free) from the existing market config; reuse the discovery request builder.
   const rb = await rpc("fn_fastmoss_discovery_request", { p_market: market });
   const region = (rb.body as any)?.region ?? market;
-
   const searchUrl = (Deno.env.get("FASTMOSS_SEARCH_URL") || SEARCH_DEFAULT).trim();
   const videoUrl = (Deno.env.get("FASTMOSS_VIDEOLIST_URL") || VIDEOLIST_DEFAULT).trim();
-  const authHeaders = { "content-type": "application/json", authorization: "Bearer " + secret };
-
+  const authHeaders = { "content-type": "application/json", authorization: "Bearer " + fmSecret };
   const out: any = { ok: true, provider: "FASTMOSS", market, region, product_id: productId };
-
-  // 1) product/v1/search by product_id
   try {
     const r = await fetch(searchUrl, { method: "POST", headers: authHeaders, body: JSON.stringify({ filter: { product_id: productId, region } }) });
-    out.search_http_status = r.status;
-    out.search_raw = redactJson(await r.json().catch(() => ({})));
-    if (r.status === 401 || r.status === 403) out.search_lane_status = "AUTH_FAILED";
-    else if (r.status === 402) out.search_lane_status = "PAYMENT_REQUIRED";
-    else if (r.status === 429) out.search_lane_status = "RATE_LIMITED";
-    else if (r.status >= 500) out.search_lane_status = "PROVIDER_UNAVAILABLE";
-    else if (r.ok) out.search_lane_status = "OK";
-    else out.search_lane_status = "FAILED";
+    out.search_http_status = r.status; out.search_raw = redactJson(await r.json().catch(() => ({})));
+    out.search_lane_status = r.status === 401 || r.status === 403 ? "AUTH_FAILED" : r.status === 402 ? "PAYMENT_REQUIRED" : r.status === 429 ? "RATE_LIMITED" : r.status >= 500 ? "PROVIDER_UNAVAILABLE" : r.ok ? "OK" : "FAILED";
   } catch (e) { out.search_lane_status = "PROVIDER_UNAVAILABLE"; out.search_error = redact((e as Error).message); }
-
-  // 2) product/v1/videoList by product_id (optional)
   if (withVideos) {
     try {
       const r = await fetch(videoUrl, { method: "POST", headers: authHeaders, body: JSON.stringify({ product_id: productId }) });
-      out.video_http_status = r.status;
-      out.video_raw = redactJson(await r.json().catch(() => ({})));
+      out.video_http_status = r.status; out.video_raw = redactJson(await r.json().catch(() => ({})));
       out.video_lane_status = r.ok ? "OK" : (r.status === 401 || r.status === 403 ? "AUTH_FAILED" : r.status === 402 ? "PAYMENT_REQUIRED" : r.status === 429 ? "RATE_LIMITED" : "FAILED");
     } catch (e) { out.video_lane_status = "PROVIDER_UNAVAILABLE"; out.video_error = redact((e as Error).message); }
   }
-
   return jsonResponse(200, out);
 });
