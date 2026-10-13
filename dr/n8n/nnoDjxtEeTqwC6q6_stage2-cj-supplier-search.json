@@ -1,0 +1,74 @@
+{
+  "_dr_note": "STRATELOQ DR n8n workflow manifest (Stage-2E). Credential values NEVER included — only references {id,name}. Recreate credentials per dr/runbook/SECRETS-RECOVERY.md, then regenerate the workflow from the committed SDK source 'nnoDjxtEeTqwC6q6_stage2-cj-supplier-search.sdk.js' via the n8n MCP create_workflow_from_code (authoritative definition). This manifest documents structure + contracts; full node jsCode lives in the .sdk.js sibling. Node jsCode is intentionally not duplicated here to avoid drift.",
+  "id": "nnoDjxtEeTqwC6q6",
+  "name": "Pulse — Stage-2 CJ Supplier Search (search-only)",
+  "stage": "STAGE_2E",
+  "active": false,
+  "published": false,
+  "deployment_note": "Built, validated, fixture-tested. INACTIVE/unpublished by design — webhook endpoint is not live until the founder explicitly publishes. Test/manual executions work while inactive.",
+  "trigger": {
+    "type": "n8n-nodes-base.webhook",
+    "httpMethod": "POST",
+    "path": "stage2-cj-supplier-search",
+    "responseMode": "lastNode"
+  },
+  "settings": { "executionOrder": "v1" },
+  "credential_refs": [
+    { "type": "httpCustomAuth", "id": "2IV5tXPu9jAItjKh", "name": "CJ Dropshipping API", "reused_from": "Pulse — Research Executor: CJ (013K)" },
+    { "type": "supabaseApi", "id": "jMhzgwaHX9jwZ7rA", "name": "Supabase account", "reused": true }
+  ],
+  "connections": {
+    "Stage-2 Search Request": "Validate Input",
+    "Validate Input": "Verify Owner",
+    "Verify Owner": "Assert Owned",
+    "Assert Owned": "CJ Auth",
+    "CJ Auth": "CJ Search",
+    "CJ Search": "Build Candidates",
+    "Build Candidates": "Resolve Identity",
+    "Resolve Identity": "Build Response"
+  },
+  "nodes": [
+    { "name": "Stage-2 Search Request", "type": "n8n-nodes-base.webhook", "typeVersion": 2.1, "role": "runtime input (tenant_id, product_id, market, search_query, request_id, persist)" },
+    { "name": "Validate Input", "type": "n8n-nodes-base.code", "typeVersion": 2, "role": "fail-closed validation: uuid tenant_id+product_id, non-empty market+search_query; normalize market upper, persist default false" },
+    { "name": "Verify Owner", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.5, "credential_ref": "supabaseApi", "role": "tenant-ownership check: GET commerce_products?id=eq&user_id=eq (Accept: vnd.pgrst.object+json)" },
+    { "name": "Assert Owned", "type": "n8n-nodes-base.code", "typeVersion": 2, "role": "fail closed (STAGE2_TENANT_PRODUCT_NOT_OWNED) unless returned id == product_id; before any CJ call" },
+    { "name": "CJ Auth", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.5, "credential_ref": "httpCustomAuth", "role": "CJ getAccessToken (reused existing CJ connection)" },
+    { "name": "CJ Search", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.5, "role": "CJ product/list with RUNTIME productNameEn = search_query (no hardcoded query); single call per invocation" },
+    { "name": "Build Candidates", "type": "n8n-nodes-base.code", "typeVersion": 2, "role": "normalize to Stage-2 candidate shape + build resolver rpc_body (does NOT judge matches)" },
+    { "name": "Resolve Identity", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.5, "credential_ref": "supabaseApi", "role": "POST rpc/fn_resolve_concrete_supplier_identity (EXISTING resolver, unchanged); p_persist from input" },
+    { "name": "Build Response", "type": "n8n-nodes-base.code", "typeVersion": 2, "role": "envelope: echo request_id, candidate_count, resolver verdict, bound" }
+  ],
+  "runtime_input_contract": {
+    "tenant_id": "uuid (required)",
+    "product_id": "uuid (required)",
+    "market": "text (required, upper-cased)",
+    "search_query": "non-empty text (required) — NEVER hardcoded",
+    "request_id": "idempotency key (optional, echoed)",
+    "persist": "boolean (optional, default false)"
+  },
+  "output_candidate_contract": {
+    "supplier": "CJ",
+    "supplier_product_id": "string",
+    "sku": "string|null",
+    "title": "string",
+    "category": "string|null",
+    "variant": "null",
+    "supplier_reference": "sku || supplier_product_id"
+  },
+  "boundaries": {
+    "search_only": true,
+    "calls_fn_research_ingest_source": false,
+    "creates_cj_sourcing_requests": false,
+    "creates_orders_or_payments": false,
+    "retrieves_supplier_assets": false,
+    "computes_commercial_approval": false,
+    "decides_matches_in_n8n": false,
+    "match_decision_owner": "public.fn_resolve_concrete_supplier_identity (Supabase, unchanged)"
+  },
+  "decision_contract": {
+    "0_qualifiers": "NO_VALID_CJ_MATCH",
+    "1_qualifier": "EXACT_SUPPLIER_IDENTITY_RESOLVED",
+    ">1_qualifiers": "CONCRETE_PRODUCT_AMBIGUOUS",
+    "persistence": "p_persist=false => evaluate only (no bind); p_persist=true => upsert on (tenant, product, market), bind only on EXACT"
+  }
+}

@@ -22,6 +22,7 @@ in `dr/n8n/*.json`.
 | NvuwUfW7fyjSb81R | CJ Supplier Collector | ⚪ | manual | CJ Dropshipping API, Supabase | important (supply) | P2 |
 | OxH9sb6jKCqiqXOk | CJ Detail + GB Freight Probe | ⚪ | manual | CJ Dropshipping API | supporting | P3 |
 | ZbhPyAuvDD4h4xid | CJ Supplier Enrichment Probe | ⚪ | manual | CJ Dropshipping API | supporting | P3 |
+| nnoDjxtEeTqwC6q6 | Stage-2 CJ Supplier Search (search-only) | ⚪ (unpublished) | webhook POST `/stage2-cj-supplier-search` | CJ Dropshipping API, Supabase account | important (Stage-2 exact supplier resolution; parameterized, search-only, decoupled from Stage-1) | P2 (def+SDK committed: `dr/n8n/nnoDjxtEeTqwC6q6_*`) |
 | ZN6huMtz3DNIMnks | eBay Browse API Probe | ⚪ | manual | Pulse eBay Production | supporting | P3 |
 | 0HGniWXeacHbVTQL | DataForSEO Buyer Intent Probe | ⚪ | manual | Pulse DataForSEO | supporting | P3 |
 | 0aXO9OmUfRXhI5s2 | Ecom Product-Signal Collector (Reddit) | ⚪ | manual | (public JSON) | supporting | P3 |
