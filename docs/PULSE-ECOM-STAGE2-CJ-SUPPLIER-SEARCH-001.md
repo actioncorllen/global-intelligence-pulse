@@ -181,3 +181,23 @@ Idempotency is deployed (`mig_292` live) and fully verified. Webhook auth is dep
 inbound-webhook credential). The workflow remains **INACTIVE/unpublished**: the auth *rejection* can only be
 proven against a live endpoint, so activation + a one-shot live auth probe (missing header → 401; valid header →
 200) is the single founder-gated remaining step before the first authorized live CJ smoke test.
+
+---
+
+## Stage-2G addendum (qualification boundary integrity — `mig_295`)
+
+`fn_stage2_cj_search_claim` now carries a **server-side pre-dispatch qualification guard**. Before the idempotency
+INSERT and before any CJ call, it independently re-checks the authoritative Stage-1 gate
+`fn_stage1_supplier_resolution_qualified(tenant, product, market)` at the canonical freshness. If the product's
+current authoritative qualification is false, the claim fails closed with
+`error = STAGE2_NOT_SUPPLIER_QUALIFIED` and **no claim row is created** — so a stale UI or an old row that still
+says "Supplier Qualified" can never consume a CJ search. Because the gate includes the branded/IP disqualifier,
+branded/trademarked products (e.g. Ankerkraut) are refused here too. CJ matching semantics and the resolver
+(`fn_resolve_concrete_supplier_identity`) are unchanged.
+
+Two related integrity fixes shipped in the same migration: (1) the Stage-1 gate and its commerce-evidence helper
+coalesce a NULL/≤0 freshness window to the canonical 336h default (closing a footgun where an explicit NULL
+silently excluded all commerce evidence and under-counted qualifying families); (2) brand/IP screening moved from a
+hardcoded array to the server-owned, extensible `commerce_product_brand_registry` with structured output
+(`brand_state`/`brand_name`/`brand_evidence`/`brand_confidence`). Durable verification:
+`fn_stage2g_boundary_integrity_selftest()`.
