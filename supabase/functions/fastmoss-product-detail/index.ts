@@ -4,6 +4,10 @@
 // Modes:
 //  - mode:"rank_raw" (provider FASTMOSS|KALODATA): call the ENTITLED discovery rank endpoint and
 //    return raw rows (no ingest) to confirm product-native image fields + recover cover URLs.
+//  - mode:"kalodata_detail": call Kalodata's documented Product Detail endpoint
+//    (POST /openapi/v1/tiktok/product/detail, secret-key header) by product_id to test whether the
+//    existing credential is entitled and whether descriptive product fields are returned. One call,
+//    no ingest, response redacted. Entitlement/contract is unknown until tested.
 //  - default: FastMoss product-by-id detail (/product/v1/search + /product/v1/videoList) — NOT
 //    entitled on current plan (code 403 'can not access current endpoint'); dormant activation point.
 
@@ -91,6 +95,33 @@ Deno.serve(async (req) => {
       const r = await fetch(rankUrl, { method: "POST", headers: { "content-type": "application/json", authorization: "Bearer " + fmSecret }, body: JSON.stringify(body0.request_body ?? {}) });
       return jsonResponse(200, { ok: r.ok, mode: "rank_raw", provider: "FASTMOSS", market: market0, http_status: r.status, raw: redactJson(await r.json().catch(() => ({}))) });
     } catch (e) { return jsonResponse(502, { ok: false, mode: "rank_raw", provider: "FASTMOSS", error: redact((e as Error).message) }); }
+  }
+
+  if (payload.mode === "kalodata_detail") {
+    const market0 = String(payload.market ?? "").trim().toUpperCase();
+    const productId0 = String(payload.product_id ?? "").trim();
+    if (!market0) return jsonResponse(400, { ok: false, error: "missing_market" });
+    if (!productId0) return jsonResponse(400, { ok: false, error: "missing_product_id" });
+    const ks = (Deno.env.get(KL_SECRET_ENV) ?? "").trim();
+    if (!ks) return jsonResponse(424, { ok: false, provider: "KALODATA", lane_status: "AUTH_FAILED", error: "server_secret_unavailable" });
+    // Reuse the confirmed Kalodata request conventions (region/currency/language) from the rank builder.
+    const rb0 = await rpc("fn_kalodata_discovery_request", { p_market: market0 });
+    const body0 = (rb0.body as any);
+    if (!body0 || body0.ok !== true) return jsonResponse(502, { ok: false, error: "request_builder_failed", reason: body0?.reason ?? null });
+    const detailUrl = (Deno.env.get("KALODATA_DETAIL_URL") || "https://www.kalodata.com/openapi/v1/tiktok/product/detail").trim();
+    // Documented product-detail path; body mirrors the entitled rank conventions + the product id.
+    const detailBody = (payload.detail_body && typeof payload.detail_body === "object")
+      ? payload.detail_body
+      : { product_id: productId0, region: body0.region, currency: body0.currency, language: body0.language ?? "en-US", date_range: "last7Day" };
+    const lane = (s: number) => s === 401 || s === 403 ? "AUTH_OR_ENTITLEMENT_FAILED" : s === 402 ? "PAYMENT_REQUIRED" : s === 429 ? "RATE_LIMITED" : s >= 500 ? "PROVIDER_UNAVAILABLE" : s >= 200 && s < 300 ? "OK" : "FAILED";
+    try {
+      const r = await fetch(detailUrl, { method: "POST", headers: { "content-type": "application/json", "secret-key": ks }, body: JSON.stringify(detailBody) });
+      const txt = await r.text();
+      let raw: unknown; try { raw = JSON.parse(txt); } catch { raw = txt.slice(0, 2000); }
+      return jsonResponse(200, { ok: r.ok, mode: "kalodata_detail", provider: "KALODATA", market: market0,
+        product_id: productId0, endpoint: detailUrl, request_keys: Object.keys(detailBody),
+        http_status: r.status, http_lane_status: lane(r.status), raw: redactJson(raw) });
+    } catch (e) { return jsonResponse(502, { ok: false, mode: "kalodata_detail", provider: "KALODATA", error: redact((e as Error).message) }); }
   }
 
   const market = String(payload.market ?? "").trim().toUpperCase();
