@@ -6,8 +6,23 @@
 // described authoritatively in the sibling manifest nnoDjxtEeTqwC6q6_stage2-cj-supplier-search.json.
 // The live n8n workflow is the source of truth; regenerate = apply mig_292 + rebuild per the manifest.
 //
-// BOUNDED PAGINATION (mig_302): DEPLOYED to the live workflow (active version
-// 070aa760-3f01-416f-b240-4422502a48bf) via n8n-mcp. The single-page CJ Search / Build Candidates /
+// LIVE KRIPPEN REVALIDATION (2026-10-14): two in-budget execution fixes were made to the live
+// "Paginate CJ" node after controlled live CJ runs, WITHOUT changing the budget (page_size 20,
+// max_pages_per_query 5, max_candidates 200, max_api_calls 40):
+//   (1) RATE-LIMIT PACING+RETRY — run 30481 showed CJ (~1 req/sec/token) threw ~7/15 calls with
+//       no inter-call delay (http_status 0, empty body), degrading recall. Fix: pace live calls
+//       (~1.3s) and retry transient throttles once (429/5xx/thrown/body-throttle); retries draw
+//       from the same 40-call budget. (2) BREADTH-FIRST ALLOCATION — run 30483 was throttle-free
+//       but the two broadest queries hit the 200-candidate cap before the specific queries ran.
+//       Fix: round-robin (page 1 of EVERY canonical query before any query goes deeper) so the
+//       distinguishing-attribute queries are always examined. Verified: offline harnesses
+//       (pacing/retry 10/10, round-robin 12/12) + mocked n8n regressions (30482, 30484) +
+//       final live run 30485 (11/11 pages HTTP 200, all 8 queries' page 1 examined, 158 unique
+//       candidates, NO_VALID_CJ_MATCH, persist=false, no bind). The authoritative Paginate CJ
+//       description lives in the sibling manifest .json (pagination_upgrade._rate_limit_fix,
+//       ._recall_allocation_fix, loop). Active version after the fixes: 7e8c22c0-f306-40d4-8acf-3418af32e0a6.
+//
+// BOUNDED PAGINATION (mig_302): DEPLOYED to the live workflow via n8n-mcp. The single-page CJ Search / Build Candidates /
 // Resolve Identity nodes were replaced by: CJ Auth -> Get Retrieval Plan (rpc/fn_stage2_cj_retrieval_plan,
 // canonical query set + budget) -> Paginate CJ (bounded loop: per query page 1..max_pages_per_query via
 // CJ product/list; per-page stop mirrors fn_stage2_cj_should_continue; TEST-only __mock_cj injection) ->

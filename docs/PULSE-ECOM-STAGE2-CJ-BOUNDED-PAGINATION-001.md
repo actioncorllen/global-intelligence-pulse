@@ -57,7 +57,15 @@ strictness + form-conflict (`fn_market_supplier_match` unchanged); tenant isolat
 Product Asset Lock. `pageSize` unchanged (only depth added). No live CJ/Apify; no new paid service.
 
 ## Remaining blockers
-- **n8n live rebuild** of the paginated loop is founder-gated (activation + live CJ) — the DB contract is
-  deployed and proven; the workflow rebuild follows the manifest spec.
 - CJ's own ranking/relevance still governs which products appear within the (now deeper) window; the
-  budget bounds cost. A Krippen live revalidation remains founder-gated and was not performed.
+  budget bounds cost.
+
+## Follow-up: live rebuild + revalidation DONE (2026-10-14)
+The n8n paginated loop was integrated and a single controlled live Krippen revalidation was run
+under the approved budget. Two in-budget execution defects were found and fixed (no budget
+increase): **(1)** CJ rate-limiting degraded recall → added call pacing + single transient-throttle
+retry; **(2)** broad queries exhausted the candidate budget before the specific queries ran → the
+loop is now **breadth-first (round-robin)** (page 1 of every canonical query before any depth). Final
+live run: 11/11 pages HTTP 200, all 8 canonical queries examined, 158 unique candidates,
+**trustworthy `NO_VALID_CJ_MATCH`** (0 exact; 42 similar/attribute-subset), `persist=false`, no bind.
+Full detail: `docs/PULSE-ECOM-STAGE2-LIVE-KRIPPEN-CJ-REVALIDATION-001.md`.
