@@ -7,6 +7,7 @@
   "published": false,
   "deployment_note": "Built, validated, fixture-tested, hardened. INACTIVE/unpublished by design — activation + a live auth probe is the founder-gated step (webhook auth rejection is only provable against a live endpoint).",
   "depends_on_migration": "mig_292_stage2_cj_search_idempotency.sql",
+  "depends_on_migration_pagination": "mig_302_stage2_cj_bounded_pagination.sql",
   "trigger": {
     "type": "n8n-nodes-base.webhook",
     "httpMethod": "POST",
@@ -85,5 +86,32 @@
     "1_qualifier": "EXACT_SUPPLIER_IDENTITY_RESOLVED",
     ">1_qualifiers": "CONCRETE_PRODUCT_AMBIGUOUS",
     "persistence": "p_persist=false => evaluate only (no bind); p_persist=true => upsert on (tenant, product, market), bind only on EXACT"
+  },
+  "pagination_upgrade": {
+    "_note": "AUTHORITATIVE spec for the bounded-pagination rebuild (mig_302). The current live 14-node workflow fetches a single page (pageNum=1, pageSize=20) for one hand-supplied search_query and can miss an exact product ranked beyond the top 20. The DB owns the pagination POLICY + candidate AGGREGATION (deterministic, self-tested: fn_stage2_cj_pagination_selftest 10/10); the workflow performs the bounded HTTP loop and feeds pages back. Rebuild pending (requires founder-gated activation + live CJ, not performed here). No live CJ call was made for this change.",
+    "db_contract": {
+      "retrieval_plan": "fn_stage2_cj_retrieval_plan(tenant, product, market) -> { search:{queries[],source}, budget:{page_size,max_pages_per_query,max_candidates,max_api_calls}, language_coverage_gap }",
+      "per_page_stop": "fn_stage2_cj_should_continue(page, page_num, collected, budget) -> { continue, reason, is_error, rate_limited, rows }",
+      "aggregate": "fn_stage2_cj_finalize_candidates(pages[], budget) -> { candidates[] (dedup by CJ pid, capped), stats }",
+      "one_call_resolve": "fn_stage2_resolve_from_pages(tenant, product, market, pages[], persist) -> resolver verdict + retrieval_stats"
+    },
+    "loop": {
+      "queries": "iterate plan.search.queries in order (canonical English expansion; mig_300/301)",
+      "per_query": "pageNum from 1; pageSize = budget.page_size (20); after each CJ product/list page, call fn_stage2_cj_should_continue; fetch next page only while continue=true",
+      "stop_query_when": ["is_error (http>=400 / 429 rate-limit / 5xx / malformed page)", "last_page_partial (rows < page_size)", "max_pages_per_query_reached", "candidate_budget_reached"],
+      "stop_all_when": ["collected candidates >= budget.max_candidates", "api_calls >= budget.max_api_calls"],
+      "error_handling": "a failed/rate-limited/malformed page stops ONLY that query and is recorded in stats.errors; other queries continue; the run never aborts on a single page error",
+      "dedup": "cross-page + cross-query dedup by CJ product id (pid), first occurrence wins (fn_stage2_cj_finalize_candidates)"
+    },
+    "node_changes": {
+      "replace": ["CJ Search (single page)", "Build Candidates", "Resolve Identity"],
+      "with": [
+        "Get Retrieval Plan (httpRequest -> rpc/fn_stage2_cj_retrieval_plan)",
+        "Paginate CJ (loop: SplitInBatches over queries + inner page loop calling CJ product/list and rpc/fn_stage2_cj_should_continue; accumulate page responses {query,page_num,http_status,body})",
+        "Resolve From Pages (httpRequest -> rpc/fn_stage2_resolve_from_pages with the accumulated pages + persist)"
+      ],
+      "unchanged": ["header auth", "Verify Owner / Assert Owned (tenant isolation)", "Claim/Assert Claim/IF Proceed/Complete (idempotency)", "match decision owner = fn_resolve_concrete_supplier_identity"]
+    },
+    "preserved": ["canonical query expansion (mig_300)", "multilingual recognition (mig_301)", "exact-product matching strictness + form-conflict", "tenant isolation", "country isolation", "Product Asset Lock", "pageSize stays 20 (only DEPTH added)"]
   }
 }
