@@ -32,10 +32,10 @@
     "Assert Claim OK": "IF Proceed",
     "IF Proceed[0 true]": "CJ Auth",
     "IF Proceed[1 false]": "Duplicate Replay Response",
-    "CJ Auth": "CJ Search",
-    "CJ Search": "Build Candidates",
-    "Build Candidates": "Resolve Identity",
-    "Resolve Identity": "Complete Request",
+    "CJ Auth": "Get Retrieval Plan",
+    "Get Retrieval Plan": "Paginate CJ",
+    "Paginate CJ": "Resolve From Pages",
+    "Resolve From Pages": "Complete Request",
     "Complete Request": "Build Response"
   },
   "nodes": [
@@ -47,9 +47,9 @@
     { "name": "Assert Claim OK", "type": "n8n-nodes-base.code", "typeVersion": 2, "role": "fail closed on claim rejection (STAGE2_CLAIM_REJECTED)" },
     { "name": "IF Proceed", "type": "n8n-nodes-base.if", "typeVersion": 2.2, "role": "proceed==true -> CJ path (first claimer only); else -> duplicate replay (no CJ)" },
     { "name": "CJ Auth", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.5, "credential_ref": "httpCustomAuth", "role": "CJ getAccessToken" },
-    { "name": "CJ Search", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.5, "role": "CJ product/list, RUNTIME productNameEn = search_query; one call per invocation" },
-    { "name": "Build Candidates", "type": "n8n-nodes-base.code", "typeVersion": 2, "role": "normalize to Stage-2 candidate shape + build resolver rpc_body (no match decision)" },
-    { "name": "Resolve Identity", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.5, "credential_ref": "supabaseApi", "role": "EXISTING resolver fn_resolve_concrete_supplier_identity (unchanged); p_persist from input" },
+    { "name": "Get Retrieval Plan", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.5, "credential_ref": "supabaseApi", "role": "rpc/fn_stage2_cj_retrieval_plan -> canonical English query set (mig_300/301) + budget (page_size 20, max_pages_per_query 5, max_candidates 200, max_api_calls 40)" },
+    { "name": "Paginate CJ", "type": "n8n-nodes-base.code", "typeVersion": 2, "role": "bounded retrieval loop (mig_302): per query, page 1..max_pages_per_query via CJ product/list (this.helpers.httpRequest, CJ token from CJ Auth); per-page stop mirrors fn_stage2_cj_should_continue (error/rate-limit/last-page/max-pages/candidate-budget); accumulates page responses {query,page_num,http_status,body}; TEST-only __mock_cj injection bypasses live CJ. Builds rpc_body for Resolve From Pages. No match decision." },
+    { "name": "Resolve From Pages", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.5, "credential_ref": "supabaseApi", "role": "rpc/fn_stage2_resolve_from_pages -> dedup by CJ pid + finalize + fn_resolve_concrete_supplier_identity (unchanged); p_persist from input; returns verdict + retrieval_stats" },
     { "name": "Complete Request", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.5, "credential_ref": "supabaseApi", "role": "rpc/fn_stage2_cj_search_complete: store result on the claimed row (enables duplicate replay)" },
     { "name": "Build Response", "type": "n8n-nodes-base.code", "typeVersion": 2, "role": "proceed-path envelope (idempotent_replay=false, provider_called=true)" },
     { "name": "Duplicate Replay Response", "type": "n8n-nodes-base.code", "typeVersion": 2, "role": "duplicate-path envelope (idempotent_replay=true) returning cached result; CJ never called" }
@@ -88,7 +88,7 @@
     "persistence": "p_persist=false => evaluate only (no bind); p_persist=true => upsert on (tenant, product, market), bind only on EXACT"
   },
   "pagination_upgrade": {
-    "_note": "AUTHORITATIVE spec for the bounded-pagination rebuild (mig_302). The current live 14-node workflow fetches a single page (pageNum=1, pageSize=20) for one hand-supplied search_query and can miss an exact product ranked beyond the top 20. The DB owns the pagination POLICY + candidate AGGREGATION (deterministic, self-tested: fn_stage2_cj_pagination_selftest 10/10); the workflow performs the bounded HTTP loop and feeds pages back. Rebuild pending (requires founder-gated activation + live CJ, not performed here). No live CJ call was made for this change.",
+    "_note": "DEPLOYED (active version 070aa760-3f01-416f-b240-4422502a48bf). The live workflow now fetches up to budget.max_pages_per_query pages per canonical query (was single page pageNum=1/pageSize=20), dedups by CJ pid, and resolves via fn_stage2_resolve_from_pages. The DB owns the pagination POLICY + candidate AGGREGATION (deterministic, self-tested: fn_stage2_cj_pagination_selftest 10/10); the Paginate CJ node performs the bounded HTTP loop (per-page stop mirrors fn_stage2_cj_should_continue) and feeds pages back. Verified end-to-end via mocked n8n execution (execution 30480: pages 1->2->3 fetched, partial-page stop, 429 error page recorded without aborting, Build Response EXACT). The live-CJ fetch path (this.helpers.httpRequest) is exercised only in production (no live CJ permitted in this change); recommend a founder-gated live smoke test.",
     "db_contract": {
       "retrieval_plan": "fn_stage2_cj_retrieval_plan(tenant, product, market) -> { search:{queries[],source}, budget:{page_size,max_pages_per_query,max_candidates,max_api_calls}, language_coverage_gap }",
       "per_page_stop": "fn_stage2_cj_should_continue(page, page_num, collected, budget) -> { continue, reason, is_error, rate_limited, rows }",

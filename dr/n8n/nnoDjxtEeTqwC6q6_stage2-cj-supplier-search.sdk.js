@@ -6,14 +6,17 @@
 // described authoritatively in the sibling manifest nnoDjxtEeTqwC6q6_stage2-cj-supplier-search.json.
 // The live n8n workflow is the source of truth; regenerate = apply mig_292 + rebuild per the manifest.
 //
-// BOUNDED PAGINATION (mig_302): the live CJ Search step still fetches a single page (pageNum=1,
-// pageSize=20) per query. The paginated rebuild is specified authoritatively in the sibling manifest's
-// `pagination_upgrade` block: obtain the bounded query set + budget from rpc/fn_stage2_cj_retrieval_plan,
-// loop CJ product/list per query/page using rpc/fn_stage2_cj_should_continue as the per-page stop
-// decision (stop on error/rate-limit/last-page/max-pages/candidate-budget), accumulate page responses,
-// then call rpc/fn_stage2_resolve_from_pages (dedup by CJ pid + cap + error-skip, then resolve). The DB
-// pagination contract is deployed and self-tested (fn_stage2_cj_pagination_selftest 10/10); the live
-// workflow rebuild is founder-gated (needs activation + live CJ) and was NOT performed here.
+// BOUNDED PAGINATION (mig_302): DEPLOYED to the live workflow (active version
+// 070aa760-3f01-416f-b240-4422502a48bf) via n8n-mcp. The single-page CJ Search / Build Candidates /
+// Resolve Identity nodes were replaced by: CJ Auth -> Get Retrieval Plan (rpc/fn_stage2_cj_retrieval_plan,
+// canonical query set + budget) -> Paginate CJ (bounded loop: per query page 1..max_pages_per_query via
+// CJ product/list; per-page stop mirrors fn_stage2_cj_should_continue; TEST-only __mock_cj injection) ->
+// Resolve From Pages (rpc/fn_stage2_resolve_from_pages: dedup by CJ pid + finalize + resolve) ->
+// Complete Request -> Build Response. Idempotency (claim/complete), header auth, and tenant ownership are
+// unchanged; active state preserved. Verified end-to-end via mocked n8n execution (execution 30480). The
+// live-CJ fetch path runs only in production (no live CJ permitted in this change) — a founder-gated live
+// smoke test is the one remaining verification. This initial SDK sketch is NOT regenerated to the live
+// shape; the manifest `pagination_upgrade` block is the authoritative description of the deployed nodes.
 import { workflow, trigger, node, expr } from '@n8n/workflow-sdk';
 
 const webhookTrigger = trigger({
