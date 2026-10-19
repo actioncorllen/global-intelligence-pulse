@@ -69,6 +69,28 @@ ingest attribution, lane dedup-key distinctness, unsupported-market fail-closed)
   `monday_opportunity_registry` — unchanged; newly discovered candidates from all three lanes register
   there and are refreshed on the Monday cycle.
 
-## Result: PASS (core multi-lane discovery). Follow-on (mig_308): country-specific Historical-Sales
-momentum + review/creator enrichment (attach only where real records exist). No remaining launch blockers
-for the discovery lanes; `/product/v1/search` stays 403 (external plan permission, not required here).
+## Historical-Sales momentum + review/creator enrichment (`mig_308`)
+`fn_fastmoss_enrich_from_response(user, product, market, response_id, kind)` — on-demand, reads an
+already-captured broker response (no provider call here, no bulk run) and attaches country-specific
+evidence to a known discovered product **only where real records exist**:
+- **SALES_TREND** → `COMMERCE_SALES_MOMENTUM` signal: the daily units/GMV series + overview
+  (units_sold, gmv, creator_count, aweme_count), market-scoped, normalised via
+  `fn_discovery_signal_normalize` (UNKNOWN != 0).
+- **REVIEWS** → `MARKETPLACE_REVIEW_EVIDENCE` (count + avg rating + bounded non-PII sample).
+- **CREATORS** → `COMMUNITY_CREATOR_EVIDENCE` (count + bounded sample).
+- Empty provider result => **NO_DATA**, nothing attached (no fabrication). Tenant-checked;
+  REFERENCE_ONLY; Product Asset Lock untouched. (Videos were already integrated as REFERENCE_ONLY by
+  mig_305/306.)
+
+Selftest `fn_fastmoss_enrich_selftest()` → **5/5 PASS** on the captured DE responses: salesTrend attaches
+7 real daily records; reviewList + creatorList (both genuinely empty for the probed product) return
+NO_DATA; the momentum signal is persisted + country-scoped (DE); cross-tenant rejected.
+
+*Note:* one inert `COMMUNITY_CREATOR_EVIDENCE` row (creator_count = null) was left on the Krippen product
+by a pre-fix debug run; it carries no metric (UNKNOWN), so it contributes nothing to any evidence family
+or score. A standard DELETE on `commerce_signals` exceeds the SQL tool's 60s cap on this project, and the
+one owner-privileged cleanup was declined, so it is left in place as a documented, harmless test artifact.
+
+## Result: PASS — three distinct source-attributed FastMoss discovery lanes live + verified; Historical-
+Sales momentum + review/creator enrichment live + verified (5/5). No remaining launch blockers for the
+discovery lanes; `/product/v1/search` stays 403 (external plan permission, not required here).
