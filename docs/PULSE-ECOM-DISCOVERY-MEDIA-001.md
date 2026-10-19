@@ -21,9 +21,11 @@ reached `product_image_assets` or the Product Card. `fn_kalodata_ingest_candidat
   Historical products whose provider cover was never stored get **nothing fabricated**.
 - `fn_product_media_state(tenant,product,market)` — Product-Card-safe media contract:
   `image_state` IMAGE_AVAILABLE|IMAGE_UNAVAILABLE, `video_state` VIDEO_AVAILABLE|VIDEO_UNAVAILABLE|
-  VIDEO_ACCESS_BLOCKED (FastMoss-sourced products, `/product/v1/videoList` not entitled),
-  `supplier_media_state` SUPPLIER_MEDIA_AVAILABLE|SUPPLIER_MEDIA_PENDING, `card_media_state`
-  MEDIA_COMPLETE (only with a genuine primary image) | MEDIA_INCOMPLETE, `authority=REFERENCE_ONLY`.
+  VIDEO_ACCESS_BLOCKED (FastMoss-sourced products with no reference video persisted for that market),
+  `video_count` and `primary_video` (genuine REFERENCE_ONLY provider video, `mig_305`; the video lane is
+  market-isolated), `supplier_media_state` SUPPLIER_MEDIA_AVAILABLE|SUPPLIER_MEDIA_PENDING,
+  `card_media_state` MEDIA_COMPLETE (only with a genuine primary image) | MEDIA_INCOMPLETE,
+  `authority=REFERENCE_ONLY`.
 - Selftest `fn_discovery_media_integrity_selftest()` — 7/7 pass.
 
 ## Kalodata image availability (§3)
@@ -47,10 +49,17 @@ a "video" affordance on `video_state='VIDEO_AVAILABLE'`; show a MEDIA_INCOMPLETE
 and must not enable merchant actions. Existing projection RPCs already key by tenant (`auth.uid()`) and
 market, preserving tenant/country isolation.
 
-## Video (§4)
-FastMoss `/product/v1/videoList` remains `BLOCKED_EXTERNAL_PROVIDER_ENTITLEMENT` (app code 403
-"can not access current endpoint") — no fabricated video URLs. `fn_product_media_state` reports
-`VIDEO_ACCESS_BLOCKED` for FastMoss-sourced products accordingly.
+## Video (§4) — UPDATED 2026-10-19 (`mig_305`)
+FastMoss `/product/v1/videoList` is now **ACCESSIBLE** (entitlement opened; one authorised live call,
+`net._http_response` id 159, returned `code 0 "success"` with 7 genuine product-associated videos for
+the Krippen product in DE). Those 7 videos are integrated as REFERENCE_ONLY into `media_assets`
+(`source_type='PROVIDER_DISCOVERY_REFERENCE_VIDEO'`, `is_launch_safe=false`, `country_code='DE'`,
+verbatim `provenance.provider_raw`) — see PULSE-ECOM-FASTMOSS-PRODUCT-VIDEO-VERIFY-001.
+`fn_product_media_state` now reports `VIDEO_AVAILABLE` + `primary_video` for that product in DE, with the
+video lane **market-isolated** (DE evidence never surfaces under another market). The one-call cap is
+spent, so FastMoss (product, market) pairs with no persisted reference video still report
+`VIDEO_ACCESS_BLOCKED` — no fabricated video URLs. `/product/v1/search` remains BLOCKED (403, not
+entitled).
 
 ## MCP note
 The Supabase MCP `execute_sql`/`apply_migration` path stalls (60s) on destructive top-level statements

@@ -13,8 +13,9 @@
 //    /product/v1/search = 403 'can not access current endpoint' (STILL NOT ENTITLED);
 //    /product/v1/videoList = code 1 'param error' (NOT a 403 -> reachable/entitlement open, but the old
 //    flat {product_id} body was rejected). Fix: both bodies now use the entitled filter/paging shape and
-//    accept per-call search_body/video_body overrides. videoList shape UNVERIFIED pending one more
-//    founder-authorised call (test cap = 1/endpoint). No fields were returned (both data:[]).
+//    accept per-call search_body/video_body overrides. videos_only=true calls ONLY videoList (search
+//    skipped) — used to verify the Product-Video endpoint in isolation without re-hitting the
+//    entitlement-blocked search. No fabrication: provider code/message/data returned verbatim (redacted).
 
 const SEARCH_DEFAULT = "https://openapi.fastmoss.com/product/v1/search";
 const VIDEOLIST_DEFAULT = "https://openapi.fastmoss.com/product/v1/videoList";
@@ -131,7 +132,10 @@ Deno.serve(async (req) => {
 
   const market = String(payload.market ?? "").trim().toUpperCase();
   const productId = String(payload.product_id ?? "").trim();
-  const withVideos = payload.with_videos === true;
+  // videos_only=true calls ONLY /product/v1/videoList (search is skipped entirely) — used to verify the
+  // Product-Video endpoint in isolation without re-hitting the entitlement-blocked /product/v1/search.
+  const videosOnly = payload.videos_only === true;
+  const withVideos = payload.with_videos === true || videosOnly;
   if (!market) return jsonResponse(400, { ok: false, error: "missing_market" });
   if (!productId) return jsonResponse(400, { ok: false, error: "missing_product_id" });
   if (!fmSecret) return jsonResponse(424, { ok: false, provider: "FASTMOSS", lane_status: "AUTH_FAILED", error: "server_secret_unavailable" });
@@ -151,13 +155,15 @@ Deno.serve(async (req) => {
     ? payload.search_body : { filter: { product_id: productId, region } };
   const videoBody = (payload.video_body && typeof payload.video_body === "object")
     ? payload.video_body : { filter: { product_id: productId, region }, page: 1, pagesize: 10 };
-  const out: any = { ok: true, provider: "FASTMOSS", market, region, product_id: productId,
-    search_request_keys: Object.keys(searchBody), video_request_keys: withVideos ? Object.keys(videoBody) : null };
-  try {
-    const r = await fetch(searchUrl, { method: "POST", headers: authHeaders, body: JSON.stringify(searchBody) });
-    out.search_http_status = r.status; out.search_raw = redactJson(await r.json().catch(() => ({})));
-    out.search_lane_status = r.status === 401 || r.status === 403 ? "AUTH_FAILED" : r.status === 402 ? "PAYMENT_REQUIRED" : r.status === 429 ? "RATE_LIMITED" : r.status >= 500 ? "PROVIDER_UNAVAILABLE" : r.ok ? "OK" : "FAILED";
-  } catch (e) { out.search_lane_status = "PROVIDER_UNAVAILABLE"; out.search_error = redact((e as Error).message); }
+  const out: any = { ok: true, provider: "FASTMOSS", market, region, product_id: productId, videos_only: videosOnly,
+    search_request_keys: videosOnly ? null : Object.keys(searchBody), video_request_keys: withVideos ? Object.keys(videoBody) : null };
+  if (!videosOnly) {
+    try {
+      const r = await fetch(searchUrl, { method: "POST", headers: authHeaders, body: JSON.stringify(searchBody) });
+      out.search_http_status = r.status; out.search_raw = redactJson(await r.json().catch(() => ({})));
+      out.search_lane_status = r.status === 401 || r.status === 403 ? "AUTH_FAILED" : r.status === 402 ? "PAYMENT_REQUIRED" : r.status === 429 ? "RATE_LIMITED" : r.status >= 500 ? "PROVIDER_UNAVAILABLE" : r.ok ? "OK" : "FAILED";
+    } catch (e) { out.search_lane_status = "PROVIDER_UNAVAILABLE"; out.search_error = redact((e as Error).message); }
+  } else { out.search_lane_status = "SKIPPED_NOT_CALLED"; }
   if (withVideos) {
     try {
       const r = await fetch(videoUrl, { method: "POST", headers: authHeaders, body: JSON.stringify(videoBody) });
