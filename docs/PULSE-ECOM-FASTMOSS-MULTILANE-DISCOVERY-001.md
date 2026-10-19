@@ -91,6 +91,34 @@ by a pre-fix debug run; it carries no metric (UNKNOWN), so it contributes nothin
 or score. A standard DELETE on `commerce_signals` exceeds the SQL tool's 60s cap on this project, and the
 one owner-privileged cleanup was declined, so it is left in place as a documented, harmless test artifact.
 
+## Workspace read contract (`mig_309`)
+`fn_product_discovery_lanes(p_tenant, p_product, p_market)` — the server-owned, country-isolated READ
+contract the Product Intelligence workspace calls to surface the three lanes and their genuine evidence.
+Display-only (`authority='REFERENCE_ONLY'`). Identity is server-owned via `auth.uid()` (`p_tenant` is
+NEVER trusted for authorization — same model as `fn_product_media_state`); fail-closed `unauthorized`
+shape on missing auth / non-owned product / blank market. Returns, per `(product, market)`:
+- `discovery_lanes[]` — the distinct lane keys present (e.g. `["MOST_PROMOTED","TOP_SELLING"]`).
+- `lanes[]` — one object per lane (latest wins), each with `sales_units`, `revenue`, the lane
+  discriminator (`sales_growth_rate` for TOP_SELLING, `promotions_affiliate_count` for MOST_PROMOTED),
+  `observed_at`, `source='FASTMOSS'`, `authority='REFERENCE_ONLY'`.
+- `momentum` — country-specific historical momentum from the latest `COMMERCE_SALES_MOMENTUM` signal, or
+  `null` when none.
+- `reviews` — only when a genuine `review_count` exists (empty review responses never surface).
+- `creators` — only when a genuine `creator_count` exists → **the spurious empty-creator row
+  (creator_count=null) is excluded** and contributes nothing (req 5).
+- `source_freshness` — max lane `observed_at`.
+- `invariants` — `{country_isolated, identity_server_owned_auth_uid, empty_or_unknown_signals_excluded,
+  display_only_never_unlocks_actions}` all true.
+
+Lanes are derived from the per-lane, market-scoped `COMMERCE_PRODUCT_NATIVE` signals (verified FastMoss
+identity, `fastmoss_strategy` set), `DISTINCT ON` strategy — never from loose family keys. Granted to
+`anon, authenticated, service_role`.
+
+Selftest `fn_product_discovery_lanes_selftest()` → **5/5 PASS**: KRIPPEN spurious creator excluded,
+KRIPPEN momentum present, multi-lane evidence present (`MOST_PROMOTED` + `TOP_SELLING`), JP country
+isolation empty, cross-tenant denied.
+
 ## Result: PASS — three distinct source-attributed FastMoss discovery lanes live + verified; Historical-
-Sales momentum + review/creator enrichment live + verified (5/5). No remaining launch blockers for the
-discovery lanes; `/product/v1/search` stays 403 (external plan permission, not required here).
+Sales momentum + review/creator enrichment live + verified (5/5); workspace read contract live + verified
+(5/5). No remaining launch blockers for the discovery lanes; `/product/v1/search` stays 403 (external plan
+permission, not required here).
