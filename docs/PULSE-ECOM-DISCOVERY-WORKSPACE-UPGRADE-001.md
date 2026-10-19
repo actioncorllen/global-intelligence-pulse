@@ -154,3 +154,59 @@ Lock (lane data REFERENCE_ONLY/display-only), founding-member access — no back
   markets (incl. GB) show the honest empty state until discovery runs for them.
 - **Images:** card images come from `fn_product_media_state` and render only genuine server media
   (Product Asset Lock — no fabricated images); products without stored media show no image by design.
+
+---
+
+## GB live Product Discovery (user-approved paid run)
+
+**Goal:** make genuine, fresh FastMoss products visible in the GB Product Explorer (GB was empty).
+
+**Root cause:** GB is fully supported (FastMoss config: GB enabled, GBP; all 3 strategies enabled) but
+GB discovery had **never been dispatched** — only DE had ever been ingested. Discovery is triggered by
+an **external** dispatcher (no in-DB cron); it had not posted GB. No captured GB provider responses
+existed, so GB required new paid calls. The user approved "run GB now — 3 calls".
+
+**What ran (cost):** fetched the three GB ranking lanes through the existing broker
+(`fn_invoke_provider_broker`, `fastmoss-product-detail`): NEW_LISTED via `rank_raw`, TOP_SELLING +
+MOST_PROMOTED via allowlisted `fm_raw`. **4 FastMoss API calls total** — NEW_LISTED ×1, MOST_PROMOTED
+×1, TOP_SELLING ×2 (the first TOP_SELLING attempt hit the 60s pg_net timeout and was retried once).
+**0 research/enrichment calls**: every candidate ingested under `SET LOCAL pulse.suppress_dispatch='on'`,
+so `fn_auto_dispatch_candidate_research` returned `DISPATCH_SUPPRESSED` for all — no deep-research
+provider spend beyond the approved ranking calls.
+
+**Ingest + projection (free, existing architecture):**
+`fn_fastmoss_ingest_candidates_ml` (per lane, suppressed) persisted the products, per-lane
+`COMMERCE_PRODUCT_NATIVE` signals, `monday_opportunity_registry` entries and the REFERENCE_ONLY cover
+images. Candidates become Explorer cards only once they have a country `product_market_evaluation` +
+`product_opportunity_decision`, so for the 28 GB products we ran the free, no-external-call projection
+`fn_assemble_real_product_market(..., 'GB','GBP', ...)` then `fn_pod_evaluate(..., 'GB','pod_v1', true)`
+— the same steps the Monday run performs. All 28 resolved to `WATCH` (band INSUFFICIENT — honest, since
+deep research was not run).
+
+**Verified (tenant 7c8ddf9d, GB):**
+- **28 unique GB FastMoss products** (30 lane signals → 2 converged across TOP_SELLING+MOST_PROMOTED;
+  deduped on `fastmoss_product_id`, identity_basis `platform_id`, never SKU).
+- Lane split NEW_LISTED 10 / TOP_SELLING 10 / MOST_PROMOTED 10; genuine sales/revenue in the lane
+  evidence (e.g. Ski Mask 651 units/£3,248; Snowman 499/£4,985) + `source_freshness`.
+- **28 Explorer cards** via `fn_ecommerce_workspace_intelligence`, **all 28 with a REFERENCE_ONLY GB
+  cover image** (`fn_product_media_state` → `IMAGE_AVAILABLE`); `fn_product_discovery_lanes` returns
+  the GB lanes and is **country-isolated** (same product returns 0 lanes under DE).
+- `momentum`/`reviews`/`creators` are correctly **null** (no enrichment ran) — honest, not fabricated.
+- Fresh observed timestamps (today); 2 iPhone-case candidates correctly held `BRANDED_OR_IP_REVIEW`.
+- **DE preserved:** still 10 DE FastMoss cards / 19 products; DE lanes and covers untouched. Tenant &
+  country isolation intact. Product Asset Lock intact (covers REFERENCE_ONLY, display-only).
+
+**Images:** not a bug — the FastMoss ingest already persists covers to `product_image_assets`
+(REFERENCE_ONLY); DE and now GB products all carry genuine covers. The earlier "no images" was the
+stale pre-deploy build.
+
+**Scheduling / going forward:** the 28 GB products are registered and **active** in
+`monday_opportunity_registry` (32 active GB entries), so the weekly Monday refresh keeps their decisions
+current with no extra provider spend. **Recurring NEW GB discovery** (fresh ranking pulls) still
+depends on the **external dispatcher** posting GB — that scheduler lives outside this repo/DB
+(configuration there to add GB on the weekly cadence is the one remaining, non-blocking item).
+
+## GB Status: PASS
+GB Product Explorer now shows 28 genuine, source-attributed FastMoss products with covers, lane badges
+and lane evidence — no fabrication, DE and all other markets preserved. Remaining non-blocker: add GB
+to the external discovery dispatcher so new GB products are pulled automatically each week.
