@@ -117,3 +117,22 @@ prices", "Not researched yet", "0 advertisers (adequate coverage)", "No competit
    asserts the founder tenant has ONLY community/search signal types — an invariant made stale by the
    earlier (approved) FastMoss discovery population, not by this change. Left as-is (out of scope; would
    mean rewriting an old reconcile test's expectations).
+
+## Addendum — Product Intelligence drawer image fix (Lovable `c01970a1`, live)
+**Defect:** the Explorer card showed the product cover, but opening a product showed no product image in
+the drawer (only the video gallery). **Fix (display-only, no new contracts, no paid calls):**
+- `ProductIntelligenceDrawer` gained a `DrawerCoverHero` rendered at the top of the drawer from a new
+  optional `coverImage` prop. It uses the **exact same image URL as the card** — `ExplorerDrawer` passes
+  `coverImage={item.cover ?? (media ? cardImageUrl(media) : null)}` (card cover first; the media-state
+  primary image, gated by `IMAGE_AVAILABLE`, only as a genuine fallback). https-only, `no-referrer`,
+  `object-contain`, "Reference only" caption. **Never generated or substituted.**
+- **NO_DATA vs failed-render are distinct**: no URL → "No reference image available"; a URL that fails to
+  load (onError) → "Image failed to load". Legacy callers (no prop) are unchanged.
+- Preserves product identity, original URL, REFERENCE_ONLY and Product Asset Lock (the image feeds no
+  gate; `concreteProductActionsAllowed={false}` intact). Regression test
+  `product-explorer-image-continuity.test.tsx` asserts card↔drawer URL continuity, NO_DATA, and the
+  failed-render distinction.
+- **292/292 tests, tsc + build clean. Published to `globalintelligenceactions.com` and bundle-verified**
+  (drawer chunk carries "No reference image available" / "Image failed to load" / "Reference only" /
+  `no-referrer`; Explorer + ad/competitor markers still present; no regression). Signed-in visual PASS
+  still requires an authenticated member session.
