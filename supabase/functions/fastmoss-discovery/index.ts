@@ -97,6 +97,16 @@ async function runStrategy(secret: string, userId: string, market: string, strat
   }
   const endpoint = String(rb.endpoint || "").replace(/^POST\s+/i, "").trim();
 
+  // HARD BUDGET GATE (mig_310): if an approved call budget is active for this provider+tenant, never
+  // exceed it — a refused lane makes no provider fetch, so an approved N can never become N+1 (retries
+  // included). With no active budget the call proceeds and is recorded for monitoring.
+  const budget = await rpc("fn_provider_budget_try_consume", { p_provider: "FASTMOSS", p_user_id: userId, p_market: market });
+  const bb: any = budget.body;
+  if (bb && bb.allowed === false) {
+    await recordOutcome(userId, market, "BUDGET_EXCEEDED", { strategy, reason: bb.reason });
+    return { lane: "COMMERCE", discovery_lane: strategy, provider: "FASTMOSS", market, lane_status: "BUDGET_EXCEEDED", ok: false, budget: bb };
+  }
+
   let provider: Response; let providerBody: any = {};
   try {
     provider = await fetch(endpoint, {
@@ -192,10 +202,22 @@ Deno.serve(async (req) => {
     correlated: a.correlated + (Number(l.correlated) || 0),
   }), { promoted_count: 0, new_dispatched: 0, idempotent: 0, correlated: 0 });
 
+  // DISCOVERY -> WORKSPACE (mig_310): turn newly discovered, registered candidates into visible WATCH
+  // decisions right away (no paid research; suppress_dispatch enforced server-side). Country-isolated;
+  // existing decisions are left untouched. This closes the gap where ingested products were invisible
+  // until the weekly Monday refresh.
+  let projection: unknown = null;
+  if (anyOk) {
+    try {
+      const pr = await rpc("fn_project_discovered_candidates", { p_tenant: userId, p_market: market, p_freshness_hours: 168 });
+      projection = pr.body;
+    } catch (_e) { projection = { status: "projection_error" }; }
+  }
+
   return jsonResponse(200, {
     ok: anyOk, lane: "COMMERCE", provider: "FASTMOSS", market, mode: "multi_lane",
-    lanes_run: strategies, lane_results: lanes, totals,
-    note: "Three distinct source-attributed FastMoss ranking lanes; one zero/unavailable lane never stops the others; candidates only, never opportunity; country-isolated; UNKNOWN != 0.",
-    contract: "pulse_fastmoss_multi_lane_discovery_v1",
+    lanes_run: strategies, lane_results: lanes, totals, projection,
+    note: "Three distinct source-attributed FastMoss ranking lanes; one zero/unavailable lane never stops the others; candidates only, never opportunity; country-isolated; UNKNOWN != 0. Newly discovered candidates are projected to WATCH decisions (no paid research).",
+    contract: "pulse_fastmoss_multi_lane_discovery_v2",
   });
 });
