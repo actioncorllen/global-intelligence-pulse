@@ -8,8 +8,13 @@
 //    (POST /openapi/v1/tiktok/product/detail, secret-key header) by product_id to test whether the
 //    existing credential is entitled and whether descriptive product fields are returned. One call,
 //    no ingest, response redacted. Entitlement/contract is unknown until tested.
-//  - default: FastMoss product-by-id detail (/product/v1/search + /product/v1/videoList) — NOT
-//    entitled on current plan (code 403 'can not access current endpoint'); dormant activation point.
+//  - default: FastMoss product-by-id detail (/product/v1/search + /product/v1/videoList). Live test
+//    2026-10-19 (product 1729937925462923841, DE): HTTP 200 on both; provider BODY codes ->
+//    /product/v1/search = 403 'can not access current endpoint' (STILL NOT ENTITLED);
+//    /product/v1/videoList = code 1 'param error' (NOT a 403 -> reachable/entitlement open, but the old
+//    flat {product_id} body was rejected). Fix: both bodies now use the entitled filter/paging shape and
+//    accept per-call search_body/video_body overrides. videoList shape UNVERIFIED pending one more
+//    founder-authorised call (test cap = 1/endpoint). No fields were returned (both data:[]).
 
 const SEARCH_DEFAULT = "https://openapi.fastmoss.com/product/v1/search";
 const VIDEOLIST_DEFAULT = "https://openapi.fastmoss.com/product/v1/videoList";
@@ -136,15 +141,26 @@ Deno.serve(async (req) => {
   const searchUrl = (Deno.env.get("FASTMOSS_SEARCH_URL") || SEARCH_DEFAULT).trim();
   const videoUrl = (Deno.env.get("FASTMOSS_VIDEOLIST_URL") || VIDEOLIST_DEFAULT).trim();
   const authHeaders = { "content-type": "application/json", authorization: "Bearer " + fmSecret };
-  const out: any = { ok: true, provider: "FASTMOSS", market, region, product_id: productId };
+  // Request bodies: default to the ENTITLED search contract shape (filter.product_id + region), which
+  // /product/v1/search accepts; /product/v1/videoList previously got a flat {product_id} and FastMoss
+  // replied code 1 "param error" (reachable, NOT a 403 entitlement block) — so it now mirrors the same
+  // filter/paging shape. Either body can be overridden per-call (search_body/video_body) so the exact
+  // documented schema can be supplied on the next authorised test without redeploying. No fabrication:
+  // the response still carries the provider's real code/message/data verbatim (redacted for secrets).
+  const searchBody = (payload.search_body && typeof payload.search_body === "object")
+    ? payload.search_body : { filter: { product_id: productId, region } };
+  const videoBody = (payload.video_body && typeof payload.video_body === "object")
+    ? payload.video_body : { filter: { product_id: productId, region }, page: 1, pagesize: 10 };
+  const out: any = { ok: true, provider: "FASTMOSS", market, region, product_id: productId,
+    search_request_keys: Object.keys(searchBody), video_request_keys: withVideos ? Object.keys(videoBody) : null };
   try {
-    const r = await fetch(searchUrl, { method: "POST", headers: authHeaders, body: JSON.stringify({ filter: { product_id: productId, region } }) });
+    const r = await fetch(searchUrl, { method: "POST", headers: authHeaders, body: JSON.stringify(searchBody) });
     out.search_http_status = r.status; out.search_raw = redactJson(await r.json().catch(() => ({})));
     out.search_lane_status = r.status === 401 || r.status === 403 ? "AUTH_FAILED" : r.status === 402 ? "PAYMENT_REQUIRED" : r.status === 429 ? "RATE_LIMITED" : r.status >= 500 ? "PROVIDER_UNAVAILABLE" : r.ok ? "OK" : "FAILED";
   } catch (e) { out.search_lane_status = "PROVIDER_UNAVAILABLE"; out.search_error = redact((e as Error).message); }
   if (withVideos) {
     try {
-      const r = await fetch(videoUrl, { method: "POST", headers: authHeaders, body: JSON.stringify({ product_id: productId }) });
+      const r = await fetch(videoUrl, { method: "POST", headers: authHeaders, body: JSON.stringify(videoBody) });
       out.video_http_status = r.status; out.video_raw = redactJson(await r.json().catch(() => ({})));
       out.video_lane_status = r.ok ? "OK" : (r.status === 401 || r.status === 403 ? "AUTH_FAILED" : r.status === 402 ? "PAYMENT_REQUIRED" : r.status === 429 ? "RATE_LIMITED" : "FAILED");
     } catch (e) { out.video_lane_status = "PROVIDER_UNAVAILABLE"; out.video_error = redact((e as Error).message); }
