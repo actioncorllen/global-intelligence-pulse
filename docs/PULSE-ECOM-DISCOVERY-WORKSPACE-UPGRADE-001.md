@@ -103,3 +103,54 @@ Discovery lane filter. The change is unpublished — publish the Lovable project
 
 Pre-existing, out of scope: `/product/v1/search` stays 403 (external plan permission, not required
 here); the one inert spurious-creator row remains (harmless, excluded from all reads).
+
+---
+
+## Launch fix — deployment gap (addendum)
+
+**Reported:** the live site `globalintelligenceactions.com` showed old Product Cards and no
+discovery experience, despite tests passing on Lovable commit `58b0cede`.
+
+**Root cause (confirmed, not a code defect):** the upgraded UI was committed to Lovable but **never
+published to production**. The live custom domain (served by this Lovable project — published slug
+`https-www-globalintelligenceactions-com.lovable.app`) was serving a build that **predated**
+`58b0cede`: its workspace bundle called `fn_ecommerce_workspace_intelligence` and
+`fn_product_media_state` but contained **no `fn_product_discovery_lanes`** and none of the lane UI,
+and no discovery chunk existed in the 116-chunk build. (The `dev.`/`workspace_.` chunk prefixes are
+TanStack route-group names, not a dev build.)
+
+**GB data reality (no substitution/fabrication):** the only FastMoss discovery-lane evidence in the
+database is for **DE** (9 products, `TOP_SELLING` + `MOST_PROMOTED`), owned by tenant
+`7c8ddf9d…`. **GB has zero** FastMoss lane evidence. `commerce_products` has no market column;
+a product's market is carried by its signals/decisions, and no GB product carries lane signals.
+Populating GB would require a FastMoss discovery run for GB (a paid provider call — deliberately NOT
+made here).
+
+**Fixes shipped:**
+1. **Honest empty state (req 6)** — Lovable commits `870ba37` + `2f2c7af` (project `0e77a72b`): the
+   Products view shows *"No FastMoss discovery signals for {market} yet — New Listed, Top Selling and
+   Most Promoted lanes appear here when available."* when a market has no lanes, and the drawer now
+   **always** renders the "Discovery lanes" section with an honest empty line instead of hiding it.
+   The feature is no longer silently hidden. Tests **272/272**, typecheck clean, no new lint.
+2. **Published to production** — `deploy_project` (deployment `2574374b…`). Verified on the live
+   domain: the entry bundle hash changed (`index-CrkKNnEy.js` → `index-DrRn1PuO.js`); the live
+   workspace bundle now carries the `product-discovery-lanes` query key + the empty-state copy; and
+   the component chunk `reason-presentation-BjN41R7I.js` now contains `fn_product_discovery_lanes`
+   (RPC wiring), `Discovery lane` (filter), `Discovery lanes` (drawer section), `Historical momentum`
+   and `Product videos`. The full discovery + video experience is now live.
+
+**Deployment status:** PASS — upgraded UI published and confirmed live at the bundle level.
+**Preserved:** tenant/country isolation (server `auth.uid()`), existing Product Cards, Product Asset
+Lock (lane data REFERENCE_ONLY/display-only), founding-member access — no backend/RPC change.
+
+**Customer-visible PASS/FAIL:**
+- Discovery feature present on the live site: **PASS** (filter, badges, drawer section all deployed).
+- DE market (has evidence): **PASS** — genuine lanes/sales/growth/promotions render.
+- GB market (no evidence): **PASS (honest empty state)** — the feature is visible and says GB has no
+  FastMoss signals yet; it is not fabricated and not silently hidden.
+- **Deferred (not failed):** a live **signed-in visual** confirmation — this environment has no auth
+  session for the workspace (auth-gated). Verified instead at the deployed-bundle + backend-contract
+  level. To confirm visually: sign in, open Products, select **DE** to see populated lanes; other
+  markets (incl. GB) show the honest empty state until discovery runs for them.
+- **Images:** card images come from `fn_product_media_state` and render only genuine server media
+  (Product Asset Lock — no fabricated images); products without stored media show no image by design.
