@@ -4,6 +4,10 @@
 // Modes:
 //  - mode:"rank_raw" (provider FASTMOSS|KALODATA): call the ENTITLED discovery rank endpoint and
 //    return raw rows (no ingest) to confirm product-native image fields + recover cover URLs.
+//  - mode:"fm_raw": allowlisted raw passthrough to one of five FastMoss product endpoints
+//    (rank/topSelling, rank/mostPromoted, salesTrend, reviewList, creatorList) with its documented body,
+//    for bounded entitlement verification. Path must be in FM_RAW_ALLOW (no arbitrary host/path); provider
+//    code/message/data returned redacted; no ingest. /product/v1/search is excluded (403, never retried).
 //  - mode:"kalodata_detail": call Kalodata's documented Product Detail endpoint
 //    (POST /openapi/v1/tiktok/product/detail, secret-key header) by product_id to test whether the
 //    existing credential is entitled and whether descriptive product fields are returned. One call,
@@ -21,6 +25,17 @@ const SEARCH_DEFAULT = "https://openapi.fastmoss.com/product/v1/search";
 const VIDEOLIST_DEFAULT = "https://openapi.fastmoss.com/product/v1/videoList";
 const FM_SECRET_ENV = "FASTMOSS_CLIENT_SECRET";
 const KL_SECRET_ENV = "KALODATA_SECRET_KEY";
+
+// mode:"fm_raw" allowlist — the ONLY FastMoss paths the raw passthrough may call. A fixed set (no
+// arbitrary host/path) so the broker can never be used for SSRF or to exfiltrate the secret to another
+// host. /product/v1/search is deliberately absent (confirmed 403 not-entitled; never retried).
+const FM_RAW_ALLOW = new Set<string>([
+  "/product/v1/rank/topSelling",
+  "/product/v1/rank/mostPromoted",
+  "/product/v1/salesTrend",
+  "/product/v1/reviewList",
+  "/product/v1/creatorList",
+]);
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
@@ -128,6 +143,27 @@ Deno.serve(async (req) => {
         product_id: productId0, endpoint: detailUrl, request_keys: Object.keys(detailBody),
         http_status: r.status, http_lane_status: lane(r.status), raw: redactJson(raw) });
     } catch (e) { return jsonResponse(502, { ok: false, mode: "kalodata_detail", provider: "KALODATA", error: redact((e as Error).message) }); }
+  }
+
+  if (payload.mode === "fm_raw") {
+    // Allowlisted raw passthrough: verify an entitled-or-not FastMoss endpoint with its documented body.
+    // path MUST be in FM_RAW_ALLOW; body is passed through verbatim. Provider code/message/data returned
+    // redacted. One bounded call per endpoint — no ingest, no fabrication.
+    const path = String(payload.path ?? "").trim();
+    if (!FM_RAW_ALLOW.has(path)) {
+      return jsonResponse(400, { ok: false, mode: "fm_raw", error: "path_not_allowlisted", allow: Array.from(FM_RAW_ALLOW) });
+    }
+    if (!fmSecret) return jsonResponse(424, { ok: false, provider: "FASTMOSS", lane_status: "AUTH_FAILED", error: "server_secret_unavailable" });
+    const body = (payload.body && typeof payload.body === "object") ? payload.body : {};
+    const url = "https://openapi.fastmoss.com" + path;
+    const lane = (s: number) => s === 401 || s === 403 ? "AUTH_FAILED" : s === 402 ? "PAYMENT_REQUIRED" : s === 429 ? "RATE_LIMITED" : s >= 500 ? "PROVIDER_UNAVAILABLE" : s >= 200 && s < 300 ? "OK" : "FAILED";
+    try {
+      const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json", authorization: "Bearer " + fmSecret }, body: JSON.stringify(body) });
+      const txt = await r.text();
+      let raw: unknown; try { raw = JSON.parse(txt); } catch { raw = redact(txt.slice(0, 2000)); }
+      return jsonResponse(200, { ok: r.ok, mode: "fm_raw", provider: "FASTMOSS", path, request_keys: Object.keys(body),
+        http_status: r.status, http_lane_status: lane(r.status), raw: redactJson(raw) });
+    } catch (e) { return jsonResponse(502, { ok: false, mode: "fm_raw", provider: "FASTMOSS", path, lane_status: "PROVIDER_UNAVAILABLE", error: redact((e as Error).message) }); }
   }
 
   const market = String(payload.market ?? "").trim().toUpperCase();
