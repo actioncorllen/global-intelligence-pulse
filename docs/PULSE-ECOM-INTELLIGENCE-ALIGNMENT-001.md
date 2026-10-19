@@ -91,13 +91,19 @@ auth; founding-member access. No new paid provider calls; no redesign outside th
   persistence, competitor prices + range, and freshness.
 - Cards flag **stale** discovery signals (>14 days).
 
-## Status: PASS (backend + contracts verified) / IN PROGRESS (frontend deploy) / PARTIAL (live signed-in visual)
-**Backend:** committed `mig_312` (competitor evidence selftest 5/5; Explorer 8/8; preflight 13/13; no
-paid calls). **Frontend:** Lovable build complete (both drawer sections + card stale indicator; 286
-tests, tsc clean), with a follow-up suppressing the drawer's duplicate built-in Competitors/Advertising
-sections in the Explorer path. Deploy to `globalintelligenceactions.com` and bundle-level live
-verification are the final step (tracked in this session); **visual PASS requires signed-in member
-verification and is not claimed here.**
+## Status: PASS (backend + deployment, bundle-verified live) / PARTIAL (live signed-in visual)
+**Backend:** `mig_312` committed + deployed (competitor evidence selftest 5/5; Explorer 8/8; preflight
+13/13; no paid calls). **Frontend:** Lovable build `d1af4e35` **published to
+`globalintelligenceactions.com`** — 288/288 tests, tsc + production build clean. The refinement
+suppresses the drawer's built-in Competitors/Advertising sections in the Explorer path, so the drawer
+now has exactly **one** "Advertising & competition" section and **one** "Competitor prices" section (no
+duplicates); the legacy DecisionsBody is unchanged.
+**Live bundle verification** (production chunk on `globalintelligenceactions.com`): references
+`fn_product_ad_evidence`, `fn_product_competitor_evidence`, "Advertising & competition", "Competitor
+prices", "Not researched yet", "0 advertisers (adequate coverage)", "No competitor prices observed",
+"Low observed ad competition", "Not available in", plus every preserved Explorer marker
+(`fn_product_explorer`, filters, "Reference only", empty state, `concreteProductActionsAllowed`,
+"Stale") — no regression. **Visual PASS requires a signed-in member session and is NOT claimed here.**
 
 ### Remaining / launch-critical gaps
 1. **No researched advertising/competitor/pricing evidence exists on the Explorer products yet** — this
