@@ -136,3 +136,25 @@ the drawer (only the video gallery). **Fix (display-only, no new contracts, no p
   (drawer chunk carries "No reference image available" / "Image failed to load" / "Reference only" /
   `no-referrer`; Explorer + ad/competitor markers still present; no regression). Signed-in visual PASS
   still requires an authenticated member session.
+
+## Addendum — Evidence section: no factual "0" for unresearched families (Lovable `8cbfbd63`, live)
+**Defect:** in the drawer's "Evidence" section, a family whose research never ran (e.g. ADVERTISING_EMERGENCE
+with `state: UNKNOWN`, `source_state: NOT_SEARCHED`, `present: false`) still carried
+`strength`/`observed_detail` = `{distinct_advertisers: 0}`, so the UI rendered "distinct advertisers: 0"
+as a fact. **Fix (presentation-only; no source data, scoring, thresholds or RPC changed):**
+- Two presentation-only selectors in `product-intelligence-contract.ts`: `familyResearched(f)` (false for
+  `NOT_SEARCHED`/null source and for UNAVAILABLE/BLOCKED) and `familyObservedDisplay(f)` →
+  "Not available in this market" (UNAVAILABLE), "Evidence access blocked" (BLOCKED), "Not researched"
+  (not researched), else the genuine `observedDetail`. The contract's own `source_state` disambiguates a
+  genuine observed zero (`SEARCHED_EVIDENCE_FOUND`) from "never looked up" (`NOT_SEARCHED`).
+- Applied to the "Observed" and "Strength" rows in BOTH the Evidence list and the EvidenceDetail popover;
+  Strength is hidden for unresearched families (one clean "Observed: Not researched" line). All five
+  families, state chips, lifecycle, supplier, identity, hero image and the ad/competitor sections are
+  unchanged. A genuine adequate-coverage zero (`SEARCHED_EVIDENCE_FOUND`) is still shown as "0".
+- Regression test `product-intelligence.evidence-unknown.test.tsx`: NOT_SEARCHED → "Not researched" and
+  no factual 0; SEARCHED_EVIDENCE_FOUND + 0 → "distinct advertisers: 0" preserved; a real count shown
+  as-is; UNSUPPORTED_MARKET → "Not available in this market"; all five families render.
+- **297/297 tests, tsc + build clean. Published to `globalintelligenceactions.com` and bundle-verified**
+  (product-intelligence chunk carries "Not researched" / "Not available in this market" / "Evidence
+  access blocked"; hero + family + Explorer + ad/competitor markers intact; no regression). Signed-in
+  visual PASS still requires an authenticated member session.
