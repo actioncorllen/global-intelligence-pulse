@@ -79,12 +79,31 @@ reconcile actual → cache → read-back), translating 3 unseen multilingual tit
 - Verdict: reserve → real call → reconcile-actual → cache → free-hit all correct; brands/SKUs/numbers
   preserved; cap enforced; fail-closed + over-cap refusal proven by the 9/9 self-test. **PASS.**
 
-## 6b. Remaining
-Frontend wiring (auto-detect language worldwide; cache-first display; on cache-miss call
-`translate-text`; originals preserved + "Translated" badge; Preferences override) and production
-publish + bundle-verify. The authenticated HTTP E2E through the edge function (vs. the tool-walked
-sequence above) is exercised when a signed-in member loads the live site — this environment cannot
-mint a user JWT.
+## 7. Frontend wired + published (Lovable commit 844987b4) — LIVE
+The Product Explorer now translates product **titles** into the visitor's language WORLDWIDE through
+the budget-enforced `translate-text` edge function, reusing the existing language layer + cache:
+- New `contentLang` on `LanguageProvider`: Preferences override → account/browser locale primary
+  subtag → fallback; independent of the research market. `useTextTranslations` is cache-first, then
+  calls `translate-text` for the misses only (batched ≤40 items / ≤12k chars, deduped), non-blocking
+  (originals render immediately, update in place), and **fails closed** (budget-exhausted / error →
+  originals kept, no error UI). `marketSourceLang` passes a source-language hint. Originals, brands,
+  SKUs, numbers and the "Translated" badge are preserved; no browser-side Gemini/secret.
+- Frontend 319/319 tests pass, `tsc --noEmit` clean, no lint errors. Published to
+  globalintelligenceactions.com and **bundle-verified live**: `translate-text`, `text-translations`,
+  `fn_text_translations`, `contentLang` and the "Translated" badge all present; and FX
+  (`fn_fx_convert`/ECB), `fn_ecommerce_supported_markets`, `fn_product_explorer`, Preferences,
+  `strateloq.lang`, "Not researched"/"Nicht recherchiert" and Product Asset Lock all still present —
+  no regression.
+
+### Scope + caveats
+- **Titles only.** The Explorer item model exposes no description / benefits / free-text summary
+  fields in this component, so only titles are translated; fixed lane labels stay on the EN/DE
+  dictionary (English fallback). Translating descriptions/summaries would need those fields exposed —
+  a follow-up, not started.
+- **Signed-in visual not claimed.** The edge function is JWT-gated, so live translation only fires
+  for a signed-in member; this environment cannot hold a session. The full budget-enforced path was
+  verified server-side with a real call (§6); the client wiring is confirmed present in the live
+  bundle. A signed-in member should confirm the pixel-level experience.
 
 ## 7. Preserved / not changed
 $2/month hard cap + fail-closed semantics, tenant/global budget isolation, translation cache,
