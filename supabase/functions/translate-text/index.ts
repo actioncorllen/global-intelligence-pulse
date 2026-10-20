@@ -3,7 +3,7 @@
 //
 // Signed-in user -> this JWT-protected Edge Function -> cache-first lookup (free) -> for the
 // remaining (uncached) strings: RESERVE worst-case against the atomic $2 cap (mig_315) -> call the
-// server-side Gemini 2.5 Flash-Lite translator via n8n (credentials stay in n8n) -> RECONCILE the
+// server-side Gemini translator via n8n (currently 3.1 Flash-Lite; credentials stay in n8n) -> RECONCILE the
 // ACTUAL token cost, failing CLOSED on any error/timeout/uncertain charge -> write the translations
 // into the shared cache so each phrase is paid for at most once.
 //
@@ -26,8 +26,12 @@ const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const WEBHOOK_SECRET = Deno.env.get("PULSE_DISCOVERY_WEBHOOK_SECRET") ?? Deno.env.get("N8N_GEMINI_WEBHOOK_SECRET") ?? "";
 const TRANSLATE_WEBHOOK = Deno.env.get("N8N_TRANSLATE_WEBHOOK") ?? "https://tradingb.app.n8n.cloud/webhook/pulse-gemini-translate";
 
-const MODEL = "gemini-2.5-flash-lite";
-const PROVENANCE = "gemini_2_5_flash_lite";
+// Founder-authorised model (2.5 Flash-Lite was access-denied on this key). The edge function is the
+// authoritative model selector: it sends MODEL to n8n, which uses it in the generateContent URL.
+// Changing the model + its provenance here (and recalibrating fn_translation_cost_micro) is the only
+// change needed to switch models.
+const MODEL = "gemini-3.1-flash-lite";
+const PROVENANCE = "gemini_3_1_flash_lite";
 const MAX_INPUT_TEXTS = 400;   // hard cap on strings accepted per request
 const MAX_ITEMS = 60;          // hard cap on uncached strings sent to Gemini per call
 const MAX_TOTAL_CHARS = 16000; // hard cap on total source chars sent to Gemini per call
@@ -263,7 +267,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
       let parsed: { source: string; translated: string }[] = [];
       let diag = "";
       try {
-        const wh = await callWebhook(TRANSLATE_WEBHOOK, { geminiPayload: buildGeminiPayload(targetLang, selected) });
+        const wh = await callWebhook(TRANSLATE_WEBHOOK, { model: MODEL, geminiPayload: buildGeminiPayload(targetLang, selected) });
         const d = wh.data ?? {};
         const usage = (d.usage ?? {}) as Record<string, unknown>;
         const inTok = Number(usage.prompt_tokens ?? 0) || 0;

@@ -2,11 +2,13 @@
 
 **Stage 3 — approved Gemini text translation under a HARD global $2.00 USD / calendar-month cap.
 The money-critical budget core, the server-side Gemini translator (n8n), the budget-enforced
-`translate-text` edge function, and the shared translation cache are all BUILT, DEPLOYED and
-VERIFIED. One genuine external BLOCKER remains: the founder-approved model `gemini-2.5-flash-lite`
-is access-denied on this API key, and the API-recommended replacement (`gemini-3.5-flash-lite`) is
-materially more expensive, so it needs founder authorisation + a cost recalibration before any live
-translation. No model was switched; net paid spend to date = $0.00.**
+`translate-text` edge function, and the shared translation cache are BUILT, DEPLOYED and VERIFIED
+end-to-end with a real budget-bracketed call. The founder-approved `gemini-2.5-flash-lite` proved
+access-denied on this API key ("no longer available to new users"); after confirming which models
+the key can actually reach, the founder authorised `gemini-3.1-flash-lite` ($0.25 in / $1.50 out
+per 1M — Google's most cost-effective Flash-Lite). The cost function was recalibrated to that rate
+so the $2 ceiling stays a true $2 at Google. Backend + budget fully verified; frontend wiring +
+production publish are the remaining step.**
 
 ## 1. Budget core (mig_315) — VERIFIED PASS (9/9)
 Atomic, global, per-calendar-month $2.00 cap. `reserve-worst-case-before-call` +
@@ -47,32 +49,42 @@ back to the ORIGINAL (never fabricated); originals/brands/SKUs/numbers preserved
 client keeps original). A definitive pre-execution rejection (n8n 401/403/404 — Gemini never ran)
 releases the reservation instead of wastefully forfeiting it.
 
-## 5. End-to-end verification (real call, budget-enforced) — path PASS; model BLOCKED
-Walked the exact enforced sequence with one real Gemini call (reserve → n8n/Gemini → reconcile →
-state), translating 3 unseen multilingual titles (DE/ES/FR) with brands + model codes + numbers:
-- Reserve: worst-case **648 µUSD**, remaining 1,999,352 — correct.
-- Gemini call returned **HTTP 404**: `models/gemini-2.5-flash-lite` *"is no longer available to new
-  users … use models/gemini-3.5-flash-lite"*. Gemini was **not billed** (no `usageMetadata`).
-- Shape Response captured the failure cleanly (`ok:false, status:404`); reservation released
-  (reconciled, actual 0). **Net spend $0.00**; month back to `reserved=0, spent=0, remaining=$2.00`,
-  0 open reservations.
-- Verdict: the n8n executor, the secret gate, the reserve/reconcile accounting and the cache plumbing
-  all behaved correctly. The ONLY failure was model availability.
+## 5. Model selection (access-verified) + recalibration
+The first real call exposed that the founder-approved `gemini-2.5-flash-lite` returns **HTTP 404**
+*"no longer available to new users … use models/gemini-3.5-flash-lite"* — it is in the model catalog
+but this project is blocked from generating with it (a per-project new-user gate on older models).
+Gemini was **not billed** on that 404 (no `usageMetadata`); the reservation was released (actual 0),
+net spend $0.00.
 
-## 6. BLOCKER — model authorisation + pricing (founder decision)
-- **Approved model `gemini-2.5-flash-lite` ($0.10 in / $0.40 out per 1M) is access-denied** on this
-  API key (404 for new users).
-- **API-recommended replacement `gemini-3.5-flash-lite` = $0.30 in / $2.50 out per 1M** (~3× input,
-  ~6× output; launched Jul 2026; verified across multiple price trackers).
-- The $2/month HARD cap holds regardless of model (the reserve gate is model-agnostic), but the
-  cost-per-token model (`fn_translation_cost_micro`, currently calibrated to $0.10/$0.40) MUST be
-  recalibrated to the chosen model's real rate, or the counter would under-count Google spend and the
-  "$2" could overshoot at Google. At 3.5-Lite rates the same $2 buys proportionally fewer
-  translations.
-- **Not done unilaterally**: no model switched, no further paid calls. Options for the founder:
-  (a) authorise `gemini-3.5-flash-lite` — then recalibrate the cost function to $0.30/$2.50 (+margin)
-  and flip the model; the $2 cap stays a true $2; (b) nominate another available model; (c) keep
-  translation disabled — the cache + originals path already works and shows original text everywhere.
+A free `models.list` with this key showed the accessible generateContent models. Cheapest options
+verified: **`gemini-3.1-flash-lite` $0.25 / $1.50 per 1M** (Google's "most cost-effective"),
+`gemini-3.5-flash-lite` $0.30 / $2.50, and Gemma 4 (free tier, but data may be used to improve Google
+products + lower limits). The founder authorised **`gemini-3.1-flash-lite`**. `fn_translation_cost_micro`
+was recalibrated from $0.10/$0.40 to **$0.25/$1.50** (×1.5 margin), keeping the $2 ceiling a true $2
+at Google; the cap self-test re-passed 9/9 at the new rate (cost 263, worst-case 731). The model is
+now sent by the edge function to n8n (default `gemini-3.1-flash-lite`), so a future model change is a
+one-line edge-function edit + a cost recalibration.
+
+## 6. End-to-end verification (real call, budget-enforced) — PASS
+Walked the exact enforced sequence with one real Gemini 3.1 Flash-Lite call (reserve → n8n/Gemini →
+reconcile actual → cache → read-back), translating 3 unseen multilingual titles (DE/ES/FR):
+- Reserve: worst-case **2195 µUSD**, remaining 1,997,805.
+- Gemini 3.1 Flash-Lite: HTTP 200, `finishReason STOP`, usage 250 in / 80 out. Translations preserved
+  every brand, model code and number — e.g. *"Philips Lumea IPL Haarentfernungsgerät 9000 Serie
+  BRI958/00"* → *"Philips Lumea IPL Hair Removal Device 9000 Series BRI958/00"*; De'Longhi EC885.M
+  1300W and Sony WF-1000XM5 kept verbatim.
+- Reconcile: actual **274 µUSD** ($0.000274), clamped under the 2195 reservation; month `spent=274,
+  reserved=0, remaining=1,999,726`, 0 open reservations.
+- Cache: 3 entries written (`gemini_3_1_flash_lite`); a repeat lookup now returns all 3 as free hits.
+- Verdict: reserve → real call → reconcile-actual → cache → free-hit all correct; brands/SKUs/numbers
+  preserved; cap enforced; fail-closed + over-cap refusal proven by the 9/9 self-test. **PASS.**
+
+## 6b. Remaining
+Frontend wiring (auto-detect language worldwide; cache-first display; on cache-miss call
+`translate-text`; originals preserved + "Translated" badge; Preferences override) and production
+publish + bundle-verify. The authenticated HTTP E2E through the edge function (vs. the tool-walked
+sequence above) is exercised when a signed-in member loads the live site — this environment cannot
+mint a user JWT.
 
 ## 7. Preserved / not changed
 $2/month hard cap + fail-closed semantics, tenant/global budget isolation, translation cache,

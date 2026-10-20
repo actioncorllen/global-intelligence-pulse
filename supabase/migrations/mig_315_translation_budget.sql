@@ -8,8 +8,13 @@
 -- reserve-worst-case-before-call + reconcile-actual-after, that FAILS CLOSED on any error / retry /
 -- concurrency / uncertain charge (an uncertain outcome counts the full worst-case as spent, never
 -- refunded). It also adds a cache WRITER so translated text is stored once and reused for free.
--- Verified pricing (public, 2026): Gemini 2.5 Flash-Lite = $0.10 / 1M input tokens, $0.40 / 1M output
--- tokens. We reserve at a safety margin ABOVE these rates so the cap can never be exceeded.
+-- Pricing: the founder-approved Gemini 2.5 Flash-Lite ($0.10/$0.40 per 1M) proved access-denied on
+-- this API key ("no longer available to new users"); the founder authorised Gemini 3.1 Flash-Lite
+-- instead. Verified pricing (public, 2026): Gemini 3.1 Flash-Lite = $0.25 / 1M input tokens,
+-- $1.50 / 1M output tokens. We reserve at a safety margin ABOVE these rates so the cap can
+-- never be exceeded, and the SAME (margined) rate is used to reconcile actual spend, so the live
+-- counter over-counts rather than under-counts real Google spend — the $2 ceiling binds early, never
+-- late.
 --
 -- Budget functions are service_role ONLY: the browser never touches the budget. The ONLY path to
 -- Gemini is the server-side edge function, which must reserve here before any call. Credentials stay
@@ -44,15 +49,16 @@ REVOKE ALL ON TABLE public.translation_spend_ledger FROM PUBLIC, anon, authentic
 CREATE INDEX IF NOT EXISTS translation_spend_ledger_month_idx ON public.translation_spend_ledger(month, state);
 
 -- ---------------------------------------------------------------------------
--- Cost at verified Gemini 2.5 Flash-Lite rates, in micro-USD, rounded UP, with a safety margin.
--- input $0.10/1M = 0.10 µUSD/token ; output $0.40/1M = 0.40 µUSD/token. SAFETY = 1.5x.
+-- Cost at verified Gemini 3.1 Flash-Lite rates, in micro-USD, rounded UP, with a safety margin.
+-- input $0.25/1M = 0.25 µUSD/token ; output $1.50/1M = 1.50 µUSD/token. SAFETY = 1.5x.
+-- (Founder-authorised model after 2.5 Flash-Lite was access-denied on this key.)
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.fn_translation_cost_micro(p_in_tokens bigint, p_out_tokens bigint)
  RETURNS bigint
  LANGUAGE sql IMMUTABLE
 AS $function$
   SELECT ceil(
-    (greatest(coalesce(p_in_tokens,0),0) * 0.10 + greatest(coalesce(p_out_tokens,0),0) * 0.40) * 1.5
+    (greatest(coalesce(p_in_tokens,0),0) * 0.25 + greatest(coalesce(p_out_tokens,0),0) * 1.50) * 1.5
   )::bigint;
 $function$;
 
@@ -291,11 +297,11 @@ BEGIN
     v_checks := v_checks || jsonb_build_object('check','F_UNKNOWN_RESERVATION_DENIED',
       'ok', (rF->>'ok')::boolean = false AND rF->>'reason'='reservation_not_found', 'detail', rF);
 
-    -- J/K: cost + worst-case helpers at verified Gemini 2.5 Flash-Lite rates ($0.10 in / $0.40 out per 1M, x1.5)
+    -- J/K: cost + worst-case helpers at verified Gemini 3.1 Flash-Lite rates ($0.25 in / $1.50 out per 1M, x1.5)
     v_checks := v_checks || jsonb_build_object('check','J_COST_MICRO',
-      'ok', public.fn_translation_cost_micro(100,100) = 75, 'detail', public.fn_translation_cost_micro(100,100));
+      'ok', public.fn_translation_cost_micro(100,100) = 263, 'detail', public.fn_translation_cost_micro(100,100));
     v_checks := v_checks || jsonb_build_object('check','K_WORSTCASE_MICRO',
-      'ok', public.fn_translation_worstcase_micro(50,1) = 216, 'detail', public.fn_translation_worstcase_micro(50,1));
+      'ok', public.fn_translation_worstcase_micro(50,1) = 731, 'detail', public.fn_translation_worstcase_micro(50,1));
 
     v_ended := 'completed';
     RAISE EXCEPTION 'ST_ROLLBACK';  -- discard every write above; the live month is left untouched
