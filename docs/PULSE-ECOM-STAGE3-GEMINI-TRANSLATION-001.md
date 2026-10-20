@@ -95,15 +95,42 @@ the budget-enforced `translate-text` edge function, reusing the existing languag
   `strateloq.lang`, "Not researched"/"Nicht recherchiert" and Product Asset Lock all still present —
   no regression.
 
-### Scope + caveats
-- **Titles only.** The Explorer item model exposes no description / benefits / free-text summary
-  fields in this component, so only titles are translated; fixed lane labels stay on the EN/DE
-  dictionary (English fallback). Translating descriptions/summaries would need those fields exposed —
-  a follow-up, not started.
-- **Signed-in visual not claimed.** The edge function is JWT-gated, so live translation only fires
-  for a signed-in member; this environment cannot hold a session. The full budget-enforced path was
-  verified server-side with a real call (§6); the client wiring is confirmed present in the live
-  bundle. A signed-in member should confirm the pixel-level experience.
+## 8. Extended beyond titles — descriptions + human categories (mig_317; Lovable 85a829cf) — LIVE
+After titles, the only GENUINE additional free-text in the server contracts was product
+`description` and `category`, which `fn_product_explorer` did not expose. mig_317 additively surfaces
+both existing columns (blanks stripped — never invented). The frontend now:
+- Renders a **Description** block in the Product Intelligence drawer ONLY when a genuine description
+  is present, translated through the same path (cache-first → translate-text), original preserved +
+  "Translated" badge, non-blocking, fail-closed; German "Beschreibung" added.
+- Translates `category` ONLY when human-readable (`isMachineSlug`/`humanCategory`): machine slugs
+  like `tiktok_shop_product` are never sent to translate-text and never shown as labels.
+- Adds description + eligible category to the SAME deduped/batched title request (one pipeline).
+- 322/322 frontend tests pass, tsc clean; published + bundle-verified live (`Beschreibung` present,
+  the slug literal absent, no regression to FX/18-market/Explorer/Preferences/Asset-Lock).
+
+### What the current data means (honest)
+The *contract + UI are ready*, but with the **current live discovery data** there is little extra
+text to show: product descriptions are essentially unpopulated (≈0 of the GB/DE discovery set), and
+the Explorer `category` is the machine slug `tiktok_shop_product` (hidden, never translated). So the
+visible translated surface today remains chiefly **titles**; descriptions/human categories will
+translate automatically once such genuine text exists. Nothing is fabricated to fill the gap.
+
+### Intelligence summaries + workspace chrome (PARTIAL, by design)
+The Product Intelligence drawer contract (`fn_ecommerce_product_intelligence`) is **structured /
+controlled-vocabulary** — states, counts, enums (lifecycle, decision, evidence-family states) and
+canonical identity tokens (brand/SKU-class, must NOT be translated). There is no free-text "summary"
+prose to send to Gemini; those labels are localised through the EN/DE i18n dictionary (English
+fallback worldwide). Translating enums via Gemini would risk changing their exact meaning, so it is
+deliberately NOT done. Full worldwide UI chrome would require either authored dictionaries per
+language or routing controlled vocab through Gemini (rejected for meaning-safety) — chrome therefore
+stays EN/DE authored + English fallback: **PARTIAL**, unchanged from the prior stage.
+
+### Signed-in visual (owed, honest)
+The edge function is JWT-gated, so live translation only fires for a signed-in member; this
+environment cannot hold a session. The full budget-enforced path was verified server-side with a
+real call (§6) and the client wiring is confirmed present in the live bundle, but the pixel-level
+signed-in experience (e.g. a French browser seeing translated titles/descriptions) must be confirmed
+by a member. **Not claimed as visually verified.**
 
 ## 7. Preserved / not changed
 $2/month hard cap + fail-closed semantics, tenant/global budget isolation, translation cache,
