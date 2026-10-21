@@ -159,36 +159,49 @@ GRANT EXECUTE ON FUNCTION public.fn_cross_supplier_identity_selftest() TO servic
 -- =====================================================================================================
 -- 3. CUSTOMER PRODUCT-CARD COMPANION READ (verification + media-rights labelled)
 -- =====================================================================================================
+-- Tenant isolation: the caller's own tenant is taken from auth.uid() (NOT the p_tenant argument, which is
+-- never trusted) and product ownership is verified, mirroring fn_product_media_state. A signed-in user can
+-- only ever read their own tenant's candidate; service-role calls with no user context return unauthorized.
 CREATE OR REPLACE FUNCTION public.fn_product_supplier_candidate(p_tenant uuid, p_product uuid, p_market text)
- RETURNS jsonb LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO ''
+ RETURNS jsonb LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path TO ''
 AS $function$
-  SELECT CASE WHEN x.id IS NULL THEN jsonb_build_object('present', false)
-    ELSE jsonb_build_object(
-      'present', true, 'source', x.source, 'supplier_product_id', x.supplier_product_id,
-      'verification_tier', x.identity_tier, 'confidence', x.confidence,
-      'product_level_match', x.bound, 'exact_variant_verified', x.variant_verified,
-      'corresponding_variant_count', x.corresponding_variant_count, 'total_variant_count', x.total_variant_count,
-      'display_label', CASE x.identity_tier
-        WHEN 'SAME_PRODUCT_IDENTITY' THEN 'Same product (supplier) — '||x.confidence||' confidence; exact variant unverified'
-        WHEN 'EXACT_VARIANT_VERIFIED' THEN 'Exact variant verified (supplier)'
-        WHEN 'SIMILAR_ONLY' THEN 'Similar product only — not confirmed same'
-        WHEN 'DIFFERENT_PRODUCT' THEN 'Different product'
-        ELSE 'Unverified — insufficient evidence' END,
-      'media', jsonb_build_object(
-        'image_count', coalesce((x.media->>'image_count')::int,0),
-        'sample_images', coalesce(x.media->'sample_images','[]'::jsonb),
-        'rights_state', coalesce(x.media->>'rights_state','SUPPLIER_PROVIDED_REFERENCE_ONLY'),
-        'advertising_cleared', false,
-        'rights_note', coalesce(x.media->>'rights_note','Reference-only supplier media; not an authorised advertising asset.')),
-      'displayed_variant_economics', x.economics,
-      'missing_evidence', x.missing_evidence)
-  END
-  FROM (SELECT * FROM public.commerce_cross_supplier_identity
-        WHERE tenant_id=p_tenant AND opportunity_product_id=p_product AND market=upper(p_market)
-        ORDER BY CASE identity_tier WHEN 'EXACT_VARIANT_VERIFIED' THEN 0 WHEN 'SAME_PRODUCT_IDENTITY' THEN 1
-                 WHEN 'SIMILAR_ONLY' THEN 2 ELSE 3 END, updated_at DESC LIMIT 1) x
-  RIGHT JOIN (SELECT 1) one ON true;
-$function$;
+DECLARE v_uid uuid := auth.uid(); v_owns boolean; x record;
+BEGIN
+  IF v_uid IS NULL OR p_product IS NULL THEN
+    RETURN jsonb_build_object('present', false, 'status', 'unauthorized');
+  END IF;
+  SELECT EXISTS(SELECT 1 FROM public.commerce_products WHERE id=p_product AND user_id=v_uid) INTO v_owns;
+  IF NOT v_owns THEN
+    RETURN jsonb_build_object('present', false, 'status', 'unauthorized');
+  END IF;
+  SELECT * INTO x FROM public.commerce_cross_supplier_identity
+    WHERE tenant_id=v_uid AND opportunity_product_id=p_product AND market=upper(coalesce(p_market,''))
+    ORDER BY CASE identity_tier WHEN 'EXACT_VARIANT_VERIFIED' THEN 0 WHEN 'SAME_PRODUCT_IDENTITY' THEN 1
+             WHEN 'SIMILAR_ONLY' THEN 2 ELSE 3 END, updated_at DESC
+    LIMIT 1;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('present', false, 'status', 'no_candidate');
+  END IF;
+  RETURN jsonb_build_object(
+    'present', true, 'status', 'ok', 'source', x.source, 'supplier_product_id', x.supplier_product_id,
+    'verification_tier', x.identity_tier, 'confidence', x.confidence,
+    'product_level_match', x.bound, 'exact_variant_verified', x.variant_verified,
+    'corresponding_variant_count', x.corresponding_variant_count, 'total_variant_count', x.total_variant_count,
+    'display_label', CASE x.identity_tier
+      WHEN 'SAME_PRODUCT_IDENTITY' THEN 'Same product (supplier) — '||x.confidence||' confidence; exact variant unverified'
+      WHEN 'EXACT_VARIANT_VERIFIED' THEN 'Exact variant verified (supplier)'
+      WHEN 'SIMILAR_ONLY' THEN 'Similar product only — not confirmed same'
+      WHEN 'DIFFERENT_PRODUCT' THEN 'Different product'
+      ELSE 'Unverified — insufficient evidence' END,
+    'media', jsonb_build_object(
+      'image_count', coalesce((x.media->>'image_count')::int,0),
+      'sample_images', coalesce(x.media->'sample_images','[]'::jsonb),
+      'rights_state', coalesce(x.media->>'rights_state','SUPPLIER_PROVIDED_REFERENCE_ONLY'),
+      'advertising_cleared', false,
+      'rights_note', coalesce(x.media->>'rights_note','Reference-only supplier media; not an authorised advertising asset.')),
+    'displayed_variant_economics', x.economics,
+    'missing_evidence', x.missing_evidence);
+END; $function$;
 REVOKE ALL ON FUNCTION public.fn_product_supplier_candidate(uuid,uuid,text) FROM public, anon;
 GRANT EXECUTE ON FUNCTION public.fn_product_supplier_candidate(uuid,uuid,text) TO service_role, authenticated;
 
@@ -197,4 +210,5 @@ GRANT EXECUTE ON FUNCTION public.fn_product_supplier_candidate(uuid,uuid,text) T
 -- =====================================================================================================
 DELETE FROM public.commerce_supplier_products
 WHERE source='cjdropshipping'
-  AND source_product_id IN ('SELFTEST_SKINCARE','SELFTEST_BALACLAVA','SELFTEST_SIGN');
+  AND source_product_id IN ('SELFTEST_SKINCARE','SELFTEST_BALACLAVA','SELFTEST_SIGN')
+  AND source_product_id !~ '^[0-9]+$';   -- guard: genuine CJ pids are all-numeric; never match one
