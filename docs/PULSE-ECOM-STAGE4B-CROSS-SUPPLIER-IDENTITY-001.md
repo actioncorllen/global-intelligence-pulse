@@ -127,3 +127,38 @@ SAME_PRODUCT_IDENTITY/MEDIUM with 8 corresponding variants and the displayed Bla
 non-corresponding); customer display, persisted safe selftest and fixture cleanup are BLOCKED_INFRASTRUCTURE
 on the Supabase MCP write path and are committed in mig_324 for the authorised CLI/CI apply. No PASS claimed
 overall.** STOP at Stage 4B — no BigBuy or later stages.
+
+## Deployment attempt for mig_324 (this session) — BLOCKED_INFRASTRUCTURE, precise missing access
+Inspected every write route from this container; **none is available**, so mig_324 (the two test functions,
+the Product-Card companion read, and the exact-id fixture cleanup) could not be applied:
+- **Supabase MCP `execute_sql` / `apply_migration`** — repeatedly time out at 60s and roll back (this is the
+  project's only historical DDL route; mig_319–323 were applied through it and it is now intermittent). Not
+  retried further, per instruction.
+- **Supabase CLI** — not installed in the container.
+- **`psql`** — installed, but the Supabase DB hostnames do not resolve (`db.nxaunmyihhjixxxljcqt.supabase.co`
+  and the pooler return `Name or service not known`): the container has no DNS/network egress to the DB, so
+  psql cannot connect even with credentials.
+- **Credentials** — no DB connection string / password / `SUPABASE_ACCESS_TOKEN` in the environment or repo.
+- **CI/CD** — no `.github/workflows` in the repo; no pipeline applies migrations.
+
+**To apply mig_324, provide ONE of:**
+1. **Restored MCP write reliability** (fastest; no new access) — when `execute_sql`/`apply_migration` stop
+   timing out, mig_324 applies as-is.
+2. **A CI/CD migration job** — a GitHub Actions workflow running `supabase db push` (or `psql -f`) on push,
+   with repo secrets `SUPABASE_ACCESS_TOKEN` + `SUPABASE_DB_PASSWORD` and project ref
+   `nxaunmyihhjixxxljcqt`.
+3. **In-container CLI access** — install the `supabase` CLI, add `SUPABASE_ACCESS_TOKEN` (or a DB connection
+   string) as an environment Network secret, **and** open DNS/network egress to the DB host
+   (`:5432` / pooler `:6543`), which is currently fully blocked.
+
+Post-apply checklist (once a route exists): `SELECT public.fn_cross_supplier_identity_selftest();`
+(expect all pass), confirm the three `SELFTEST_*` fixtures are gone, confirm
+`public.fn_product_supplier_candidate(...)` returns the SAME_PRODUCT_IDENTITY/MEDIUM candidate, then wire the
+Product Intelligence UI to that companion read.
+
+## UI wiring (req 5) — HELD (depends on mig_324)
+The Product Intelligence UI change was NOT made: the only honest read contract for the candidate
+(`fn_product_supplier_candidate`, or a modified core card) is undeployed, so wiring the UI now would point at
+a non-existent function and break the signed-in Product Card. The UI will be wired once mig_324 is applied
+and the companion read verified. Current signed-in card output remains the honest strict
+`NO_VALID_CJ_MATCH`.
