@@ -118,10 +118,11 @@ COMMIT;
 --     '7c8ddf9d-172c-4a89-a402-bb7066228b61'::uuid,          -- tenant
 --     '56a6af36-68f7-4138-9d29-941245f266b2'::uuid,          -- FastMoss ski-mask product
 --     'GB',
---     'https://REPLACE_WITH_REAL_HTTPS_URL/old-man-ski-mask.mp4',
---     'FOUNDER_SUPPLIED',                                    -- declared source (NOT assumed supplier-owned)
+--     'https://REPLACE_WITH_REAL_HTTPS_URL/old-man-ski-mask.mp4',  -- the file the founder downloaded from their CJ account (do NOT invent/scrape)
+--     'CJDROPSHIPPING_WEBSITE',                              -- CJ website is where the video was seen; still NOT assumed supplier-owned
 --     10.7,                                                  -- duration seconds
---     '{"rights_basis":"pending_founder_confirmation"}'::jsonb);
+--     jsonb_build_object('origin','CJ_WEBSITE_PRODUCT_PAGE','cj_pid','2609290358281623700',
+--                        'website_video_confirmed',true,'rights_basis','commercial_usage_not_established'));
 --   -- expect {"ok":true,"status":"ingested","usage_permission":"REFERENCE_ONLY","is_launch_safe":false,...}
 --
 -- Then confirm the signed-in card surfaces it (runs as the signed-in owner, not the SQL editor):
