@@ -1,9 +1,21 @@
-// STRATELOQ 015F — tenant-safe signed delivery for generated media.
+// STRATELOQ 015F — tenant-safe signed delivery for generated/supplier media.
 // verify_jwt=true: caller must present a valid user JWT. Ownership is enforced by
 // the SECURITY DEFINER RPC fn_media_asset_signed_ref (tenant_id = auth.uid), called
 // WITH the caller's JWT so a tenant can never resolve another tenant's asset. The
 // service-role key is used ONLY to mint a short-lived signed URL for the owned path
 // and is never returned to the browser.
+//
+// mig_306 fix: fn_media_asset_signed_ref returns storage_ref WITH the bucket prefix
+// (e.g. "pulse-generated-media/<tenant>/…"). The Storage sign endpoint expects the
+// OBJECT path only, so the bucket prefix is stripped before signing (previously it
+// was double-prefixed, which made every signed-URL request fail).
+//
+// Stage 4B fix: this function is now invoked from the signed-in BROWSER (the Product
+// Intelligence drawer, to play the self-hosted CJ supplier video). A browser makes a
+// cross-origin CORS preflight (OPTIONS) before the POST; without CORS headers + an
+// OPTIONS handler the preflight fails and the call never reaches the POST. CORS is
+// added below (same pattern as translate-text); NOTHING else changed — short-lived
+// signed URLs, auth.uid ownership and reference-only semantics are untouched.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -12,10 +24,20 @@ const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
 const BUCKET = "pulse-generated-media";
 const TTL = 300; // seconds
 
+const CORS_HEADERS: Record<string, string> = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+
 const json = (b: unknown, s = 200) =>
-  new Response(JSON.stringify(b), { status: s, headers: { "Content-Type": "application/json" } });
+  new Response(JSON.stringify(b), {
+    status: s,
+    headers: { ...CORS_HEADERS, "Content-Type": "application/json", "cache-control": "no-store" },
+  });
 
 Deno.serve(async (req: Request) => {
+  if (req.method === "OPTIONS") return new Response("ok", { status: 200, headers: CORS_HEADERS });
   if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
   const auth = req.headers.get("Authorization") || "";
   if (!auth.toLowerCase().startsWith("bearer ")) return json({ error: "unauthenticated" }, 401);
@@ -34,9 +56,15 @@ Deno.serve(async (req: Request) => {
   const owned = await rpc.json();
   if (owned?.status !== "ok") return json({ error: owned?.status ?? "forbidden" }, 403);
 
+  // storage_ref may or may not carry the bucket prefix; the sign endpoint needs the
+  // object path only.
+  const ref = String(owned.storage_ref ?? "");
+  const objectPath = ref.startsWith(`${BUCKET}/`) ? ref.slice(BUCKET.length + 1) : ref;
+  if (!objectPath) return json({ error: "no_object_path" }, 502);
+
   // 2) Mint a short-lived signed URL with the service role for the OWNED path only.
   const sign = await fetch(
-    `${SUPABASE_URL}/storage/v1/object/sign/${BUCKET}/${owned.storage_ref}`,
+    `${SUPABASE_URL}/storage/v1/object/sign/${BUCKET}/${objectPath}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json", apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` },
@@ -50,7 +78,7 @@ Deno.serve(async (req: Request) => {
 
   return json({
     status: "ok",
-    signed_url: `${SUPABASE_URL}/storage/v1${path}`,
+    signed_url: `${SUPABASE_URL}/storage/v1${String(path).startsWith("/") ? "" : "/"}${path}`,
     expires_in: TTL,
     approval_state: owned.approval_state,
     is_launch_safe: owned.is_launch_safe,
