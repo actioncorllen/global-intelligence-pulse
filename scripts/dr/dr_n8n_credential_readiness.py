@@ -101,12 +101,28 @@ def main():
         os.path.join(repo, "dr/runbook/SECRETS-RECOVERY.md"),
         os.path.join(repo, "dr/n8n/N8N-CREDENTIAL-RECOVERY-PLAN.md"),
     ]), help="comma-separated recovery docs used for the coverage check")
+    ap.add_argument("--blocked-list", default=os.path.join(repo, "dr/n8n/credential-blocked.txt"),
+                    help="credentials to keep BLOCKED (type|name) even if mentioned in docs; "
+                         "'' to disable")
     ap.add_argument("--report", default=None)
     args = ap.parse_args()
 
     known_types = load_lines(args.cred_types)
     allow = load_lines(args.strateloq_ids)
     have_scope = bool(allow)
+    # Explicit BLOCKED overrides: a credential whose recovery is still unresolved stays BLOCKED
+    # even once its gap is described in the docs (so the doc mention does not flip it to READY).
+    blocked = set()
+    if args.blocked_list and os.path.isfile(args.blocked_list):
+        for line in open(args.blocked_list, encoding="utf-8"):
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            parts = [p.strip() for p in line.split("|")]
+            btype = parts[0] if parts else ""
+            bname = parts[1] if len(parts) > 1 and parts[1] else None
+            if btype:
+                blocked.add((btype, bname))
     secrets_text = ""
     for doc in args.docs.split(","):
         doc = doc.strip()
@@ -151,7 +167,11 @@ def main():
         else:
             scope = "out-of-scope"
         unhostable = available is False
-        if documented and not unhostable:
+        is_blocked = (ctype, name) in blocked or (ctype, None) in blocked
+        if is_blocked and scope != "out-of-scope":
+            # explicitly kept BLOCKED: recovery source unresolved pending founder input
+            status = "BLOCKED"
+        elif documented and not unhostable:
             status = "READY" if mech == "key" else "MANUAL"
         else:
             # undocumented, or type not hostable -> required source/host unknown
@@ -159,6 +179,7 @@ def main():
         rows.append({
             "type": ctype, "name": name, "mech": mech, "usage": usage, "scope": scope,
             "available": available, "documented": documented, "status": status,
+            "held": bool(is_blocked and scope != "out-of-scope"),
             "nodes": r["nodes"], "wf": len(r["wf"]),
         })
 
@@ -186,7 +207,12 @@ def main():
     if group("BLOCKED"):
         print("\nBLOCKED — required Strateloq recovery source unknown (keep BLOCKED; supply source, do NOT invent):")
         for x in group("BLOCKED"):
-            why = "type not hostable (node install)" if x["available"] is False else "no documented recovery source"
+            if x.get("held"):
+                why = "held in credential-blocked.txt pending founder-supplied source"
+            elif x["available"] is False:
+                why = "type not hostable (node install)"
+            else:
+                why = "no documented recovery source"
             print(f"  - [{x['usage']}] {x['type']} \"{x['name']}\": {why}")
     if group("MANUAL"):
         print("\nMANUAL — ready but needs your interactive action:")

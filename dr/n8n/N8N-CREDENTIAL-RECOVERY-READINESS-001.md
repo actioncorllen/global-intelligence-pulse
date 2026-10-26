@@ -13,19 +13,34 @@ The genuine 133-export run flagged nine undocumented credentials. With usage+sco
 six resolved to **FOREIGN** (co-resident non-Strateloq workflows — excluded) and **three remain
 in-scope blockers**:
 
-| Credential | Type | Required for current ecom launch? | Status |
-|---|---|---|---|
-| Query Auth account | `httpQueryAuth` | No — legacy/drift-review path, not the ecom scan | ⛔ BLOCKED (source unknown) |
-| Query Auth account 2 | `httpQueryAuth` | No — same path (2nd provider/backup key) | ⛔ BLOCKED (source unknown) |
-| SMTP account | `smtp` | No — production email uses Gmail; SMTP is legacy | ⛔ BLOCKED (source unknown) |
+The host drill-down (`--detail`) identified what these three actually are — **superseding the earlier
+inventory-only guesses** (trend collector / AI Marketing Director were wrong):
 
-**Determination:** none of the three is used by a documented launch-critical (active ecom production)
-workflow; on current evidence they belong to the legacy GLOBAL trend-intelligence (drift-review) and
-the legacy AI Marketing Director paths. They are **not required for current production/launch**, and
-they stay **BLOCKED** because no recovery source is on record — `httpQueryAuth` and `smtp` appear
-nowhere in the plan, `SECRETS-RECOVERY.md`, or the inventory. No source is invented. Full analysis,
-the exact "what the founder must provide", and the drill-down command are in
-`dr/n8n/N8N-CREDENTIAL-RECOVERY-PLAN.md` → "In-scope undocumented blockers — current (3)".
+| Credential | Type | Confirmed usage (drill-down) | Recovery source (evidence) | Status |
+|---|---|---|---|---|
+| Query Auth account | `httpQueryAuth` | → `generativelanguage.googleapis.com` (Google **Gemini**) | Google AI Studio / Cloud **API key** (same source as `googlePalmApi`) | ⛔ BLOCKED — confirm acct↔host + project/key |
+| Query Auth account 2 | `httpQueryAuth` | → `www.googleapis.com` (Google API / **YouTube**) | Google Cloud Console **API key** (confirm exact API) | ⛔ BLOCKED — confirm API + project/key |
+| SMTP account | `smtp` | **ACTIVE Agent 0 intake** (`A8fTV08XOvUMq93n`) — "Send Confirmation Email", "Notify Founder" | SMTP provider — not in repo (founder vault) | ⛔ BLOCKED — source unknown |
+
+**Determination (corrected, evidence-based):**
+- **Query Auth ×2** authenticate **Google APIs by `?key=` API key**, so the recovery *source* is now
+  known: a **Google Cloud / AI Studio API key** (the Gemini one is the same key source already
+  documented for `googlePalmApi`). They stay BLOCKED only pending the founder confirming the exact
+  account↔host mapping, which Google API the `www.googleapis.com` key targets (YouTube Data API v3 is
+  the evidenced candidate), and which Cloud project/key.
+- **SMTP is NOT nonessential** — it is bound in the **active** founding-member intake. But the launch
+  email-**verification** gate does **not** depend on it: verification is owned by **Supabase Auth**
+  (`auth.users.email_confirmed_at` / `member.email_verified`; `STRATELOQ-ECOM-PAID-ACCESS-ARCHITECTURE-AUDIT-012` §2,
+  and the invitation/acceptance edge functions derive `emailVerified` only from the trusted Supabase
+  Auth timestamp). The n8n SMTP nodes send the **member acknowledgement** and a **founder
+  notification**; no repo-visible path (Resend/SendGrid/edge-function) supersedes them, so they still
+  run through this credential while the workflow is active. SMTP stays **BLOCKED** (source unknown)
+  until the founder supplies the SMTP source or confirms those two notifications are retired/moved.
+
+All three are held BLOCKED by `dr/n8n/credential-blocked.txt` so that documenting their analysis does
+not flip them to READY. No source is invented; nothing is rotated or activated. Full "what the founder
+must provide" and the account-binding command are in `dr/n8n/N8N-CREDENTIAL-RECOVERY-PLAN.md`
+→ "In-scope undocumented blockers — current (3)".
 
 The six FOREIGN entries are out-of-scope and excluded from the Strateloq verdict (recover via their own
 project owners). The exact per-credential workflow/node/service mapping is produced on the host with
@@ -87,15 +102,17 @@ ids are in your export, add their full ids to the allowlist first so they are no
 ---
 
 ## Requires your (founder) action
-1. **Resolve the 3 in-scope BLOCKED credentials** by supplying their recovery *source* (no secret
-   values needed in the repo — just where/what):
-   - `httpQueryAuth` "Query Auth account" and "Query Auth account 2" — per account: the service/API it
-     authenticates (provider + endpoint host), the query-parameter name carrying the key
-     (`api_key`/`key`/`token`/…), where the key is issued, and whether it is still in use or retired.
+1. **Resolve the 3 in-scope BLOCKED credentials** by confirming their recovery *source* (no secret
+   values in the repo — just where/what):
+   - `httpQueryAuth` "Query Auth account" / "Query Auth account 2" — both are **Google Cloud API keys**
+     (`?key=`): one for `generativelanguage.googleapis.com` (Gemini — same key source as the documented
+     `googlePalmApi`), one for `www.googleapis.com` (confirm the API — YouTube Data API v3 is the
+     evidenced candidate). Confirm the account↔host 1:1 (from `--detail --type httpQueryAuth`) and which
+     Google Cloud project/key to reissue from.
    - `smtp` "SMTP account" — SMTP host + port + security, the sending username/from-address, the SMTP
-     provider that issues the password/app-password, and whether it is still used or superseded by Gmail.
-   Run `dr_n8n_credential_refs.py --detail --type httpQueryAuth` (and `--type smtp`) on the host first;
-   the HTTP Request **host** it prints for the query-auth nodes is the provider to recover from.
+     provider that issues the password/app-password; **or** confirm the active Agent 0 "Send Confirmation
+     Email" / "Notify Founder" nodes are retired / moved to a verified path. (Email *verification* itself
+     is already handled by Supabase Auth, not this credential — so launch verification is not blocked.)
 2. **Gmail (`gmailOAuth2`)** — interactive Google OAuth reconnect in the restore instance.
 3. **Discovery webhook (`httpHeaderAuth` / `PULSE_DISCOVERY_WEBHOOK_SECRET`)** — regenerate and set on
    both the edge-function env and the n8n credential.

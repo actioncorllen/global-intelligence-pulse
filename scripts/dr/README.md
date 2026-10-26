@@ -20,7 +20,8 @@ credentials (never commit their output if it contains data). See dr/runbook/RECO
 
 Credential readiness report: `dr/n8n/N8N-CREDENTIAL-RECOVERY-READINESS-001.md`;
 credential-type registry (n8n 2.44.7, reference): `dr/n8n/n8n-2.44.7-credential-types.txt`;
-in-scope workflow-id allowlist: `dr/n8n/strateloq-workflow-ids.txt`.
+in-scope workflow-id allowlist: `dr/n8n/strateloq-workflow-ids.txt`;
+BLOCKED-override list (unresolved creds kept BLOCKED pending founder): `dr/n8n/credential-blocked.txt`.
 
 n8n restore details, root cause and PASS/FAIL evidence: `dr/n8n/N8N-RESTORE-VALIDATION-001.md`;
 credential recovery (references only): `dr/n8n/N8N-CREDENTIAL-RECOVERY-PLAN.md`.

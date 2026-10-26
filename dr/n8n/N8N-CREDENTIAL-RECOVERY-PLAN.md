@@ -94,48 +94,55 @@ by **scope**, never by invention:
   gap is on an *active* workflow it is launch-critical; if on an inactive/archived one it is a
   historical gap (lower urgency) but still BLOCKED until documented.
 
-### In-scope undocumented blockers — current (3) — status: BLOCKED
+### In-scope undocumented blockers — current (3) — status: BLOCKED (sources now evidence-identified)
 
-The genuine 133-export readiness run flagged three in-scope undocumented credentials. Neither
-`httpQueryAuth` nor `smtp` appears anywhere in this plan, `SECRETS-RECOVERY.md`, or the workflow
-inventory, so there is **no recorded recovery source** — they stay BLOCKED (no invention).
+The genuine 133-export **host drill-down** (`dr_n8n_credential_refs.py --detail`) resolved what these
+three actually are. This **supersedes the earlier inventory-only hypotheses** (which had guessed the
+trend-collector / AI Marketing Director); use the drill-down evidence below.
 
-| Credential | Type | What it is | Required for current ecom launch? | Evidence-based likely usage |
+| Credential | Type | Confirmed usage (host drill-down) | Recovery source (evidence) | Status |
 |---|---|---|---|---|
-| Query Auth account | `httpQueryAuth` | generic HTTP auth passing a key as a URL **query parameter** on an HTTP Request node | **No** (not in the documented launch-critical set) | the legacy GLOBAL trend-intelligence path flagged **⚠ drift-review** in the inventory (`vjretQJdnd3OEyd0` / `3CSvKgEGjSzRWpEO`, "search/RSS") is the leading candidate — a search/news API keyed by query param; confirm with the drill-down |
-| Query Auth account 2 | `httpQueryAuth` | second query-param key (second provider, or a backup/rotation key) | **No** (same as above) | second search/intel provider or failover key on the same drift-review path |
-| SMTP account | `smtp` | SMTP email sending (n8n `emailSend` node); host/credentials live in the credential, not the export | **No** — production email uses Gmail (`gmailOAuth2`); SMTP is a separate/legacy path | the legacy **AI Marketing Director v1** (`YDhtr1EPQRUv5wdm`, inactive, "legacy CMO report") is the leading candidate |
+| Query Auth account | `httpQueryAuth` | HTTP Request node → **`generativelanguage.googleapis.com`** (Google **Gemini** / Generative Language API), key passed as `?key=` | **Google AI Studio / Google Cloud API key** — the *same* source as the documented Gemini credential (`googlePalmApi`) | BLOCKED pending founder: confirm account↔host + which Cloud project/key |
+| Query Auth account 2 | `httpQueryAuth` | HTTP Request node → **`www.googleapis.com`** (Google API; **YouTube Data API** per the drill-down host labeling), key as `?key=` | **Google Cloud Console → APIs & Services → Credentials → API key** with that API enabled | BLOCKED pending founder: confirm exact Google API + Cloud project/key |
+| SMTP account | `smtp` | **ACTIVE founding-member intake (Agent 0, `A8fTV08XOvUMq93n`)** — nodes **"Send Confirmation Email"** and **"Notify Founder"** | SMTP provider — **host/port/account not in the repo** (lives in the n8n credential / founder vault) | BLOCKED pending founder: SMTP host/account/provider |
 
-> The likely-usage column is an evidence-based hypothesis from the inventory, **not** a confirmed
-> mapping. Confirm exact workflow ids/names/nodes/service hosts on the host with:
+> Account↔host binding is read from the per-account lines of
 > `python3 -I scripts/dr/dr_n8n_credential_refs.py <export-dir> --detail --type httpQueryAuth`
-> (and `--type smtp`). For a query-auth credential the HTTP Request node's **host** that the drill-down
-> prints is the provider to recover the key from. For SMTP the host is inside the credential (not in the
-> export), so the founder must supply it.
+> (host-only output; no secret, no path/query). Paste those lines to finalise the 1:1 mapping.
 
-**Determination:** none of the three is used by a documented launch-critical (active ecom production)
-workflow. The only ecom production schedule is the Monday orchestrator (Supabase); the GLOBAL
-trend-intelligence workflows are explicitly flagged drift-review and are *not* the ecom scan. So these
-three are **not required for current production/launch** on current evidence — they belong to legacy /
-drift-review / supporting paths. They remain **BLOCKED** regardless, because recovery cannot proceed
-without the source, and must not be activated.
+**Query Auth — determination.** Both accounts authenticate **Google APIs by API key in the `key`
+query parameter**. The recovery *source* is therefore known with evidence: a **Google Cloud / AI
+Studio API key**. The Gemini one is the same key source already documented for `googlePalmApi`. They
+remain **BLOCKED** only pending the founder confirming (a) the exact account↔host mapping, (b) which
+Google API the `www.googleapis.com` key targets (YouTube Data API v3 is the evidenced candidate), and
+(c) which Google Cloud project/key to reissue from. No key value is handled here; nothing is rotated.
 
-**To clear each blocker, the founder must provide (no secret values in this repo — just the source):**
-- `httpQueryAuth` "Query Auth account" and "Query Auth account 2", per account:
-  1. the external service/API each authenticates (provider name + endpoint host — the drill-down's host
-     is the strong hint);
-  2. the **query-parameter name** that carries the key (e.g. `api_key`, `key`, `token`, `apiKey`);
-  3. where the key is issued / rotated (provider console / account);
-  4. whether the integration is still in use or retired (if retired, the reference is dropped, not recovered).
-- `smtp` "SMTP account":
-  1. SMTP **host + port** and security (SSL / STARTTLS);
-  2. the sending **username / from-address / mailbox**;
-  3. the SMTP **provider** where the password / app-password is issued (e.g. Gmail SMTP app-password,
-     SendGrid, Mailgun, Amazon SES, Postmark);
-  4. whether it is still in use or superseded by the Gmail path (if superseded, drop it).
+**SMTP — determination (onboarding architecture verified, read-only).** SMTP is **NOT nonessential**:
+it is bound in the **active** founding-member intake workflow. But the launch email-**verification**
+gate does **not** depend on it — verification is owned by **Supabase Auth**
+(`auth.users.email_confirmed_at`, mirrored by `member.email_verified`;
+`docs/STRATELOQ-ECOM-PAID-ACCESS-ARCHITECTURE-AUDIT-012.md` §2, and the invitation/acceptance edge
+functions derive `emailVerified` only from the trusted Supabase Auth timestamp). The n8n SMTP nodes
+send the **intake acknowledgement to the member** and a **founder notification** — operational emails,
+not the verification gate. No repo-visible alternative (Resend/SendGrid/Mailgun/edge-function email)
+supersedes those two notifications, so on current evidence they still run through this credential while
+the workflow is active. It therefore stays **BLOCKED** (source unknown) and must not be dropped as
+"legacy": either the founder supplies the SMTP source, or confirms those two notifications are to be
+retired / moved to a verified path (e.g. Supabase Auth email or an edge function) — a deliberate change
+to the workflow, out of scope for DR.
 
-Once provided, add the source row to `SECRETS-RECOVERY.md` and this plan; the readiness status moves
-from BLOCKED to READY (key/SMTP) only then.
+**To clear each blocker, the founder must provide (no secret values in the repo — just the source):**
+- `httpQueryAuth` (both): the exact account↔host mapping; for `www.googleapis.com`, which Google API
+  it calls; the Google Cloud **project + API key** to reissue (enable Generative Language API / the
+  relevant API); confirm the `key` query-param name. Both are recreated in the Google Cloud Console /
+  AI Studio — the same place as the Gemini credential.
+- `smtp` "SMTP account": SMTP **host + port + security**, the sending **username / from-address**, and
+  the **provider** issuing the password/app-password (Gmail app-password, SendGrid, Mailgun, SES,
+  Postmark, …); or confirmation the two notification nodes are retired / superseded.
+
+Until then all three stay in `dr/n8n/credential-blocked.txt`, which forces the readiness tool to keep
+them BLOCKED even now that their analysis is documented. Remove a line only when its evidenced source
+is recorded above and in `SECRETS-RECOVERY.md`.
 
 ---
 
