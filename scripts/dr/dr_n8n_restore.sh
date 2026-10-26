@@ -111,8 +111,12 @@ SAN="$WORK/sanitized"
 python3 -I "$HERE/dr_n8n_sanitize.py" "$EXPORTS" "$SAN"
 
 # 2) Credential-reference inventory (references only, no values).
+#    Credential inspection is a gate: if it fails, STOP before importing anything.
 echo "== credential references across exports (no values) =="
-python3 -I "$HERE/dr_n8n_credential_refs.py" "$EXPORTS" || true
+if ! python3 -I "$HERE/dr_n8n_credential_refs.py" "$EXPORTS"; then
+  echo "ERROR: credential inspection failed — aborting restore; no workflows were imported." >&2
+  exit 1
+fi
 
 # 3) Optional repair of a pre-existing (polluted) DB.
 if [ "$REPAIR" = 1 ] && [ -f "$DATA_ABS/database.sqlite" ]; then
