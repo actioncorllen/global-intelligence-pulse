@@ -17,6 +17,10 @@ credentials (never commit their output if it contains data). See dr/runbook/RECO
 | dr_n8n_credential_refs.py | List distinct n8n credential **references** (type/name/id, no values) across exports; `--detail` drills down to referencing workflows (id/name/active) and nodes (name/type/service-host, host-only) ; `--type`/`--name` focus one credential | python3 |
 | dr_n8n_verify_restore.py | Verify a restore against source exports (count/names/nodes/connections/inactive/DB-integrity/archive) and emit a PASS/FAIL report | python3 |
 | dr_n8n_credential_readiness.py | Assess credential-recovery readiness from exports — per credential: usage (active-production/inactive/archived), scope (in-scope vs out-of-scope), type hostable, documented, mechanism → READY/MANUAL/BLOCKED/FOREIGN + scope-aware PASS/PARTIAL/BLOCKED. No secrets, no network | python3 |
+| **dr_weekly_backup.sh** | **Weekly orchestrator** — reuses the above to back up Supabase DB + Storage + all n8n workflows + the repo, gpg-encrypts, uploads to Google Drive via rclone, checksum-verifies (PASS/FAIL), flock no-overlap, retention, failure logging with secret scrubbing. `--self-test` runs the whole pipeline with fake data + local transport (no production). Config: `dr_weekly_backup.env` (see `.env.example`) | gpg, rclone, flock, pg_dump, git + the env file |
+| install/install-weekly-backup.ps1 | Windows Task Scheduler installer (run on Windows) — weekly Sunday task that launches `dr_weekly_backup.sh` inside WSL | PowerShell + WSL |
+
+Weekly backup automation + manual recovery procedure: `dr/runbook/WEEKLY-BACKUP-AUTOMATION.md`.
 
 Credential readiness report: `dr/n8n/N8N-CREDENTIAL-RECOVERY-READINESS-001.md`;
 credential-type registry (n8n 2.44.7, reference): `dr/n8n/n8n-2.44.7-credential-types.txt`;

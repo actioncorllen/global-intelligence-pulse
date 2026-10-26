@@ -1,0 +1,16 @@
+# Strateloq DR — backup OUTPUT and secrets must NEVER be committed.
+# (Does not affect committed inputs like dr/n8n/*.json or dr/schema/*.sql.)
+
+# Filled-in weekly-backup config (holds secrets; use dr_weekly_backup.env.example as the template)
+scripts/dr/dr_weekly_backup.env
+
+# Local backup staging / runs root
+strateloq-backups/
+
+# Encrypted + intermediate backup artifacts, wherever produced
+*.gpg
+**/strateloq-db-*.dump*
+**/strateloq-storage-*.tgz*
+**/strateloq-*.bundle*
+**/strateloq-n8n-*.tar*
+**/n8n-export-*/
