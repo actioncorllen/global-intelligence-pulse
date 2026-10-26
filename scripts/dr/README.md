@@ -16,6 +16,10 @@ credentials (never commit their output if it contains data). See dr/runbook/RECO
 | dr_n8n_sanitize.py | Rewrite exports to import-safe inactive defs (used by dr_n8n_restore.sh) | python3 |
 | dr_n8n_credential_refs.py | List distinct n8n credential **references** (type/name/id, no values) across exports | python3 |
 | dr_n8n_verify_restore.py | Verify a restore against source exports (count/names/nodes/connections/inactive/DB-integrity/archive) and emit a PASS/FAIL report | python3 |
+| dr_n8n_credential_readiness.py | Assess credential-recovery readiness from exports (type hostable / documented / mechanism / production) → PASS/PARTIAL/BLOCKED, no secrets, no network | python3 |
+
+Credential readiness report: `dr/n8n/N8N-CREDENTIAL-RECOVERY-READINESS-001.md`;
+credential-type registry (n8n 2.44.7, reference): `dr/n8n/n8n-2.44.7-credential-types.txt`.
 
 n8n restore details, root cause and PASS/FAIL evidence: `dr/n8n/N8N-RESTORE-VALIDATION-001.md`;
 credential recovery (references only): `dr/n8n/N8N-CREDENTIAL-RECOVERY-PLAN.md`.
