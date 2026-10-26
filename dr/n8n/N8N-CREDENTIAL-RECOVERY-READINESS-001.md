@@ -7,30 +7,29 @@ Checkpoint after the 133-workflow restore PASS. Builds on
 
 ---
 
-## Status
+## Status: **BLOCKED** (3 in-scope undocumented credentials; 6 of the 9 were out-of-scope/FOREIGN)
 
-- **Genuine 133-export readiness run (operator host): BLOCKED** — nine credential references were
-  undocumented (no recorded recovery source), which keeps the run BLOCKED by design.
-- This revision makes those nine **actionable** by classifying every credential two ways — by
-  **usage** (active-production / inactive / archived) and by **scope** (in Strateloq inventory vs
-  co-resident out-of-scope) — so a BLOCKED that is really a *foreign* credential no longer masks the
-  true Strateloq state, while a genuine Strateloq gap stays BLOCKED.
+The genuine 133-export run flagged nine undocumented credentials. With usage+scope classification,
+six resolved to **FOREIGN** (co-resident non-Strateloq workflows — excluded) and **three remain
+in-scope blockers**:
 
-The tool does the split; the **operator re-runs it on the host** to get the refined, evidence-based
-verdict (see command below). It is not asserted here which of the nine are foreign — that is read
-from the host data, not invented.
+| Credential | Type | Required for current ecom launch? | Status |
+|---|---|---|---|
+| Query Auth account | `httpQueryAuth` | No — legacy/drift-review path, not the ecom scan | ⛔ BLOCKED (source unknown) |
+| Query Auth account 2 | `httpQueryAuth` | No — same path (2nd provider/backup key) | ⛔ BLOCKED (source unknown) |
+| SMTP account | `smtp` | No — production email uses Gmail; SMTP is legacy | ⛔ BLOCKED (source unknown) |
 
-### How the nine undocumented entries are handled
-| If a nine-entry is… | Classified as | Readiness effect |
-|---|---|---|
-| referenced only by out-of-scope workflows (AI Career Copilot, Construction Quote, AI Receptionist, AI Recruitment, AI Lead Qualification, Setup Sheet Headers) | **FOREIGN** | excluded from the Strateloq verdict; recover via that project's owner, not this plan |
-| referenced by an **active** Strateloq workflow | **BLOCKED** (launch-critical) | stays BLOCKED until operator supplies an evidenced source |
-| referenced only by an **inactive/archived** Strateloq workflow | **BLOCKED** (historical) | stays BLOCKED, lower urgency; needed only if that workflow is revived |
+**Determination:** none of the three is used by a documented launch-critical (active ecom production)
+workflow; on current evidence they belong to the legacy GLOBAL trend-intelligence (drift-review) and
+the legacy AI Marketing Director paths. They are **not required for current production/launch**, and
+they stay **BLOCKED** because no recovery source is on record — `httpQueryAuth` and `smtp` appear
+nowhere in the plan, `SECRETS-RECOVERY.md`, or the inventory. No source is invented. Full analysis,
+the exact "what the founder must provide", and the drill-down command are in
+`dr/n8n/N8N-CREDENTIAL-RECOVERY-PLAN.md` → "In-scope undocumented blockers — current (3)".
 
-The instance holds 51 cloud workflows of which the inventory marks 12+ as out-of-scope
-(`dr/n8n/N8N-WORKFLOW-INVENTORY.md`); every credential *type* used by a Strateloq/Pulse workflow is
-already documented. So the nine are expected to resolve mostly or wholly to FOREIGN — but that is
-confirmed by the host re-run, not assumed.
+The six FOREIGN entries are out-of-scope and excluded from the Strateloq verdict (recover via their own
+project owners). The exact per-credential workflow/node/service mapping is produced on the host with
+`dr_n8n_credential_refs.py --detail` (host-only output; no secret, no path/query).
 
 ---
 
@@ -87,17 +86,28 @@ ids are in your export, add their full ids to the allowlist first so they are no
 
 ---
 
-## Requires your manual action
-1. **Gmail (`gmailOAuth2`)** — interactive Google OAuth reconnect in the restore instance.
-2. **Discovery webhook (`httpHeaderAuth` / `PULSE_DISCOVERY_WEBHOOK_SECRET`)** — regenerate and set on
+## Requires your (founder) action
+1. **Resolve the 3 in-scope BLOCKED credentials** by supplying their recovery *source* (no secret
+   values needed in the repo — just where/what):
+   - `httpQueryAuth` "Query Auth account" and "Query Auth account 2" — per account: the service/API it
+     authenticates (provider + endpoint host), the query-parameter name carrying the key
+     (`api_key`/`key`/`token`/…), where the key is issued, and whether it is still in use or retired.
+   - `smtp` "SMTP account" — SMTP host + port + security, the sending username/from-address, the SMTP
+     provider that issues the password/app-password, and whether it is still used or superseded by Gmail.
+   Run `dr_n8n_credential_refs.py --detail --type httpQueryAuth` (and `--type smtp`) on the host first;
+   the HTTP Request **host** it prints for the query-auth nodes is the provider to recover from.
+2. **Gmail (`gmailOAuth2`)** — interactive Google OAuth reconnect in the restore instance.
+3. **Discovery webhook (`httpHeaderAuth` / `PULSE_DISCOVERY_WEBHOOK_SECRET`)** — regenerate and set on
    both the edge-function env and the n8n credential.
-3. **Any in-scope nine-entry the host run marks BLOCKED** — supply its evidenced recovery source
-   (provider + account + scope); it is then added to the plan. Not invented here.
 4. **(Launch/cutover only)** Google Drive OAuth ×3 reconnect; decide the OpenAI path (own key vs
    AI-gateway-managed).
 
+Until (1) is answered the three stay **BLOCKED** (no source invented). They are **not** launch-critical
+(not on the active ecom production path), so they do not block the current launch — but they remain
+unrecoverable until the source is provided or the integration is confirmed retired.
+
 ## Constraints honored
 No secret values displayed; no production credential created/modified; no key rotated; no workflow
-activated; no paid API call. Existing encrypted backups and the restore report
-(`dr/n8n/N8N-RESTORE-VALIDATION-001.md`) are unchanged — this checkpoint only adds usage/scope
-classification to the readiness tool, the in-scope workflow-id allowlist, and these doc updates.
+activated; no paid API call; no repeat restoration test. Existing encrypted backups and the restore
+report (`dr/n8n/N8N-RESTORE-VALIDATION-001.md`) are unchanged — this checkpoint adds a `--detail`
+credential drill-down to the inspection tool and these documentation updates.

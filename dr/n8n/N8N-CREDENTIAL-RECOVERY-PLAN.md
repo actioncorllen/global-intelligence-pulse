@@ -94,6 +94,49 @@ by **scope**, never by invention:
   gap is on an *active* workflow it is launch-critical; if on an inactive/archived one it is a
   historical gap (lower urgency) but still BLOCKED until documented.
 
+### In-scope undocumented blockers — current (3) — status: BLOCKED
+
+The genuine 133-export readiness run flagged three in-scope undocumented credentials. Neither
+`httpQueryAuth` nor `smtp` appears anywhere in this plan, `SECRETS-RECOVERY.md`, or the workflow
+inventory, so there is **no recorded recovery source** — they stay BLOCKED (no invention).
+
+| Credential | Type | What it is | Required for current ecom launch? | Evidence-based likely usage |
+|---|---|---|---|---|
+| Query Auth account | `httpQueryAuth` | generic HTTP auth passing a key as a URL **query parameter** on an HTTP Request node | **No** (not in the documented launch-critical set) | the legacy GLOBAL trend-intelligence path flagged **⚠ drift-review** in the inventory (`vjretQJdnd3OEyd0` / `3CSvKgEGjSzRWpEO`, "search/RSS") is the leading candidate — a search/news API keyed by query param; confirm with the drill-down |
+| Query Auth account 2 | `httpQueryAuth` | second query-param key (second provider, or a backup/rotation key) | **No** (same as above) | second search/intel provider or failover key on the same drift-review path |
+| SMTP account | `smtp` | SMTP email sending (n8n `emailSend` node); host/credentials live in the credential, not the export | **No** — production email uses Gmail (`gmailOAuth2`); SMTP is a separate/legacy path | the legacy **AI Marketing Director v1** (`YDhtr1EPQRUv5wdm`, inactive, "legacy CMO report") is the leading candidate |
+
+> The likely-usage column is an evidence-based hypothesis from the inventory, **not** a confirmed
+> mapping. Confirm exact workflow ids/names/nodes/service hosts on the host with:
+> `python3 -I scripts/dr/dr_n8n_credential_refs.py <export-dir> --detail --type httpQueryAuth`
+> (and `--type smtp`). For a query-auth credential the HTTP Request node's **host** that the drill-down
+> prints is the provider to recover the key from. For SMTP the host is inside the credential (not in the
+> export), so the founder must supply it.
+
+**Determination:** none of the three is used by a documented launch-critical (active ecom production)
+workflow. The only ecom production schedule is the Monday orchestrator (Supabase); the GLOBAL
+trend-intelligence workflows are explicitly flagged drift-review and are *not* the ecom scan. So these
+three are **not required for current production/launch** on current evidence — they belong to legacy /
+drift-review / supporting paths. They remain **BLOCKED** regardless, because recovery cannot proceed
+without the source, and must not be activated.
+
+**To clear each blocker, the founder must provide (no secret values in this repo — just the source):**
+- `httpQueryAuth` "Query Auth account" and "Query Auth account 2", per account:
+  1. the external service/API each authenticates (provider name + endpoint host — the drill-down's host
+     is the strong hint);
+  2. the **query-parameter name** that carries the key (e.g. `api_key`, `key`, `token`, `apiKey`);
+  3. where the key is issued / rotated (provider console / account);
+  4. whether the integration is still in use or retired (if retired, the reference is dropped, not recovered).
+- `smtp` "SMTP account":
+  1. SMTP **host + port** and security (SSL / STARTTLS);
+  2. the sending **username / from-address / mailbox**;
+  3. the SMTP **provider** where the password / app-password is issued (e.g. Gmail SMTP app-password,
+     SendGrid, Mailgun, Amazon SES, Postmark);
+  4. whether it is still in use or superseded by the Gmail path (if superseded, drop it).
+
+Once provided, add the source row to `SECRETS-RECOVERY.md` and this plan; the readiness status moves
+from BLOCKED to READY (key/SMTP) only then.
+
 ---
 
 ## Rebind procedure (per workflow)
