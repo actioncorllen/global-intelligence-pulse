@@ -15,6 +15,7 @@ credentials (never commit their output if it contains data). See dr/runbook/RECO
 | dr_n8n_restore.sh | Restore workflow defs into an isolated, offline, INACTIVE n8n instance (fixes the `SQLITE_CONSTRAINT: FOREIGN KEY constraint failed` CLI-import failure); `--repair` recovers an instance left in the failing state | docker, python3 (no network, no secrets) |
 | dr_n8n_sanitize.py | Rewrite exports to import-safe inactive defs (used by dr_n8n_restore.sh) | python3 |
 | dr_n8n_credential_refs.py | List distinct n8n credential **references** (type/name/id, no values) across exports | python3 |
+| dr_n8n_verify_restore.py | Verify a restore against source exports (count/names/nodes/connections/inactive/DB-integrity/archive) and emit a PASS/FAIL report | python3 |
 
 n8n restore details, root cause and PASS/FAIL evidence: `dr/n8n/N8N-RESTORE-VALIDATION-001.md`;
 credential recovery (references only): `dr/n8n/N8N-CREDENTIAL-RECOVERY-PLAN.md`.
