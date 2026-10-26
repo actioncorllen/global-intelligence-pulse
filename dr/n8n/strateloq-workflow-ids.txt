@@ -1,0 +1,38 @@
+# Strateloq/Pulse in-scope n8n workflow IDs (from dr/n8n/N8N-WORKFLOW-INVENTORY.md).
+# Used by dr_n8n_credential_readiness.py to separate Strateloq DR credentials from
+# credentials belonging to CO-RESIDENT, OUT-OF-SCOPE workflows on the same instance
+# (AI Career Copilot x5, Construction Quote x3, AI Receptionist, AI Recruitment,
+# AI Lead Qualification, Setup Sheet Headers). A workflow whose id is NOT listed here
+# is treated as out-of-scope: its credentials are foreign references, not Strateloq
+# recovery items. One workflow id per line; '#' comments ignored.
+#
+# Active (production) P1/P2/P3:
+BBxcPXJdF2PliWgf
+np2MUp83gaZ3C2pJ
+HzCiA223z3pKOUSc
+OhjyxfdGMHwh9kRc
+A8fTV08XOvUMq93n
+vjretQJdnd3OEyd0
+3CSvKgEGjSzRWpEO
+UUm5NR7en5Y3IW0K
+L9GmhqestJ1hZVmk
+# Inactive (manual / paused / supporting):
+DxVfPg5fickAB1sr
+dYoeIeiXwPOrDDY4
+LJePIvYVTnW8WDPv
+KwcYYuHR53ONLFPZ
+ixC4UXe2JAcF4ajF
+NvuwUfW7fyjSb81R
+OxH9sb6jKCqiqXOk
+ZbhPyAuvDD4h4xid
+ZN6huMtz3DNIMnks
+0HGniWXeacHbVTQL
+0aXO9OmUfRXhI5s2
+0hmmy8hGfJ7H2pbK
+nh9tUaplw6SdSSY4
+YDhtr1EPQRUv5wdm
+sIuakWYVmI0LryeI
+ACE0U5jrEXkqleEy
+xHWwUelZINWpAAFL
+# NOTE: the inventory lists "KZ…" growth-agent ids truncated; add their full ids here
+# if those workflows are in the export set, otherwise they classify as out-of-scope.

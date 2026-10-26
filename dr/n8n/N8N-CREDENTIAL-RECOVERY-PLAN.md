@@ -60,6 +60,42 @@ mirrors the workflow recovery priority in `dr/n8n/N8N-WORKFLOW-INVENTORY.md`.
 
 ---
 
+## Launch-critical vs historical references
+
+Classified by the **usage** of the workflows that reference them (`dr/n8n/N8N-WORKFLOW-INVENTORY.md`
+Active column; confirmed per-run by `dr_n8n_credential_readiness.py`, which labels each credential
+`active-production` / `inactive` / `archived`):
+
+| Tier | Credentials | Referenced by |
+|---|---|---|
+| **Launch-critical** (used by ACTIVE production workflows) | Supabase account, Google Gemini, Anthropic account, Gmail, Pulse Discovery Webhook (Header Auth) | Monday orchestrator, FX refresher, Discovery/Prep workers, Agent 0, Agents 1/2+3, Agent 6 ×2 |
+| **Historical / cutover-only** (used only by INACTIVE or ARCHIVED workflows) | Pulse Meta System User, Pulse Meta Ad Library User, OpenAI account, CJ Dropshipping API, Pulse eBay Production, Pulse DataForSEO, Google Drive ×3 | Meta Draft Executor (paused), Creative Image Gen, Meta/CJ/eBay/DataForSEO probes, AI Marketing Director, DR-offsite upload |
+
+Recover launch-critical credentials first; historical ones are only needed if/when their workflow is
+deliberately revived at cutover. Reviving a workflow is a separate, intentional step — this DR plan
+neither activates nor rotates anything.
+
+## Undocumented credential references (how the readiness check handles them)
+
+`dr_n8n_credential_readiness.py` compares every credential reference in the exports against this plan
+and `SECRETS-RECOVERY.md`, and against the in-scope workflow allowlist
+`dr/n8n/strateloq-workflow-ids.txt`. An **undocumented** credential (name/type on no record) is handled
+by **scope**, never by invention:
+
+- **Out-of-scope (FOREIGN)** — referenced only by co-resident, non-Strateloq workflows
+  (AI Career Copilot, Construction Quote, AI Receptionist, AI Recruitment, AI Lead Qualification,
+  Setup Sheet Headers). These are **not Strateloq recovery items**; they belong to their own projects
+  and are excluded from the Strateloq verdict. Recover them, if ever, through that project's owner and
+  provider console — not from this plan.
+- **In-scope and undocumented → BLOCKED and kept BLOCKED.** A Strateloq workflow referencing a
+  credential with no recorded recovery source is a genuine gap. It stays BLOCKED until the operator
+  supplies the evidenced source (provider + account + scope), which is then added to this plan and to
+  `SECRETS-RECOVERY.md`. **Do not invent a source or mark it recoverable without evidence.** If the
+  gap is on an *active* workflow it is launch-critical; if on an inactive/archived one it is a
+  historical gap (lower urgency) but still BLOCKED until documented.
+
+---
+
 ## Rebind procedure (per workflow)
 
 1. Complete the DR restore (`dr_n8n_restore.sh`) — all workflows land **inactive** with their

@@ -1,129 +1,103 @@
 # STRATELOQ DR — n8n CREDENTIAL-RECOVERY READINESS (001)
 
-Ref: `STRATELOQ-DR-N8N-CREDENTIAL-READINESS-001` · Date: 2026-10-26
+Ref: `STRATELOQ-DR-N8N-CREDENTIAL-READINESS-001` · Date: 2026-10-26 (rev. 2)
 Checkpoint after the 133-workflow restore PASS. Builds on
 `dr/n8n/N8N-CREDENTIAL-RECOVERY-PLAN.md` and `dr/runbook/SECRETS-RECOVERY.md`.
 **No secret values appear here. No production credential, key, or workflow was touched.**
 
 ---
 
-## Verdict: **PARTIAL** (ready, with 2 production credentials requiring your manual action)
+## Status
 
-Every production credential has a hostable type and a documented recovery source, and the
-restored instance holds zero secrets — so recovery is *ready to execute*. It is **PARTIAL**, not
-PASS, only because two essential credentials recover through interactive steps that cannot (and
-must not) be automated here: an **OAuth reconnect** (Gmail) and a **shared-secret regeneration on
-both sides** (discovery webhook). Nothing is BLOCKED.
+- **Genuine 133-export readiness run (operator host): BLOCKED** — nine credential references were
+  undocumented (no recorded recovery source), which keeps the run BLOCKED by design.
+- This revision makes those nine **actionable** by classifying every credential two ways — by
+  **usage** (active-production / inactive / archived) and by **scope** (in Strateloq inventory vs
+  co-resident out-of-scope) — so a BLOCKED that is really a *foreign* credential no longer masks the
+  true Strateloq state, while a genuine Strateloq gap stays BLOCKED.
 
-| Essential (production-active) credential | Type | Recovery mechanism | Readiness |
+The tool does the split; the **operator re-runs it on the host** to get the refined, evidence-based
+verdict (see command below). It is not asserted here which of the nine are foreign — that is read
+from the host data, not invented.
+
+### How the nine undocumented entries are handled
+| If a nine-entry is… | Classified as | Readiness effect |
+|---|---|---|
+| referenced only by out-of-scope workflows (AI Career Copilot, Construction Quote, AI Receptionist, AI Recruitment, AI Lead Qualification, Setup Sheet Headers) | **FOREIGN** | excluded from the Strateloq verdict; recover via that project's owner, not this plan |
+| referenced by an **active** Strateloq workflow | **BLOCKED** (launch-critical) | stays BLOCKED until operator supplies an evidenced source |
+| referenced only by an **inactive/archived** Strateloq workflow | **BLOCKED** (historical) | stays BLOCKED, lower urgency; needed only if that workflow is revived |
+
+The instance holds 51 cloud workflows of which the inventory marks 12+ as out-of-scope
+(`dr/n8n/N8N-WORKFLOW-INVENTORY.md`); every credential *type* used by a Strateloq/Pulse workflow is
+already documented. So the nine are expected to resolve mostly or wholly to FOREIGN — but that is
+confirmed by the host re-run, not assumed.
+
+---
+
+## Essential (launch-critical) credentials — used by ACTIVE production workflows
+
+| Credential | Type | Recovery mechanism | Readiness |
 |---|---|---|---|
-| Supabase account | `supabaseApi` | recreate secret key in console → paste into n8n | ✅ READY |
+| Supabase account | `supabaseApi` | recreate secret key → paste into n8n | ✅ READY |
 | Google Gemini (PaLM) Api | `googlePalmApi` | recreate API key → paste | ✅ READY |
 | Anthropic account | `anthropicApi` | recreate API key → paste | ✅ READY |
 | Gmail (Agent 0 intake) | `gmailOAuth2` | **interactive OAuth reconnect** | ⚠ MANUAL (you) |
-| Pulse Discovery Webhook (edge ↔ n8n) | `httpHeaderAuth` | **regenerate shared secret, set on BOTH sides** | ⚠ MANUAL (you) |
+| Pulse Discovery Webhook (edge ↔ n8n) | `httpHeaderAuth` | **regenerate shared secret, set BOTH sides** | ⚠ MANUAL (you) |
 
-Non-production credentials (their workflows are inactive; needed only at launch/cutover) are
-documented and hostable too — see the second table below — including one OAuth reconnect (Google
-Drive) and the AI-gateway-managed OpenAI credential.
-
----
-
-## Essential credential references used by production workflows
-
-"Production" = the ACTIVE (`active=true`) workflows in `dr/n8n/N8N-WORKFLOW-INVENTORY.md`
-(Monday orchestrator, FX refresher, Business Discovery worker, Product Preparation worker, Agent 0
-intake, Agents 1/2+3 GLOBAL, Agent 6 generator + customer-content worker). The distinct credentials
-they reference are the five in the verdict table. The authoritative, instance-specific list is
-produced by running the readiness tool against the real export set on the host (below); this report
-is grounded in the committed inventory + the verified facts in the Evidence section.
+## Historical / cutover-only credentials — used only by INACTIVE/ARCHIVED workflows
+Documented and hostable; recover only if the workflow is deliberately revived: Pulse Meta System
+User, Pulse Meta Ad Library User (`facebookGraphApi`); OpenAI account (`openAiApi`, possibly
+AI-gateway-managed); CJ Dropshipping API (`httpCustomAuth`); Pulse eBay Production, Pulse DataForSEO
+(`httpBasicAuth`); Google Drive ×3 (`googleDriveOAuth2Api`, **OAuth reconnect**). Full steps:
+`dr/n8n/N8N-CREDENTIAL-RECOVERY-PLAN.md`.
 
 ---
 
-## Secure recovery / reconnection procedure (per credential)
+## Readiness verification (offline, no secrets)
 
-Full per-provider steps, scopes and verify checks are in `dr/runbook/SECRETS-RECOVERY.md` and
-`dr/n8n/N8N-CREDENTIAL-RECOVERY-PLAN.md`. Summary, by recovery mechanism:
-
-**Key / token re-entry (operator-held value → n8n), no interactive step:**
-- `supabaseApi` "Supabase account" — Supabase dashboard → API keys → recreate secret (service role);
-  create n8n `supabaseApi` credential with the same name; verify with an RPC that returns 200.
-- `googlePalmApi` "Google Gemini(PaLM) Api" — Google AI Studio / Vertex key; verify with a model-list
-  (free) call, not a paid generate.
-- `anthropicApi` "Anthropic account" — console.anthropic.com API key; verify with a minimal (free)
-  model-list; avoid a billed completion during a DR check.
-
-**Interactive OAuth reconnect — requires your manual action:**
-- `gmailOAuth2` "Gmail" (Agent 0 intake) — in the restore instance open the credential and use n8n's
-  **Connect** button to complete Google OAuth. Cannot be scripted; no secret is exportable.
-
-**Shared secret, set on BOTH sides — requires your manual action:**
-- `httpHeaderAuth` "Pulse Discovery Webhook" (`PULSE_DISCOVERY_WEBHOOK_SECRET`) — regenerate the
-  shared secret and set it in **both** the Supabase edge-function env **and** the n8n Header Auth
-  credential; verify the discovery/prepare handoff returns 200. (If the real workflow validates the
-  secret in-code rather than via a node credential, it still requires this both-sides manual step.)
-
-**Non-production (inactive-workflow) credentials — documented, hostable, recover at cutover:**
-
-| Credential | Type | Mechanism | Note |
-|---|---|---|---|
-| OpenAI account | `openAiApi` | key re-entry **or** AI-gateway-managed | if exported with `__aiGatewayManaged`, it is an n8n-managed credit credential: supply your own key or enable the AI gateway |
-| CJ Dropshipping API | `httpCustomAuth` | key re-entry | CJ developer portal |
-| Pulse eBay Production | `httpBasicAuth` | key re-entry | eBay developer portal |
-| Pulse DataForSEO | `httpBasicAuth` | key re-entry | dataforseo.com |
-| Pulse Meta System User | `facebookGraphApi` | token re-entry | Meta system-user token |
-| Pulse Meta Ad Library User | `facebookGraphApi` | token re-entry | Meta app |
-| Google Drive (DR offsite ×3) | `googleDriveOAuth2Api` | **interactive OAuth reconnect** | manual, like Gmail |
-
----
-
-## Readiness verification (how it was checked — all offline, no secrets)
-
-A committed tool, `scripts/dr/dr_n8n_credential_readiness.py`, assesses readiness from the exports
-without displaying any secret, contacting any provider, modifying any credential, rotating any key,
-activating any workflow, or making any paid call. It checks four dimensions per credential:
-
-1. **Type hostable** — the credential TYPE exists in n8n 2.44.7 (checked against the committed
-   registry `dr/n8n/n8n-2.44.7-credential-types.txt`, 450 types extracted from the image). A type
-   not present would require a community-node install (BLOCKED).
-2. **Documented** — the credential name or type appears in `SECRETS-RECOVERY.md` /
-   `N8N-CREDENTIAL-RECOVERY-PLAN.md` (a recreation source is on record).
-3. **Mechanism** — key / oauth2 / shared-secret / ai-gateway, driving the MANUAL flag.
-4. **Production** — referenced by at least one active workflow.
-
-Status = READY (hostable + documented + key) · MANUAL (needs an interactive/both-sides step) ·
-BLOCKED (type not hostable, or no documented source). Overall = BLOCKED › PARTIAL › PASS.
+`scripts/dr/dr_n8n_credential_readiness.py` assesses readiness from the exports without displaying a
+secret, contacting a provider, modifying/rotating a credential, activating a workflow, or making a
+paid call. Per credential it reports usage, scope, type-hostability (vs the committed registry
+`dr/n8n/n8n-2.44.7-credential-types.txt`), documentation coverage (this plan + `SECRETS-RECOVERY.md`),
+and recovery mechanism, then assigns READY / MANUAL / BLOCKED / FOREIGN and a scope-aware verdict.
+Scope uses the committed allowlist `dr/n8n/strateloq-workflow-ids.txt`; with no allowlist it stays
+conservative (every undocumented credential is BLOCKED).
 
 ### Evidence (verified in this session)
-- **All 11 candidate credential types are hostable** in n8n 2.44.7 (`supabaseApi`, `googlePalmApi`,
-  `anthropicApi`, `gmailOAuth2`, `googleApi`, `httpHeaderAuth`, `httpBasicAuth`, `httpCustomAuth`,
-  `openAiApi`, `facebookGraphApi`, `googleDriveOAuth2Api`) — no community-node install needed.
-  OAuth2 types detected: `gmailOAuth2`, `googleDriveOAuth2Api`.
-- **No-secret baseline**: every restored instance checked holds `credentials_entity = 0 rows` — the
-  restore carries references only, with nothing to leak and everything to recreate.
-- **Tool tested**: the 2 real committed P1 defs → `supabaseApi` READY, overall **PASS**; an edge-case
-  fixture correctly yields READY (key) / MANUAL (oauth2, shared-secret, ai-gateway) / BLOCKED
-  (unknown type, undocumented type); output contains zero value-like tokens.
+- **All 11 candidate Strateloq credential types are hostable** in n8n 2.44.7 (no community-node
+  install needed); OAuth2 types: `gmailOAuth2`, `googleDriveOAuth2Api`.
+- **No-secret baseline**: every restored instance holds `credentials_entity = 0 rows`.
+- **Tool tested** on fixtures: in-scope undocumented → **BLOCKED** (kept); out-of-scope undocumented →
+  **FOREIGN** (excluded); active/inactive/archived usage classified correctly; the 2 real P1 defs →
+  `supabaseApi` READY, verdict **PASS**; scope-off → undocumented stays BLOCKED; output carries zero
+  value-like tokens.
 
-### Run it against the real 133 on the host (authoritative, read-only)
+### Run on the host to get the authoritative, refined verdict (read-only)
 ```bash
 python3 -I scripts/dr/dr_n8n_credential_readiness.py \
-  --exports /home/strateloqbackup/strateloq-backup/n8n-workflow-export \
-  --report  ./N8N-CREDENTIAL-READINESS-RESULT.md
-# exit 0 = PASS, 1 = PARTIAL (manual actions listed), 2 = BLOCKED
+  --exports      /home/strateloqbackup/strateloq-backup/n8n-workflow-export \
+  --strateloq-ids dr/n8n/strateloq-workflow-ids.txt \
+  --report       ./N8N-CREDENTIAL-READINESS-RESULT.md
+# exit 0 = PASS, 1 = PARTIAL (manual actions listed), 2 = BLOCKED (in-scope source unknown)
 ```
+Each of the nine undocumented entries prints with its **usage** and **scope**. Paste the result back
+to finalise: any that are in-scope stay BLOCKED and need you to supply the source; FOREIGN ones are
+recorded as out-of-scope and do not block Strateloq DR. (If the inventory's truncated `KZ…` growth-agent
+ids are in your export, add their full ids to the allowlist first so they are not mis-scoped.)
 
 ---
 
-## Requires your manual action (cannot be automated; must not be, per the constraints)
+## Requires your manual action
 1. **Gmail (`gmailOAuth2`)** — interactive Google OAuth reconnect in the restore instance.
-2. **Discovery webhook (`httpHeaderAuth` / `PULSE_DISCOVERY_WEBHOOK_SECRET`)** — regenerate the shared
-   secret and set it on both the edge-function env and the n8n credential.
-3. **(Launch/cutover only) Google Drive (`googleDriveOAuth2Api` ×3)** — OAuth reconnect for DR-offsite
-   upload; and decide the OpenAI path (own key vs AI-gateway-managed).
+2. **Discovery webhook (`httpHeaderAuth` / `PULSE_DISCOVERY_WEBHOOK_SECRET`)** — regenerate and set on
+   both the edge-function env and the n8n credential.
+3. **Any in-scope nine-entry the host run marks BLOCKED** — supply its evidenced recovery source
+   (provider + account + scope); it is then added to the plan. Not invented here.
+4. **(Launch/cutover only)** Google Drive OAuth ×3 reconnect; decide the OpenAI path (own key vs
+   AI-gateway-managed).
 
 ## Constraints honored
-No secret values displayed; no production credential created or modified; no key rotated; no workflow
-activated; no paid API call. The existing encrypted backups and the restore report
-(`dr/n8n/N8N-RESTORE-VALIDATION-001.md`) are unchanged — this checkpoint only adds a readiness tool,
-the credential-type registry, and this report.
+No secret values displayed; no production credential created/modified; no key rotated; no workflow
+activated; no paid API call. Existing encrypted backups and the restore report
+(`dr/n8n/N8N-RESTORE-VALIDATION-001.md`) are unchanged — this checkpoint only adds usage/scope
+classification to the readiness tool, the in-scope workflow-id allowlist, and these doc updates.
