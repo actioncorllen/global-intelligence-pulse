@@ -94,17 +94,18 @@ by **scope**, never by invention:
   gap is on an *active* workflow it is launch-critical; if on an inactive/archived one it is a
   historical gap (lower urgency) but still BLOCKED until documented.
 
-### In-scope undocumented blockers — current (3) — status: BLOCKED (sources now evidence-identified)
+### In-scope undocumented blockers — 2 BLOCKED, 1 RESOLVED (SMTP)
 
 The genuine 133-export **host drill-down** (`dr_n8n_credential_refs.py --detail`) resolved what these
 three actually are. This **supersedes the earlier inventory-only hypotheses** (which had guessed the
-trend-collector / AI Marketing Director); use the drill-down evidence below.
+trend-collector / AI Marketing Director); use the drill-down evidence below. **SMTP is now RESOLVED**
+(founder recovered it, 2026-10-26); the two Google query-auth credentials remain BLOCKED.
 
 | Credential | Type | Confirmed usage (host drill-down) | Recovery source (evidence) | Status |
 |---|---|---|---|---|
 | Query Auth account | `httpQueryAuth` | HTTP Request node → **`generativelanguage.googleapis.com`** (Google **Gemini** / Generative Language API), key passed as `?key=` | **Google AI Studio / Google Cloud API key** — the *same* source as the documented Gemini credential (`googlePalmApi`) | BLOCKED pending founder: confirm account↔host + which Cloud project/key |
 | Query Auth account 2 | `httpQueryAuth` | HTTP Request node → **`www.googleapis.com`** (Google API; **YouTube Data API** per the drill-down host labeling), key as `?key=` | **Google Cloud Console → APIs & Services → Credentials → API key** with that API enabled | BLOCKED pending founder: confirm exact Google API + Cloud project/key |
-| SMTP account | `smtp` | **ACTIVE founding-member intake (Agent 0, `A8fTV08XOvUMq93n`)** — nodes **"Send Confirmation Email"** and **"Notify Founder"** | SMTP provider — **host/port/account not in the repo** (lives in the n8n credential / founder vault) | BLOCKED pending founder: SMTP host/account/provider |
+| SMTP account | `smtp` | **ACTIVE founding-member intake (Agent 0, `A8fTV08XOvUMq93n`)** — nodes **"Send Confirmation Email"** and **"Notify Founder"** | **Hostinger Mail** — `smtp.hostinger.com:465` SSL/TLS, user `support@strateloq.com`; password reset in Hostinger hPanel → Emails (never in repo) | **RESOLVED — auth VERIFIED in production** (n8n connection test SUCCESS 2026-10-26). Email **delivery** test is separate/pending |
 
 > Account↔host binding is read from the per-account lines of
 > `python3 -I scripts/dr/dr_n8n_credential_refs.py <export-dir> --detail --type httpQueryAuth`
@@ -117,31 +118,33 @@ remain **BLOCKED** only pending the founder confirming (a) the exact account↔h
 Google API the `www.googleapis.com` key targets (YouTube Data API v3 is the evidenced candidate), and
 (c) which Google Cloud project/key to reissue from. No key value is handled here; nothing is rotated.
 
-**SMTP — determination (onboarding architecture verified, read-only).** SMTP is **NOT nonessential**:
-it is bound in the **active** founding-member intake workflow. But the launch email-**verification**
-gate does **not** depend on it — verification is owned by **Supabase Auth**
-(`auth.users.email_confirmed_at`, mirrored by `member.email_verified`;
-`docs/STRATELOQ-ECOM-PAID-ACCESS-ARCHITECTURE-AUDIT-012.md` §2, and the invitation/acceptance edge
-functions derive `emailVerified` only from the trusted Supabase Auth timestamp). The n8n SMTP nodes
-send the **intake acknowledgement to the member** and a **founder notification** — operational emails,
-not the verification gate. No repo-visible alternative (Resend/SendGrid/Mailgun/edge-function email)
-supersedes those two notifications, so on current evidence they still run through this credential while
-the workflow is active. It therefore stays **BLOCKED** (source unknown) and must not be dropped as
-"legacy": either the founder supplies the SMTP source, or confirms those two notifications are to be
-retired / moved to a verified path (e.g. Supabase Auth email or an edge function) — a deliberate change
-to the workflow, out of scope for DR.
+**SMTP — RESOLVED (auth verified in production; delivery test separate).** SMTP is **NOT nonessential**:
+it is bound in the **active** founding-member intake workflow. The founder has recovered the credential
+— **Hostinger Mail**, `smtp.hostinger.com:465` SSL/TLS, user `support@strateloq.com` — and the n8n
+**connection test passed (SUCCESS, 2026-10-26)**, so SMTP **authentication is verified in production**.
+The password is held only in n8n + the founder vault (never in this repo); recreate it via Hostinger
+hPanel → Emails → the `support@strateloq.com` mailbox.
 
-**To clear each blocker, the founder must provide (no secret values in the repo — just the source):**
+Two scopes are deliberately kept separate: **(a) authentication — VERIFIED** (the connection test
+proves the credentials authenticate to the SMTP server); **(b) email delivery — NOT yet verified**, a
+separate functional test (send a real message through the intake path and confirm receipt + headers),
+intentionally not performed here because it would mean exercising the active production workflow —
+out of DR scope. Record delivery as *pending*, not as done.
+
+For context (unchanged): the launch email-**verification** gate does **not** depend on this credential
+— verification is owned by **Supabase Auth** (`auth.users.email_confirmed_at`, mirrored by
+`member.email_verified`; `docs/STRATELOQ-ECOM-PAID-ACCESS-ARCHITECTURE-AUDIT-012.md` §2). The SMTP
+nodes carry the member acknowledgement + founder notification.
+
+**To clear the two remaining blockers, the founder must provide (no secret values in the repo — just
+the source):**
 - `httpQueryAuth` (both): the exact account↔host mapping; for `www.googleapis.com`, which Google API
   it calls; the Google Cloud **project + API key** to reissue (enable Generative Language API / the
   relevant API); confirm the `key` query-param name. Both are recreated in the Google Cloud Console /
   AI Studio — the same place as the Gemini credential.
-- `smtp` "SMTP account": SMTP **host + port + security**, the sending **username / from-address**, and
-  the **provider** issuing the password/app-password (Gmail app-password, SendGrid, Mailgun, SES,
-  Postmark, …); or confirmation the two notification nodes are retired / superseded.
 
-Until then all three stay in `dr/n8n/credential-blocked.txt`, which forces the readiness tool to keep
-them BLOCKED even now that their analysis is documented. Remove a line only when its evidenced source
+The two query-auth entries stay in `dr/n8n/credential-blocked.txt`, which forces the readiness tool to
+keep them BLOCKED even now that their analysis is documented. Remove a line only when its evidenced source
 is recorded above and in `SECRETS-RECOVERY.md`.
 
 ---

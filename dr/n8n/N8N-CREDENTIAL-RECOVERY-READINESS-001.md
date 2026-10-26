@@ -7,20 +7,17 @@ Checkpoint after the 133-workflow restore PASS. Builds on
 
 ---
 
-## Status: **BLOCKED** (3 in-scope undocumented credentials; 6 of the 9 were out-of-scope/FOREIGN)
+## Status: **BLOCKED** (2 in-scope blockers remain; SMTP RESOLVED; 6 of the 9 were out-of-scope/FOREIGN)
 
-The genuine 133-export run flagged nine undocumented credentials. With usage+scope classification,
-six resolved to **FOREIGN** (co-resident non-Strateloq workflows — excluded) and **three remain
-in-scope blockers**:
-
-The host drill-down (`--detail`) identified what these three actually are — **superseding the earlier
-inventory-only guesses** (trend collector / AI Marketing Director were wrong):
+The genuine 133-export run flagged nine undocumented credentials. Six resolved to **FOREIGN**
+(co-resident non-Strateloq workflows — excluded). Of the three in-scope, **SMTP is now RESOLVED**
+(founder recovered it) and **two Google query-auth credentials remain BLOCKED**:
 
 | Credential | Type | Confirmed usage (drill-down) | Recovery source (evidence) | Status |
 |---|---|---|---|---|
 | Query Auth account | `httpQueryAuth` | → `generativelanguage.googleapis.com` (Google **Gemini**) | Google AI Studio / Cloud **API key** (same source as `googlePalmApi`) | ⛔ BLOCKED — confirm acct↔host + project/key |
 | Query Auth account 2 | `httpQueryAuth` | → `www.googleapis.com` (Google API / **YouTube**) | Google Cloud Console **API key** (confirm exact API) | ⛔ BLOCKED — confirm API + project/key |
-| SMTP account | `smtp` | **ACTIVE Agent 0 intake** (`A8fTV08XOvUMq93n`) — "Send Confirmation Email", "Notify Founder" | SMTP provider — not in repo (founder vault) | ⛔ BLOCKED — source unknown |
+| SMTP account | `smtp` | **ACTIVE Agent 0 intake** (`A8fTV08XOvUMq93n`) — "Send Confirmation Email", "Notify Founder" | **Hostinger Mail** `smtp.hostinger.com:465` SSL, user `support@strateloq.com` (password in n8n/vault, not repo) | ✅ RESOLVED — **auth VERIFIED** (n8n connection test SUCCESS 2026-10-26); delivery test separate/pending |
 
 **Determination (corrected, evidence-based):**
 - **Query Auth ×2** authenticate **Google APIs by `?key=` API key**, so the recovery *source* is now
@@ -28,19 +25,19 @@ inventory-only guesses** (trend collector / AI Marketing Director were wrong):
   documented for `googlePalmApi`). They stay BLOCKED only pending the founder confirming the exact
   account↔host mapping, which Google API the `www.googleapis.com` key targets (YouTube Data API v3 is
   the evidenced candidate), and which Cloud project/key.
-- **SMTP is NOT nonessential** — it is bound in the **active** founding-member intake. But the launch
-  email-**verification** gate does **not** depend on it: verification is owned by **Supabase Auth**
-  (`auth.users.email_confirmed_at` / `member.email_verified`; `STRATELOQ-ECOM-PAID-ACCESS-ARCHITECTURE-AUDIT-012` §2,
-  and the invitation/acceptance edge functions derive `emailVerified` only from the trusted Supabase
-  Auth timestamp). The n8n SMTP nodes send the **member acknowledgement** and a **founder
-  notification**; no repo-visible path (Resend/SendGrid/edge-function) supersedes them, so they still
-  run through this credential while the workflow is active. SMTP stays **BLOCKED** (source unknown)
-  until the founder supplies the SMTP source or confirms those two notifications are retired/moved.
+- **SMTP — RESOLVED, auth verified in production.** The founder recovered the credential (Hostinger
+  Mail, `smtp.hostinger.com:465` SSL, user `support@strateloq.com`) and the n8n **connection test
+  passed (SUCCESS, 2026-10-26)** → SMTP **authentication is verified**. Kept separate and **still
+  pending**: email **delivery** verification (sending a real message through the intake path and
+  confirming receipt) — intentionally not run, as it would exercise the active production workflow.
+  SMTP is **NOT nonessential** (it is on the active intake), but it is **not** the launch verification
+  gate — that is Supabase Auth (`auth.users.email_confirmed_at` / `member.email_verified`;
+  `STRATELOQ-ECOM-PAID-ACCESS-ARCHITECTURE-AUDIT-012` §2). The password is never stored in this repo.
 
-All three are held BLOCKED by `dr/n8n/credential-blocked.txt` so that documenting their analysis does
-not flip them to READY. No source is invented; nothing is rotated or activated. Full "what the founder
-must provide" and the account-binding command are in `dr/n8n/N8N-CREDENTIAL-RECOVERY-PLAN.md`
-→ "In-scope undocumented blockers — current (3)".
+The two query-auth entries are held BLOCKED by `dr/n8n/credential-blocked.txt` so that documenting
+their analysis does not flip them to READY. SMTP has been removed from that list now that its source is
+recorded and auth-verified. No source is invented; nothing is rotated or activated. Full detail is in
+`dr/n8n/N8N-CREDENTIAL-RECOVERY-PLAN.md` → "In-scope undocumented blockers".
 
 The six FOREIGN entries are out-of-scope and excluded from the Strateloq verdict (recover via their own
 project owners). The exact per-credential workflow/node/service mapping is produced on the host with
@@ -102,25 +99,24 @@ ids are in your export, add their full ids to the allowlist first so they are no
 ---
 
 ## Requires your (founder) action
-1. **Resolve the 3 in-scope BLOCKED credentials** by confirming their recovery *source* (no secret
-   values in the repo — just where/what):
-   - `httpQueryAuth` "Query Auth account" / "Query Auth account 2" — both are **Google Cloud API keys**
-     (`?key=`): one for `generativelanguage.googleapis.com` (Gemini — same key source as the documented
-     `googlePalmApi`), one for `www.googleapis.com` (confirm the API — YouTube Data API v3 is the
-     evidenced candidate). Confirm the account↔host 1:1 (from `--detail --type httpQueryAuth`) and which
-     Google Cloud project/key to reissue from.
-   - `smtp` "SMTP account" — SMTP host + port + security, the sending username/from-address, the SMTP
-     provider that issues the password/app-password; **or** confirm the active Agent 0 "Send Confirmation
-     Email" / "Notify Founder" nodes are retired / moved to a verified path. (Email *verification* itself
-     is already handled by Supabase Auth, not this credential — so launch verification is not blocked.)
-2. **Gmail (`gmailOAuth2`)** — interactive Google OAuth reconnect in the restore instance.
-3. **Discovery webhook (`httpHeaderAuth` / `PULSE_DISCOVERY_WEBHOOK_SECRET`)** — regenerate and set on
+1. **Resolve the 2 remaining in-scope BLOCKED credentials** (`httpQueryAuth` "Query Auth account" /
+   "Query Auth account 2") — both are **Google Cloud API keys** (`?key=`): one for
+   `generativelanguage.googleapis.com` (Gemini — same key source as the documented `googlePalmApi`),
+   one for `www.googleapis.com` (confirm the API — YouTube Data API v3 is the evidenced candidate).
+   Confirm the account↔host 1:1 (from `--detail --type httpQueryAuth`) and which Google Cloud
+   project/key to reissue from. No secret values in the repo — just the source.
+2. **SMTP account — DONE (auth).** Recovered: Hostinger Mail, `smtp.hostinger.com:465` SSL, user
+   `support@strateloq.com`; n8n connection test SUCCESS (2026-10-26). **Still open (separate):** run an
+   email **delivery** test — send one real message through the intake path and confirm receipt — when
+   you choose to; it is intentionally not run here (it would exercise the active workflow).
+3. **Gmail (`gmailOAuth2`)** — interactive Google OAuth reconnect in the restore instance.
+4. **Discovery webhook (`httpHeaderAuth` / `PULSE_DISCOVERY_WEBHOOK_SECRET`)** — regenerate and set on
    both the edge-function env and the n8n credential.
-4. **(Launch/cutover only)** Google Drive OAuth ×3 reconnect; decide the OpenAI path (own key vs
+5. **(Launch/cutover only)** Google Drive OAuth ×3 reconnect; decide the OpenAI path (own key vs
    AI-gateway-managed).
 
-Until (1) is answered the three stay **BLOCKED** (no source invented). They are **not** launch-critical
-(not on the active ecom production path), so they do not block the current launch — but they remain
+Until (1) is answered the two query-auth credentials stay **BLOCKED** (no source invented). They are
+**not** on the active ecom production path, so they do not block the current launch — but they remain
 unrecoverable until the source is provided or the integration is confirmed retired.
 
 ## Constraints honored
