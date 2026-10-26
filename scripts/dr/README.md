@@ -12,3 +12,9 @@ credentials (never commit their output if it contains data). See dr/runbook/RECO
 | dr_storage_manifest.sql | Regenerate dr/manifests/storage_manifest.json | psql + SUPABASE_DB_URL |
 | dr_storage_backup.sh | Download all Storage objects to an encrypted local copy | SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY |
 | dr_n8n_export.sh | Export every n8n workflow definition to JSON (no secrets) | N8N_BASE_URL, N8N_API_KEY |
+| dr_n8n_restore.sh | Restore workflow defs into an isolated, offline, INACTIVE n8n instance (fixes the `SQLITE_CONSTRAINT: FOREIGN KEY constraint failed` CLI-import failure); `--repair` recovers an instance left in the failing state | docker, python3 (no network, no secrets) |
+| dr_n8n_sanitize.py | Rewrite exports to import-safe inactive defs (used by dr_n8n_restore.sh) | python3 |
+| dr_n8n_credential_refs.py | List distinct n8n credential **references** (type/name/id, no values) across exports | python3 |
+
+n8n restore details, root cause and PASS/FAIL evidence: `dr/n8n/N8N-RESTORE-VALIDATION-001.md`;
+credential recovery (references only): `dr/n8n/N8N-CREDENTIAL-RECOVERY-PLAN.md`.
