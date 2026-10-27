@@ -57,6 +57,14 @@ scrub(){ sed -E \
   -e 's#(://[^:/@ ]+):[^@ ]+@#\1:***@#g' \
   -e 's#eyJ[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_.-]{6,}#***JWT***#g' \
   -e 's#(apikey|api_key|service_role|token|password|passphrase|secret)([=: ]+)[^[:space:]]+#\1\2***#gI'; }
+# Lighter redactor for error text we intentionally SHOW: strips only connection-string credentials,
+# key=value secrets and JWTs — never ordinary prose. This keeps a psql message like
+# "password authentication failed" readable (and classifiable), unlike scrub() which would eat the
+# word after "password". psql connection errors never echo the password itself.
+redact_err(){ sed -E \
+  -e 's#([a-z][a-z0-9+.-]*://[^:/@ ]+):[^@ ]*@#\1:***@#g' \
+  -e 's#eyJ[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_.-]{6,}#***#g' \
+  -e 's#(password|pgpassword|apikey|api_key|service_role|token|secret)=[^[:space:]&]+#\1=***#gI'; }
 
 # ---- load config -------------------------------------------------------------------------------
 # Normalise ENV_FILE to an ABSOLUTE path first: `.` does a PATH lookup for a bare filename with no
@@ -112,7 +120,10 @@ STEPS=(deps config keydb storage source_edge n8n_preserve unattended_enc weekly_
 is_done(){ grep -q "^$1 OK " "$STATE" 2>/dev/null; }
 mark_done(){ printf '%s OK %s\n' "$1" "$(date -u +%FT%TZ)" >> "$STATE"; }
 log(){ printf '%s\n' "$*" | scrub | tee -a "$LOG"; }
-need_action(){ log ""; log "ACTION REQUIRED: $1"; log "(then re-run this script — completed steps are skipped and it resumes here.)"; exit 10; }
+# need_action prints author-written advisory prose (plus only non-secret values: host/port/user/
+# paths and an already-redacted snippet), so it uses the LIGHT redactor to stay readable while still
+# stripping any accidental connection-string/token — never the aggressive scrub() that eats prose.
+need_action(){ printf '\nACTION REQUIRED: %s\n(then re-run this script — completed steps are skipped and it resumes here.)\n' "$1" | redact_err | tee -a "$LOG"; exit 10; }
 fail_step(){ log "FAIL [$1]: ${2:-}"; log "(fix the cause and re-run — completed steps are skipped; this step will retry.)"; exit 1; }
 
 # bounded retry for transient/network ops: retry <max> <basesleep> -- cmd...
@@ -194,27 +205,38 @@ step_config(){
   esac
   [ "$dns" = FAIL ] && need_action "DNS cannot resolve the DB host '$host'. Check the hostname in SUPABASE_DB_URL in $ENV_FILE, then re-run."
   if [ "$tcp" = OK ]; then
-    # TCP connects but the query failed -> classify WITHOUT exposing the credential. Extract the
-    # username (not secret) and categorise psql's SCRUBBED stderr into one actionable cause.
-    local user err cat pooler_user_bad=0
+    # TCP connects but the query failed. Classify on the RAW stderr (NEVER printed) so the common
+    # libpq phrase "password authentication failed" is not mangled by scrub() into UNKNOWN. Only the
+    # category + username are logged; any error text we show the founder goes through redact_err.
+    local user err le cat pooler_user_bad=0 snippet
     user="${SUPABASE_DB_URL#*://}"; user="${user%%:*}"; user="${user%%@*}"   # text before the first : or @
-    err="$(psql "$SUPABASE_DB_URL" -tAc 'select 1;' 2>&1 >/dev/null | scrub | tr '\n' ' ')"
-    case "$err" in
-      *"Tenant or user not found"*)                                   cat="POOLER_USERNAME" ;;
-      *"password authentication failed"*|*SASL*|*"authentication failed"*) cat="AUTH" ;;
-      *"no encryption"*|*"does not support SSL"*|*"SSL"*) cat="SSL" ;;
-      *"permission denied"*|*"not permitted"*)                        cat="PERMISSION" ;;
+    err="$(psql "$SUPABASE_DB_URL" -tAc 'select 1;' 2>&1 >/dev/null)"        # RAW; not printed
+    le="$(printf '%s' "$err" | tr 'A-Z' 'a-z' | tr '\n' ' ')"                # lowercased for matching
+    case "$le" in
+      *"tenant or user not found"*)                                          cat="POOLER_USERNAME" ;;
+      *"password authentication failed"*|*sasl*|*"authentication failed"*|*"invalid authorization"*) cat="AUTH" ;;
+      *"no pg_hba.conf entry"*)                                              cat="HBA_SSL" ;;
+      *"no encryption"*|*"does not support ssl"*|*"ssl "*|*"ssl:"*|*"server does not support"*) cat="SSL" ;;
+      *"permission denied"*|*"not permitted"*|*"must be owner"*)             cat="PERMISSION" ;;
+      *"timeout"*|*"could not connect"*|*"connection refused"*|*"could not receive"*|*"closed the connection"*|*"terminating connection"*) cat="NETWORK" ;;
+      *"max client"*|*"too many"*|*"remaining connection"*)                  cat="POOL_SATURATED" ;;
+      "") cat="OK" ;;
       *) cat="UNKNOWN" ;;
     esac
     case "$host" in *pooler.supabase.com) [ "$user" = "postgres" ] && pooler_user_bad=1 ;; esac
     log "   [config] auth diagnostic: category=$cat  user=$user  (credential never printed)"
+    [ "$cat" = OK ] && { log "ok   [config] Supabase reachable (succeeded on diagnostic retry)"; return 0; }
     if [ "$cat" = POOLER_USERNAME ] || [ "$pooler_user_bad" = 1 ]; then
       need_action "the Supavisor pooler rejected the login because the username is not TENANT-QUALIFIED. In SUPABASE_DB_URL the user must be 'postgres.nxaunmyihhjixxxljcqt' (project ref appended), not plain 'postgres'. Copy the exact Session pooler string from Supabase Dashboard -> Connect -> Session pooler, then re-run."
     fi
-    [ "$cat" = AUTH ] && need_action "authentication was rejected. The most common cause that is NOT a wrong password: special characters in the password are not percent-encoded in the URL (@ becomes %40, # %23, / %2F, : %3A, ? %3F, % %25). Percent-encode the password in SUPABASE_DB_URL, or re-copy the exact Session pooler string from Supabase Dashboard -> Connect. Do NOT reset the production password for this. Then re-run."
-    [ "$cat" = SSL ] && need_action "TLS negotiation failed. Append '?sslmode=require' to SUPABASE_DB_URL (Supabase requires TLS), then re-run."
+    [ "$cat" = AUTH ] && need_action "authentication was rejected (libpq 'password authentication failed'). The most common cause that is NOT a wrong password: special characters in the password are not percent-encoded in the URL (@ becomes %40, # %23, / %2F, : %3A, ? %3F, % %25, space %20). Percent-encode the password in SUPABASE_DB_URL, or re-copy the exact Session pooler string from Supabase Dashboard -> Connect. Do NOT reset the production password for this. Then re-run."
+    if [ "$cat" = SSL ] || [ "$cat" = HBA_SSL ]; then need_action "the server requires TLS but the client did not negotiate it. Append '?sslmode=require' to the end of SUPABASE_DB_URL, then re-run."; fi
     [ "$cat" = PERMISSION ] && need_action "connected and authenticated, but the role cannot run 'select 1;' — unexpected for the postgres role. Confirm the user in SUPABASE_DB_URL is 'postgres.nxaunmyihhjixxxljcqt', then re-run."
-    need_action "DB query failed after a successful TCP connect (category=$cat, user=$user). Re-copy the exact Session pooler connection string from Supabase Dashboard -> Connect -> Session pooler into $ENV_FILE (it already contains the correct tenant-qualified username), then re-run."
+    [ "$cat" = NETWORK ] && need_action "the connection dropped mid-handshake (not auth). Re-run once; if it persists, confirm the exact Session pooler host/port from Supabase Dashboard -> Connect, then re-run."
+    [ "$cat" = POOL_SATURATED ] && need_action "the pooler refused the connection due to connection limits. Wait a minute and re-run; if it persists, check the Supabase dashboard for connection usage."
+    # UNKNOWN (or any unhandled): show the SAFE first line so the exact cause is visible without secrets.
+    snippet="$(printf '%s' "$err" | redact_err | tr '\n' ' ' | sed -E 's/[[:space:]]+/ /g' | cut -c1-220)"
+    need_action "DB query failed after a successful TCP connect (category=$cat, user=$user). Sanitised server message: [$snippet]. Re-copy the exact Session pooler connection string from Supabase Dashboard -> Connect -> Session pooler into $ENV_FILE and ensure any special characters in the password are percent-encoded, then re-run. (Password/credentials are redacted above; do NOT reset the production password.)"
   fi
   need_action "Supabase DB not reachable (host=$host port=$port dns=$dns tcp=$tcp). Use the Session pooler connection string from Supabase Dashboard -> Connect -> Session pooler in $ENV_FILE, then re-run."
 }
