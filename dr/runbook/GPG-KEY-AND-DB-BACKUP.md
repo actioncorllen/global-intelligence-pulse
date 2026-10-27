@@ -39,6 +39,13 @@ fresh homedir — then verify **in the real homedir**.
 - Self-tested `dr_db_backup_to_drive.sh`, then ran it **real-mode** against a throwaway local Postgres:
   dump (via `dr_db_logical_backup.sh`) → integrity (`pg_restore -l`, 18 TOC entries) → SHA256 manifest
   → upload → checksum-verify, all **PASS**, with an independent `sha256sum -c` = `OK`.
+- Interactive-pinentry investigation (this round): confirmed the fix-script probe uses
+  `--pinentry-mode loopback` and so **never exercised pinentry** — its PASS only means the key store is
+  writable. By reproduction, mapped the errors: missing/non-exec pinentry → `No pinentry`; immutable
+  attr → `Operation not permitted`; no controlling tty → `cannot open '/dev/tty'`; key-store EACCES →
+  `Permission denied`. Built + self-tested `diagnose-gpg-pinentry.sh` (diagnose → safe fixes → debug
+  log → real interactive genkey → restore conf + shred log). Interactive genkey itself can only be
+  confirmed on a real terminal, so it is a `[YOU]` step — never claimed PASS from loopback/temp here.
 
 ---
 
@@ -51,15 +58,30 @@ chmod +x scripts/dr/*.sh
 scripts/dr/fix-gpg-agent-wsl.sh --diagnose-only     # look first: prints fs type, owners, attrs, ACL, errno
 scripts/dr/fix-gpg-agent-wsl.sh                     # diagnose + fix + verify in the REAL ~/.gnupg
 ```
-It tries an in-place fix (ownership/perms/attrs/ACL/stale-agent); if that is not enough it moves the
-broken `~/.gnupg` aside to `~/.gnupg.broken.<ts>` (**preserved, never deleted**) and creates a fresh
-one, then verifies by generating + deleting a throwaway key **in the real homedir**. It ends with
-`RESULT: PASS` only when the real homedir actually generates a key. If it reports a non-native
-filesystem it prints the exact `export GNUPGHOME=…ext4 path…` to use (and `--reset-home` forces the
-move-aside). If an earlier keyring was moved aside and held real keys, re-import later with
-`gpg --import ~/.gnupg.broken.<ts>/*.gpg` (or `pubring.kbx`).
+This validates that the key **store** is writable. **Important:** its probe uses
+`--pinentry-mode loopback`, so it supplies the passphrase itself and **does not exercise pinentry** —
+a `RESULT: PASS` here does **not** prove interactive key generation works. If step 2 below still fails
+with `agent_genkey failed: Permission denied`, the cause is the pinentry/passphrase path — go to
+step 1b.
+
+### 1b. If interactive key-gen fails though step 1 "passed" — diagnose the pinentry/terminal path
+```bash
+scripts/dr/diagnose-gpg-pinentry.sh      # in a REAL WSL terminal, not the VS Code integrated terminal
+```
+It prints what actually differs between the loopback probe and interactive gpg (effective `GNUPGHOME`
+vs the one you fixed, `GPG_TTY`, the terminal's owner/perms, the `pinentry-program` resolution, running
+agents), applies the safe, security-preserving fixes (`GPG_TTY=$(tty)` + `gpg-connect-agent
+updatestartuptty` + a fresh user-owned agent), turns on gpg-agent debug logging, then runs the **real**
+interactive `gpg --quick-generate-key` so you enter the passphrase. On success it creates the protected
+key (that is step 2, done). On failure it prints the exact agent-log line and a decision tree, then
+restores `gpg-agent.conf` and shreds the debug log. The most common fixes it leads to:
+- **`GPG_TTY` unset / wrong terminal** → `export GPG_TTY=$(tty); gpgconf --kill all; gpg-connect-agent updatestartuptty /bye` and run in a native WSL terminal.
+- **`No pinentry`** → `sudo apt-get install -y pinentry-curses` (free), confirm `test -x /usr/bin/pinentry-curses`.
+- **`Permission denied` on a `private-keys-v1.d/*.key` path** → the interactive shell is using a different `GNUPGHOME` than the one step 1 fixed → `export GNUPGHOME=<fixed path>` (persist in `~/.bashrc`).
+It never uses `--pinentry-mode loopback` with an empty passphrase and never weakens protection.
 
 ### 2. Create the dedicated backup key — INTERACTIVE passphrase (never printed or stored)
+If step 1b already created the key, skip to step 3. Otherwise, in a real terminal:
 ```bash
 export GPG_TTY=$(tty)
 gpg --quick-generate-key "Strateloq Technologies Backup <support@strateloq.com>" rsa4096 encrypt 2y

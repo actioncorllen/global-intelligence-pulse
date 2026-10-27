@@ -43,6 +43,9 @@ print_next() {
     echo "  export GNUPGHOME=$TARGET      # relocation above — also add this to ~/.bashrc"
   fi
   echo '  gpg --quick-generate-key "Strateloq Technologies Backup <support@strateloq.com>" rsa4096 encrypt 2y'
+  echo "If THAT interactive command fails with 'agent_genkey failed: Permission denied', this script's"
+  echo "probe passed only because it used loopback (no pinentry). The cause is the pinentry/passphrase"
+  echo "path — run:  scripts/dr/diagnose-gpg-pinentry.sh"
   echo "Then follow dr/runbook/GPG-KEY-AND-DB-BACKUP.md (key backup + database backup)."
 }
 
@@ -113,7 +116,7 @@ if [ "$MODE" != "reset" ]; then
   gpgconf --create-socketdir 2>/dev/null || true
   echo "--- verifying IN THE REAL homedir ---"
   if probe_genkey "$GNUPGHOME"; then
-    echo "RESULT: PASS — real homedir now generates keys (verified in $GNUPGHOME)."; print_next; exit 0
+    echo "RESULT: PASS (key STORE writable; loopback probe — pinentry NOT exercised) in $GNUPGHOME."; print_next; exit 0
   fi
   echo "In-place fix insufficient — applying the durable homedir reset (old dir preserved)."
 fi
@@ -145,7 +148,7 @@ GNUPGHOME="$TARGET" gpgconf --launch gpg-agent 2>/dev/null || true
 
 echo "--- verifying IN THE REAL homedir ($TARGET) ---"
 if probe_genkey "$TARGET"; then
-  echo "RESULT: PASS — $TARGET now generates keys (verified in the real homedir)."
+  echo "RESULT: PASS (key STORE writable; loopback probe — pinentry NOT exercised) in $TARGET."
   [ "$TARGET" != "$HOME/.gnupg" ] && echo "NOTE: set 'export GNUPGHOME=$TARGET' in ~/.bashrc so all tools use it."
   echo "Old keyring preserved at ${TARGET}.broken.$TS (re-import with: gpg --import <that>/*.gpg if it held real keys)."
   print_next; exit 0
