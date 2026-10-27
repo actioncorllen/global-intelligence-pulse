@@ -39,13 +39,16 @@ fresh homedir — then verify **in the real homedir**.
 - Self-tested `dr_db_backup_to_drive.sh`, then ran it **real-mode** against a throwaway local Postgres:
   dump (via `dr_db_logical_backup.sh`) → integrity (`pg_restore -l`, 18 TOC entries) → SHA256 manifest
   → upload → checksum-verify, all **PASS**, with an independent `sha256sum -c` = `OK`.
-- Interactive-pinentry investigation (this round): confirmed the fix-script probe uses
-  `--pinentry-mode loopback` and so **never exercised pinentry** — its PASS only means the key store is
-  writable. By reproduction, mapped the errors: missing/non-exec pinentry → `No pinentry`; immutable
-  attr → `Operation not permitted`; no controlling tty → `cannot open '/dev/tty'`; key-store EACCES →
-  `Permission denied`. Built + self-tested `diagnose-gpg-pinentry.sh` (diagnose → safe fixes → debug
-  log → real interactive genkey → restore conf + shred log). Interactive genkey itself can only be
-  confirmed on a real terminal, so it is a `[YOU]` step — never claimed PASS from loopback/temp here.
+- Interactive-pinentry investigation: confirmed the fix-script probe uses `--pinentry-mode loopback`
+  and so **never exercised pinentry** — its PASS only means the key store is writable. Mapped the
+  errors by reproduction: missing/non-exec pinentry → `No pinentry`; immutable attr → `Operation not
+  permitted`; no controlling tty → `cannot open '/dev/tty'`; key-store EACCES → `Permission denied`.
+- Host evidence `ERR 83886142 Timeout <Pinentry>` decoded to **source=PINENTRY, code=62=Timeout** →
+  the failure is the curses passphrase UI, not the agent/permissions. The standalone `GETPIN` test is a
+  known false signal (shared terminal). Smallest durable fix = line-mode **pinentry-tty**;
+  `diagnose-gpg-pinentry.sh` now auto-selects it (self-tested: selected+persisted when present, curses
+  fallback + install hint when absent; conf restored, debug log shredded). The interactive key-gen is a
+  `[YOU]` step confirmable only on a real terminal — never claimed PASS from loopback/temp here.
 
 ---
 
@@ -64,21 +67,27 @@ a `RESULT: PASS` here does **not** prove interactive key generation works. If st
 with `agent_genkey failed: Permission denied`, the cause is the pinentry/passphrase path — go to
 step 1b.
 
-### 1b. If interactive key-gen fails though step 1 "passed" — diagnose the pinentry/terminal path
+### 1b. If interactive key-gen fails though step 1 "passed" — fix the pinentry/terminal path
+**Confirmed root cause for this host:** the failure is in the **passphrase UI (pinentry-curses)**, not
+the agent or permissions. The error `ERR 83886142 Timeout <Pinentry>` decodes to source **PINENTRY**,
+code **62 = Timeout**. Note: testing by running `pinentry-curses` and typing `GETPIN` by hand is
+**unreliable** — that shares one terminal for both the Assuan protocol and the curses dialog, so it
+always times out; it does **not** prove pinentry is broken in real agent use. curses pinentry is simply
+flaky on WSL terminals.
+
+**Smallest durable fix — switch to line-mode `pinentry-tty` (fully secure; no loopback, no weakening):**
 ```bash
-scripts/dr/diagnose-gpg-pinentry.sh      # in a REAL WSL terminal, not the VS Code integrated terminal
+sudo apt-get install -y pinentry-tty        # free; the robust pinentry for WSL
+scripts/dr/diagnose-gpg-pinentry.sh         # in a REAL WSL terminal (not the VS Code integrated one)
 ```
-It prints what actually differs between the loopback probe and interactive gpg (effective `GNUPGHOME`
-vs the one you fixed, `GPG_TTY`, the terminal's owner/perms, the `pinentry-program` resolution, running
-agents), applies the safe, security-preserving fixes (`GPG_TTY=$(tty)` + `gpg-connect-agent
-updatestartuptty` + a fresh user-owned agent), turns on gpg-agent debug logging, then runs the **real**
-interactive `gpg --quick-generate-key` so you enter the passphrase. On success it creates the protected
-key (that is step 2, done). On failure it prints the exact agent-log line and a decision tree, then
-restores `gpg-agent.conf` and shreds the debug log. The most common fixes it leads to:
-- **`GPG_TTY` unset / wrong terminal** → `export GPG_TTY=$(tty); gpgconf --kill all; gpg-connect-agent updatestartuptty /bye` and run in a native WSL terminal.
-- **`No pinentry`** → `sudo apt-get install -y pinentry-curses` (free), confirm `test -x /usr/bin/pinentry-curses`.
-- **`Permission denied` on a `private-keys-v1.d/*.key` path** → the interactive shell is using a different `GNUPGHOME` than the one step 1 fixed → `export GNUPGHOME=<fixed path>` (persist in `~/.bashrc`).
-It never uses `--pinentry-mode loopback` with an empty passphrase and never weakens protection.
+The script auto-selects `pinentry-tty` when present (else falls back to `pinentry-curses` with a valid
+`TERM` and prints the install line), sets it in `gpg-agent.conf`, applies `GPG_TTY=$(tty)` +
+`gpg-connect-agent updatestartuptty` + a fresh user-owned agent, turns on debug logging, then runs the
+**real** interactive `gpg --quick-generate-key` so you enter the passphrase. On success it creates the
+protected key (that is step 2, done); on failure it prints the exact agent-log line + a decision tree,
+then restores `gpg-agent.conf` (keeping the pinentry-tty setting) and shreds the debug log. Other fixes
+it may point to: wrong terminal → run in a native WSL terminal; a `GNUPGHOME` mismatch → `export
+GNUPGHOME=<the path step 1 fixed>`. It never uses `--pinentry-mode loopback` / empty passphrase.
 
 ### 2. Create the dedicated backup key — INTERACTIVE passphrase (never printed or stored)
 If step 1b already created the key, skip to step 3. Otherwise, in a real terminal:

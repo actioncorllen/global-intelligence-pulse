@@ -46,9 +46,34 @@ findmnt -no TARGET,OPTIONS --target "${RPP:-/usr/bin}" 2>/dev/null | grep -q noe
 echo "--- gpg-agent processes (flag any not owned by $UID_NAME) ---"
 ps -eo user=,pid=,args= 2>/dev/null | grep '[g]pg-agent' | sed 's/^/  /' || echo "  (none running)"
 
+echo "--- TERM / standalone-GETPIN caveat ---"
+echo "  TERM=${TERM:-<unset>}"
+[ -z "${TERM:-}" ] && { export TERM=xterm-256color; echo "  TERM was unset -> set TERM=xterm-256color (curses needs a valid TERM)"; }
+echo "  NOTE: running 'pinentry-curses' + typing GETPIN by hand shares ONE terminal for both the"
+echo "        Assuan protocol and the curses dialog, so it times out (ERR 83886142 = PINENTRY/Timeout)."
+echo "        That is a TEST ARTIFACT, not proof pinentry is broken in real agent use. We verify via a"
+echo "        real agent-driven key-gen below instead."
+
+echo "--- selecting the smallest-durable pinentry (prefer line-mode pinentry-tty on WSL) ---"
+PENTRY=""
+for cand in /usr/bin/pinentry-tty /usr/bin/pinentry-curses; do [ -x "$cand" ] && { PENTRY="$cand"; break; }; done
+if [ "$PENTRY" = "/usr/bin/pinentry-curses" ] && [ ! -x /usr/bin/pinentry-tty ]; then
+  echo "  pinentry-tty not installed. It is the robust fix for curses Timeout on WSL (free):"
+  echo "      sudo apt-get install -y pinentry-tty"
+  echo "  Proceeding with pinentry-curses + a valid TERM for now; if it times out, install pinentry-tty and re-run."
+fi
+[ -z "$PENTRY" ] && { echo "  no pinentry found; install one: sudo apt-get install -y pinentry-tty" >&2; exit 2; }
+echo "  using pinentry-program: $PENTRY"
+
 echo "--- applying safe pinentry fixes (no key/security change) ---"
 export GPG_TTY; GPG_TTY="$(tty)"
-grep -q '^pinentry-program' "$CONF" 2>/dev/null || { touch "$CONF"; chmod 600 "$CONF"; echo "pinentry-program /usr/bin/pinentry-curses" >> "$CONF"; }
+touch "$CONF"; chmod 600 "$CONF"
+# set exactly one pinentry-program line to the selected program
+if grep -q '^pinentry-program' "$CONF" 2>/dev/null; then
+  sed -i "s#^pinentry-program.*#pinentry-program $PENTRY#" "$CONF"
+else
+  echo "pinentry-program $PENTRY" >> "$CONF"
+fi
 grep -q 'export GPG_TTY' "$HOME/.bashrc" 2>/dev/null || echo 'export GPG_TTY=$(tty)' >> "$HOME/.bashrc"
 gpgconf --kill all 2>/dev/null || true
 gpgconf --launch gpg-agent 2>/dev/null || true
@@ -84,8 +109,12 @@ grep -iE "pinentry|tty|permission|operation not permitted|can't (open|create|con
 cat <<'TREE'
 
 Decision tree (match the agent-log line above):
+  * "Timeout" / "curses" / source PINENTRY (e.g. ERR 83886142) -> curses UI cannot run in this WSL
+        terminal. Smallest durable fix = switch to line-mode pinentry-tty (secure; no loopback):
+        sudo apt-get install -y pinentry-tty
+        (this script then selects it automatically on the next run), or run in a native WSL terminal.
   * "No pinentry" / "can't connect to the PIN entry"   -> pinentry-program path/exec problem:
-        sudo apt-get install -y pinentry-curses   (free); confirm: test -x /usr/bin/pinentry-curses
+        sudo apt-get install -y pinentry-tty pinentry-curses   (free)
   * "...tty..." / "Inappropriate ioctl" / "cannot open '/dev/tty'" -> terminal binding:
         run in a NATIVE WSL terminal (not the VS Code integrated terminal); then:
         export GPG_TTY=$(tty); gpgconf --kill all; gpg-connect-agent updatestartuptty /bye; retry
