@@ -11,22 +11,31 @@ encrypted Supabase DB backup to Google Drive. **No secrets in this file.**
 
 ## Root cause (reproduced + confirmed)
 `gpg-agent` runs as your user but cannot write the new private key into
-`~/.gnupg/private-keys-v1.d/` because that subdirectory (or files in it) are **owned by root** — the
-residue of an earlier `sudo gpg`. The public keybox is created fine (so `~/.gnupg` "looks" OK and the
-socket exists), yet key generation fails. Agent log line that proves it:
+the agent (running as you) cannot write the new private key into `~/.gnupg/private-keys-v1.d/`. The
+public keybox is created fine (so `~/.gnupg` "looks" OK and the socket exists), yet key generation
+fails. The exact errno classifies the cause (confirmed by reproduction):
 ```
-gpg-agent: can't open '…/private-keys-v1.d/<FPR>.key': Permission denied
-gpg-agent: command 'GENKEY' failed: Permission denied
+agent_genkey failed: Permission denied        -> EACCES: private-keys-v1.d not owned/writable by you
+                                                  (e.g. root-owned residue of `sudo gpg`), OR a
+                                                  filesystem (DrvFs/9p, /mnt/c) where chmod/chown
+                                                  silently don't take effect
+agent_genkey failed: Operation not permitted   -> EPERM: immutable/append attribute (chattr +i/+a)
+agent_genkey failed: Read-only file system      -> EROFS: mount is read-only
 ```
-Do **not** work around it by running gpg under `sudo` / with root-owned keys — that deepens the same
-problem. The durable fix is to return ownership to your user and set strict perms.
+A throwaway/temp homedir (e.g. in `/tmp`) generates keys fine, so a temp-only test can PASS while the
+real `~/.gnupg` is still broken — that is exactly the trap the previous attempt hit. Do **not** work
+around it with `sudo gpg` / root-owned keys. The durable, sudo-free fix is to move the broken `~/.gnupg`
+**aside** (a rename needs write on `~` only, so it works even if a subdir is root-owned) and use a
+fresh homedir — then verify **in the real homedir**.
 
 ## Completed here, with evidence (no production touched)
-- Reproduced the exact failure with a root-owned `private-keys-v1.d`; captured the agent log above.
-- Applied the fix (ownership → user, `700`/`600` perms); key generation then succeeded; encrypt +
-  decrypt round-trip **PASS**.
-- Self-tested `fix-gpg-agent-wsl.sh` (happy path → PASS; foreign-owned + no sudo → prints the exact
-  `sudo chown` and exits 3).
+- Reproduced both errnos: root-owned `private-keys-v1.d` → `Permission denied` (EACCES, the user's
+  error); immutable bit → `Operation not permitted` (EPERM) — so immutable is ruled out by evidence.
+- Proved the sudo-free durable fix: `mv ~/.gnupg ~/.gnupg.broken.<ts>` + fresh homedir → key generation
+  **in the real homedir PASS**, private key written user-owned.
+- Enhanced + self-tested `fix-gpg-agent-wsl.sh`: diagnoses fs type / ownership / attrs / ACL / stale
+  agents, probes key-gen **in the real homedir** (capturing the exact errno), applies the fix, and
+  re-verifies **in the real homedir**; idempotent (2nd run → "already WORKS"); old homedir preserved.
 - Self-tested `dr_db_backup_to_drive.sh`, then ran it **real-mode** against a throwaway local Postgres:
   dump (via `dr_db_logical_backup.sh`) → integrity (`pg_restore -l`, 18 TOC entries) → SHA256 manifest
   → upload → checksum-verify, all **PASS**, with an independent `sha256sum -c` = `OK`.
@@ -35,16 +44,20 @@ problem. The durable fix is to return ownership to your user and set strict perm
 
 ## [YOU] Run on your WSL machine, as `strateloqbackup` (never `sudo`)
 
-### 1. Fix the GPG agent (diagnose → fix → verify machinery)
+### 1. Fix the GPG agent (diagnose → fix → verify IN THE REAL homedir)
 ```bash
 cd /home/strateloqbackup/strateloq-backup/global-intelligence-pulse   # your repo checkout
 chmod +x scripts/dr/*.sh
-scripts/dr/fix-gpg-agent-wsl.sh            # add --diagnose-only first if you want to look before changing
+scripts/dr/fix-gpg-agent-wsl.sh --diagnose-only     # look first: prints fs type, owners, attrs, ACL, errno
+scripts/dr/fix-gpg-agent-wsl.sh                     # diagnose + fix + verify in the REAL ~/.gnupg
 ```
-If it reports root/foreign-owned files and `sudo` is unavailable in that shell, it prints one command
-(`sudo chown -R strateloqbackup:strateloqbackup ~/.gnupg`); run it, then re-run the script. It ends
-with `RESULT: PASS` once key-gen + encrypt + decrypt all work (verified with a throwaway key in a temp
-homedir — your real keyring is untouched).
+It tries an in-place fix (ownership/perms/attrs/ACL/stale-agent); if that is not enough it moves the
+broken `~/.gnupg` aside to `~/.gnupg.broken.<ts>` (**preserved, never deleted**) and creates a fresh
+one, then verifies by generating + deleting a throwaway key **in the real homedir**. It ends with
+`RESULT: PASS` only when the real homedir actually generates a key. If it reports a non-native
+filesystem it prints the exact `export GNUPGHOME=…ext4 path…` to use (and `--reset-home` forces the
+move-aside). If an earlier keyring was moved aside and held real keys, re-import later with
+`gpg --import ~/.gnupg.broken.<ts>/*.gpg` (or `pubring.kbx`).
 
 ### 2. Create the dedicated backup key — INTERACTIVE passphrase (never printed or stored)
 ```bash
