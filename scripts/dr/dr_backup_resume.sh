@@ -179,7 +179,7 @@ step_config(){
   fi
   # psql failed — diagnose the ACTUAL cause (DNS vs network vs auth) WITHOUT exposing the password.
   local rest hostport host port dns tcp
-  rest="${SUPABASE_DB_URL#*://}"; rest="${rest#*@}"          # strip scheme + user:pass@
+  rest="${SUPABASE_DB_URL#*://}"; rest="${rest##*@}"         # strip scheme + user:pass@ (host follows the LAST @, robust to an unencoded @ in the password)
   hostport="${rest%%/*}"; hostport="${hostport%%\?*}"        # host[:port]
   host="${hostport%%:*}"; port="${hostport#*:}"; [ "$port" = "$hostport" ] && port=5432
   if command -v getent >/dev/null 2>&1; then getent hosts "$host" >/dev/null 2>&1 && dns=OK || dns=FAIL; else dns=SKIP; fi
@@ -193,7 +193,29 @@ step_config(){
       need_action "the DIRECT host '$host' is IPv6-only unless the paid IPv4 add-on is enabled, so an IPv4-only WSL box cannot reach it (dns=$dns tcp=$tcp). Switch SUPABASE_DB_URL to the SESSION POOLER (IPv4, correct for pg_dump): user 'postgres.nxaunmyihhjixxxljcqt', host like 'aws-0-eu-central-1.pooler.supabase.com' (copy the EXACT host — aws-0 or aws-1 — from Supabase Dashboard -> Connect -> Session pooler), port 5432, database 'postgres'. Paste the full string the dashboard shows into $ENV_FILE, then re-run." ;;
   esac
   [ "$dns" = FAIL ] && need_action "DNS cannot resolve the DB host '$host'. Check the hostname in SUPABASE_DB_URL in $ENV_FILE, then re-run."
-  [ "$tcp" = OK ] && need_action "the DB host is reachable (tcp=OK) but the query failed — this is an AUTH/SSL issue, not the network. Re-check the DB credential in $ENV_FILE and, if missing, append '?sslmode=require' to SUPABASE_DB_URL, then re-run."
+  if [ "$tcp" = OK ]; then
+    # TCP connects but the query failed -> classify WITHOUT exposing the credential. Extract the
+    # username (not secret) and categorise psql's SCRUBBED stderr into one actionable cause.
+    local user err cat pooler_user_bad=0
+    user="${SUPABASE_DB_URL#*://}"; user="${user%%:*}"; user="${user%%@*}"   # text before the first : or @
+    err="$(psql "$SUPABASE_DB_URL" -tAc 'select 1;' 2>&1 >/dev/null | scrub | tr '\n' ' ')"
+    case "$err" in
+      *"Tenant or user not found"*)                                   cat="POOLER_USERNAME" ;;
+      *"password authentication failed"*|*SASL*|*"authentication failed"*) cat="AUTH" ;;
+      *"no encryption"*|*"does not support SSL"*|*"SSL"*) cat="SSL" ;;
+      *"permission denied"*|*"not permitted"*)                        cat="PERMISSION" ;;
+      *) cat="UNKNOWN" ;;
+    esac
+    case "$host" in *pooler.supabase.com) [ "$user" = "postgres" ] && pooler_user_bad=1 ;; esac
+    log "   [config] auth diagnostic: category=$cat  user=$user  (credential never printed)"
+    if [ "$cat" = POOLER_USERNAME ] || [ "$pooler_user_bad" = 1 ]; then
+      need_action "the Supavisor pooler rejected the login because the username is not TENANT-QUALIFIED. In SUPABASE_DB_URL the user must be 'postgres.nxaunmyihhjixxxljcqt' (project ref appended), not plain 'postgres'. Copy the exact Session pooler string from Supabase Dashboard -> Connect -> Session pooler, then re-run."
+    fi
+    [ "$cat" = AUTH ] && need_action "authentication was rejected. The most common cause that is NOT a wrong password: special characters in the password are not percent-encoded in the URL (@ becomes %40, # %23, / %2F, : %3A, ? %3F, % %25). Percent-encode the password in SUPABASE_DB_URL, or re-copy the exact Session pooler string from Supabase Dashboard -> Connect. Do NOT reset the production password for this. Then re-run."
+    [ "$cat" = SSL ] && need_action "TLS negotiation failed. Append '?sslmode=require' to SUPABASE_DB_URL (Supabase requires TLS), then re-run."
+    [ "$cat" = PERMISSION ] && need_action "connected and authenticated, but the role cannot run 'select 1;' — unexpected for the postgres role. Confirm the user in SUPABASE_DB_URL is 'postgres.nxaunmyihhjixxxljcqt', then re-run."
+    need_action "DB query failed after a successful TCP connect (category=$cat, user=$user). Re-copy the exact Session pooler connection string from Supabase Dashboard -> Connect -> Session pooler into $ENV_FILE (it already contains the correct tenant-qualified username), then re-run."
+  fi
   need_action "Supabase DB not reachable (host=$host port=$port dns=$dns tcp=$tcp). Use the Session pooler connection string from Supabase Dashboard -> Connect -> Session pooler in $ENV_FILE, then re-run."
 }
 
