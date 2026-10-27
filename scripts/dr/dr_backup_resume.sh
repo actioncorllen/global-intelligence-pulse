@@ -378,14 +378,24 @@ step_unattended_enc(){
 
 step_weekly_install(){
   if [ "$SELFTEST" = 1 ]; then log "ok   [weekly_install] self-test (scheduler not installed)"; return 0; fi
-  # Detect an installed schedule; otherwise give ONE actionable install instruction.
+  local TASK="Strateloq-DR-Weekly-Backup"   # MUST match install-weekly-backup.ps1's -TaskName default
+  # Locate Windows schtasks.exe from WSL (PATH, or the default System32 interop path).
+  local SCHTASKS=""
+  if command -v schtasks.exe >/dev/null 2>&1; then SCHTASKS="schtasks.exe"
+  elif [ -x /mnt/c/Windows/System32/schtasks.exe ]; then SCHTASKS="/mnt/c/Windows/System32/schtasks.exe"; fi
+  # 1) WSL-native cron (an alternative the founder may have chosen)
   if crontab -l 2>/dev/null | grep -q 'dr_weekly_backup.sh'; then
-    log "ok   [weekly_install] cron entry for dr_weekly_backup.sh is installed"
-  elif command -v schtasks.exe >/dev/null 2>&1 && schtasks.exe /query /tn "Strateloq DR Weekly Backup" >/dev/null 2>&1; then
-    log "ok   [weekly_install] Windows scheduled task 'Strateloq DR Weekly Backup' is installed"
-  else
-    need_action "install the weekly schedule (choose one): WSL/cron -> add '0 3 * * 0 $HERE/dr_weekly_backup.sh --env $ENV_FILE' to 'crontab -e'; OR Windows -> run scripts/dr/install/install-weekly-backup.ps1 in PowerShell. Weekly runs are fully unattended (no passphrase). Then re-run to confirm."
+    log "ok   [weekly_install] WSL cron entry for dr_weekly_backup.sh is installed"; return 0
   fi
+  # 2) Windows Task Scheduler — verify directly from WSL via interop (preferred on this Win/WSL host)
+  if [ -n "$SCHTASKS" ] && "$SCHTASKS" /query /tn "$TASK" >/dev/null 2>&1; then
+    log "ok   [weekly_install] Windows scheduled task '$TASK' is installed (verified via schtasks)"; return 0
+  fi
+  # 3) Founder attestation when WSL cannot reach schtasks.exe to self-verify a Windows task
+  if [ "${DR_WEEKLY_INSTALLED:-}" = 1 ]; then
+    log "ok   [weekly_install] marked installed via DR_WEEKLY_INSTALLED=1 (could not auto-verify from WSL)"; return 0
+  fi
+  need_action "install the weekly schedule, then re-run. PREFERRED (Windows Task Scheduler — fires even when no one is logged in; -StartWhenAvailable runs a missed backup when the PC returns): in Windows PowerShell run  powershell -ExecutionPolicy Bypass -File \\\\wsl.localhost\\${WSL_DISTRO_NAME:-Ubuntu}\\$REPO_ROOT\\scripts\\dr\\install\\install-weekly-backup.ps1 -WslUser $(id -un) -RepoPath '$REPO_ROOT' -Time 03:00   (run PowerShell as Administrator if registration is denied). ALTERNATIVE (WSL cron, only if the WSL cron daemon runs unattended on this host): add '0 3 * * 0 $HERE/dr_weekly_backup.sh --env $ENV_FILE' via 'crontab -e'. If this orchestrator cannot see schtasks.exe from WSL to auto-verify, re-run with DR_WEEKLY_INSTALLED=1 after installing. Weekly runs are fully unattended (public-key encryption, no passphrase)."
 }
 
 # ============================== DRIVER =========================================================

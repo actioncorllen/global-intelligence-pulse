@@ -6,13 +6,21 @@
   session — that session cannot reach your computer, so scheduling is only "installed"
   once you run this yourself and the verify step at the bottom shows the task.
 
-  Example:
+  Example (use YOUR repo path — the founder's is /home/strateloqbackup/strateloq-dr-validate):
     powershell -ExecutionPolicy Bypass -File install-weekly-backup.ps1 `
         -WslDistro Ubuntu -WslUser strateloqbackup `
-        -RepoPath '/home/strateloqbackup/strateloq-backup/global-intelligence-pulse' `
+        -RepoPath '/home/strateloqbackup/strateloq-dr-validate' `
         -Time 03:00
 
-  Re-running updates the task in place (idempotent). Nothing is deleted.
+  Run PowerShell AS ADMINISTRATOR if Register-ScheduledTask reports access denied
+  (registering an S4U "run whether or not logged on" task can require elevation).
+
+  Google Drive destination + GPG recipient are read from the repo's
+  scripts/dr/dr_weekly_backup.env at run time — this installer does not hardcode them.
+  Each run's scrubbed log + STATUS (SUCCESS/FAILED) are written under DR_BACKUP_ROOT/runs/<ts>/;
+  Task Scheduler's "Last Run Result" is non-zero when a run fails (exit 1), so failures surface.
+
+  Re-running updates the task in place (idempotent, -Force). Nothing is deleted; no duplicate task.
 #>
 param(
   [string]$WslDistro = "Ubuntu",
