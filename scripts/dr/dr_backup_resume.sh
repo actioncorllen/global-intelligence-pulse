@@ -66,6 +66,27 @@ redact_err(){ sed -E \
   -e 's#eyJ[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_.-]{6,}#***#g' \
   -e 's#(password|pgpassword|apikey|api_key|service_role|token|secret)=[^[:space:]&]+#\1=***#gI'; }
 
+# ---- env loading (robust) ----------------------------------------------------------------------
+# The env file is sourced (shell), so a line that is neither a comment nor KEY=value makes bash try
+# to RUN it (e.g. "c#: command not found"). We (a) lint and point at the exact offending line without
+# printing secrets, and (b) source a copy with a UTF-8 BOM and CR (Windows/WSL gremlins) stripped so
+# those are never fatal. We never modify the founder's file.
+clean_env(){ sed -e "1s/^$(printf '\357\273\277')//" -e 's/\r$//' "$1"; }
+lint_env(){
+  local n=0 line body
+  while IFS= read -r line || [ -n "$line" ]; do
+    n=$((n+1)); line="${line%$'\r'}"; [ "$n" = 1 ] && line="${line#$(printf '\357\273\277')}"
+    body="${line#"${line%%[![:space:]]*}"}"                 # left-trim
+    case "$body" in ''|'#'*) continue ;; esac               # blank or comment
+    body="${body#export }"
+    case "$body" in
+      [A-Za-z_][A-Za-z0-9_]*=*) : ;;                        # KEY=value  (ok)
+      *) echo "WARN: $1 line $n is not a comment or KEY=value, so the shell tried to execute it (this is the 'command not found' warning). Prefix the line with '#', or wrap the value in double quotes. The run continues; fix it so the weekly job stays clean." >&2 ;;
+    esac
+  done < "$1"
+}
+load_env(){ lint_env "$1"; set -a; . <(clean_env "$1"); set +a; }
+
 # ---- load config -------------------------------------------------------------------------------
 # Normalise ENV_FILE to an ABSOLUTE path first: `.` does a PATH lookup for a bare filename with no
 # slash (so `--env env` would source /usr/bin/env, not the file), and children get a stable path.
@@ -75,9 +96,9 @@ if [ -n "$ENV_FILE" ]; then
     *)  ENV_FILE="$(cd "$(dirname "$ENV_FILE")" 2>/dev/null && pwd)/$(basename "$ENV_FILE")" ;;
   esac
   [ -f "$ENV_FILE" ] || { echo "env file not found: $ENV_FILE" >&2; exit 2; }
-  set -a; . "$ENV_FILE"; set +a
+  load_env "$ENV_FILE"
 elif [ "$SELFTEST" = 0 ] && [ -f "$HERE/dr_weekly_backup.env" ]; then
-  ENV_FILE="$HERE/dr_weekly_backup.env"; set -a; . "$ENV_FILE"; set +a
+  ENV_FILE="$HERE/dr_weekly_backup.env"; load_env "$ENV_FILE"
 fi
 
 # ---- resolve offsite remotes from a single source of truth (reuses the EXISTING remote+folders) --

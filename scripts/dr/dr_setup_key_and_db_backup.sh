@@ -39,7 +39,9 @@ esac; done
 scrub(){ sed -E -e 's#(://[^:/@ ]+):[^@ ]+@#\1:***@#g' -e 's#eyJ[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_.-]{6,}#***#g' \
   -e 's#(passphrase|password|api_key|service_role|token)([=: ]+)[^[:space:]]+#\1\2***#gI'; }
 
-[ -n "$ENV_FILE" ] && { [ -f "$ENV_FILE" ] || { echo "env not found: $ENV_FILE" >&2; exit 2; }; set -a; . "$ENV_FILE"; set +a; }
+# Source a copy with a UTF-8 BOM / CR stripped (Windows/WSL gremlins) so they are never fatal; the
+# founder's file is not modified. dr_backup_resume.sh lints the file and names any malformed line.
+[ -n "$ENV_FILE" ] && { [ -f "$ENV_FILE" ] || { echo "env not found: $ENV_FILE" >&2; exit 2; }; set -a; . <(sed -e "1s/^$(printf '\357\273\277')//" -e 's/\r$//' "$ENV_FILE"); set +a; }
 PRESET="$(ls /usr/lib/gnupg/gpg-preset-passphrase /usr/lib/gnupg2/gpg-preset-passphrase /usr/libexec/gpg-preset-passphrase 2>/dev/null | head -1)"
 
 echo "== DR key setup + database backup ==  user=$(id -un)  GNUPGHOME=$GNUPGHOME  self_test=$SELFTEST"
