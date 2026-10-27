@@ -52,7 +52,44 @@ fresh homedir — then verify **in the real homedir**.
 
 ---
 
-## [YOU] Run on your WSL machine, as `strateloqbackup` (never `sudo`)
+## [YOU] RECOMMENDED — one command does the whole remaining job
+
+Interactive pinentry is both broken on this WSL terminal AND the wrong tool for *unattended* weekly
+backups. The correct, secure design: create the key **without pinentry** (loopback, with a STRONG
+passphrase you type once — the key is fully protected, nothing is weakened), and let backups encrypt
+with the **public key**, which needs no passphrase — so weekly automation never needs pinentry at all.
+The passphrase is needed only to create the key once and to decrypt at recovery.
+
+```bash
+cd /home/strateloqbackup/strateloq-dr-validate      # your local repo
+git pull
+chmod +x scripts/dr/*.sh
+# one command: creates the RSA-4096 key (no pinentry), verifies enc/dec, exports protected recovery
+# material, validates Supabase, then runs the real DB dump -> integrity -> encrypt -> Drive -> checksum:
+scripts/dr/dr_setup_key_and_db_backup.sh --env scripts/dr/dr_weekly_backup.env
+```
+It prompts once for a strong passphrase (hidden; never logged or put on the command line). Set
+`DR_DB_REMOTE="gdrive:Strateloq Technologies — Backups/01 — Supabase Database"` (and the Supabase +
+rclone values) in `scripts/dr/dr_weekly_backup.env` first. On success it ends with
+`RESULT: PASS — key ready + database backup uploaded & checksum-verified`.
+
+Proven end-to-end in the cloud against a throwaway Postgres (no production): key-gen via loopback (no
+pinentry) → encrypt/decrypt round-trip → passphrase preset into the agent → **real `pg_dump` →
+integrity decrypt via the agent with no pinentry → `pg_restore -l` → encrypt → upload → checksum
+verify**, all PASS, independent `sha256sum -c` = OK. Only your real passphrase, Supabase creds and
+Google Drive are host-specific, so run it on your machine to produce the real backup.
+
+Why this is secure and unattended-safe: the stored key is RSA-4096 + passphrase (loopback only changes
+*how* the passphrase is supplied, not the protection); weekly `dr_weekly_backup.sh` encrypts with the
+public key and verifies by checksum, so it needs **no** passphrase/pinentry; recovery uses the
+offline-stored protected private key + passphrase. No empty passphrase, no disabled protection.
+
+The sections below are the manual step-by-step equivalent / fallbacks if you prefer to run it piecemeal
+or the one-command script reports a specific failure.
+
+---
+
+## [YOU] Manual step-by-step (fallback / reference), as `strateloqbackup` (never `sudo`)
 
 ### 1. Fix the GPG agent (diagnose → fix → verify IN THE REAL homedir)
 ```bash
