@@ -33,12 +33,17 @@ scrub() { sed -E -e 's#(://[^:/@ ]+):[^@ ]+@#\1:***@#g' \
   -e 's#eyJ[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_.-]{6,}#***JWT-REDACTED***#g' \
   -e 's#(apikey|api_key|key|token|password|service_role)([=:])[^[:space:]&]+#\1\2***#gI'; }
 
+# Source with a UTF-8 BOM / CR stripped (Windows/WSL gremlins) so they are never fatal; file unchanged.
+_cleanenv(){ sed -e "1s/^$(printf '\357\273\277')//" -e 's/\r$//' "$1"; }
 if [ -n "$ENV_FILE" ]; then [ -f "$ENV_FILE" ] || { echo "env file not found: $ENV_FILE" >&2; exit 2; }
-  set -a; . "$ENV_FILE"; set +a
-elif [ -f "$HERE/dr_weekly_backup.env" ] && [ "$SELFTEST" = 0 ]; then set -a; . "$HERE/dr_weekly_backup.env"; set +a; fi
+  set -a; . <(_cleanenv "$ENV_FILE"); set +a
+elif [ -f "$HERE/dr_weekly_backup.env" ] && [ "$SELFTEST" = 0 ]; then set -a; . <(_cleanenv "$HERE/dr_weekly_backup.env"); set +a; fi
 
 DR_TRANSPORT="${DR_TRANSPORT:-rclone}"; RCLONE_BIN="${RCLONE_BIN:-rclone}"
 DR_DB_REMOTE="${DR_DB_REMOTE:-${DR_REMOTE:-}}"
+# A recipient forced by the key-setup orchestrator (the freshly-created key's fingerprint) must win
+# over any stale DR_GPG_RECIPIENT re-sourced from the env above. The env file never sets _FORCE.
+DR_GPG_RECIPIENT="${DR_GPG_RECIPIENT_FORCE:-${DR_GPG_RECIPIENT:-}}"; export DR_GPG_RECIPIENT
 
 transport_put_dir() { case "$DR_TRANSPORT" in
   rclone) "$RCLONE_BIN" copy "$1" "$DR_DB_REMOTE/$2/" --transfers 2 --checkers 2;;
@@ -65,6 +70,19 @@ mkdir -p "$STAGE"
 exec > >(scrub | tee -a "$LOG") 2>&1
 echo "== Strateloq DB backup -> Drive ==  run=$TS transport=$DR_TRANSPORT remote=$DR_DB_REMOTE self_test=$SELFTEST"
 ok=1; fail(){ ok=0; echo "FAIL [$1]: ${2:-}"; }
+
+# Recipient must be a LOCAL public key before we dump — fail closed with a precise fix, never a
+# network (WKD) lookup. This turns the opaque "via WKD: No data" into an actionable message.
+if [ "$SELFTEST" = 0 ]; then
+  if gpg --list-keys --no-auto-key-locate "$DR_GPG_RECIPIENT" >/dev/null 2>&1; then
+    echo "ok   [recipient] '$DR_GPG_RECIPIENT' resolves to a local public key"
+  else
+    echo "FAIL [recipient]: GPG recipient '$DR_GPG_RECIPIENT' is not a local public key (no network/WKD lookup attempted)."
+    echo "     Your backup key UID is support@strateloq.com. Set DR_GPG_RECIPIENT=\"support@strateloq.com\" (or the key fingerprint from 'gpg --list-keys') in the env file."
+    echo "FAILED" > "$RUN/STATUS"; echo "RESULT: FAIL — recipient not resolvable; nothing dumped, uploaded, or deleted."
+    exit 1
+  fi
+fi
 
 # 1) dump + encrypt (reuse the component script) — real mode only
 if [ "$SELFTEST" = 1 ]; then

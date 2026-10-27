@@ -82,7 +82,11 @@ if ! gpg --list-secret-keys "$KEY_EMAIL" >/dev/null 2>&1; then
 else echo "--- key already present; continuing ---"; fi
 FPR="$(gpg --list-keys --with-colons "$KEY_EMAIL" | awk -F: '/^fpr:/{print $10; exit}')"
 echo "  key fingerprint: $FPR"
+# Make the key we just created authoritative. DR_GPG_RECIPIENT_FORCE is NOT present in the env file,
+# so when dr_db_backup_to_drive.sh re-sources the env it cannot clobber this with a stale recipient
+# (e.g. a leftover dr@strateloq.com). The backup therefore always encrypts to THIS key's fingerprint.
 export DR_GPG_RECIPIENT="$FPR"
+export DR_GPG_RECIPIENT_FORCE="$FPR"
 
 # 4) verify encrypt (public key, no pass) + decrypt (loopback, with pass) round-trip
 echo "--- verifying encrypt/decrypt round-trip ---"

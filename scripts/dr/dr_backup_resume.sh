@@ -154,6 +154,19 @@ retry(){ local max="$1" base="$2"; shift 3; local n=1; while :; do
   log "  transient failure (attempt $n/$max) — backing off $((base*n))s"; sleep "$((base*n))"; n=$((n+1));
 done; }
 
+# The backup key the keydb step creates (UID). Used to reconcile a stale env recipient.
+KEY_EMAIL_DEFAULT="support@strateloq.com"
+# Echo a LOCAL public key to encrypt to: the env recipient if it resolves locally, else the backup
+# key's UID if that resolves, else the env value unchanged (downstream then fails clearly). Never
+# does a network/WKD lookup. All encryption in this script goes through this + --no-auto-key-locate.
+resolve_recipient(){
+  local r="${DR_GPG_RECIPIENT:-}"
+  if [ -n "$r" ] && gpg --list-keys --no-auto-key-locate "$r" >/dev/null 2>&1; then printf '%s' "$r"; return; fi
+  if gpg --list-keys --no-auto-key-locate "$KEY_EMAIL_DEFAULT" >/dev/null 2>&1; then printf '%s' "$KEY_EMAIL_DEFAULT"; return; fi
+  printf '%s' "$r"
+}
+gpg_encrypt(){ gpg --yes --batch --no-auto-key-locate --trust-model always --encrypt --recipient "$@"; }
+
 if [ "$MODE" = "status" ]; then
   echo "== DR resume ledger ($STATE) =="
   for s in "${STEPS[@]}"; do is_done "$s" && echo "  [x] $s" || echo "  [ ] $s"; done
@@ -282,6 +295,7 @@ step_keydb(){
 step_storage(){
   if [ "$SELFTEST" = 1 ]; then log "ok   [storage] self-test (skipped: no real Storage)"; return 0; fi
   : "${DR_GPG_RECIPIENT:?set by keydb step / env}"
+  local rcpt; rcpt="$(resolve_recipient)"
   local ts stage; ts="$(date -u +%Y%m%dT%H%M%SZ)"; stage="$DR_BACKUP_ROOT/runs/storage-$ts"; mkdir -p "$stage"
   # dr_storage_backup.sh takes buckets as $1 and writes strateloq-storage-<ts>.tgz into the CWD
   # (it tars but does NOT encrypt). Run it inside $stage; we gpg-encrypt the archive below.
@@ -294,7 +308,7 @@ step_storage(){
   local f
   for f in "$stage"/*; do
     [ -e "$f" ] || continue
-    case "$f" in *.gpg) ;; *) gpg --yes --batch --encrypt --recipient "$DR_GPG_RECIPIENT" "$f" && { shred -u "$f" 2>/dev/null || rm -f "$f"; } ;; esac
+    case "$f" in *.gpg) ;; *) gpg_encrypt "$rcpt" "$f" && { shred -u "$f" 2>/dev/null || rm -f "$f"; } ;; esac
   done
   ( cd "$stage" && sha256sum ./*.gpg > SHA256SUMS 2>/dev/null && sha256sum -c SHA256SUMS >/dev/null ) || fail_step storage "local checksum manifest failed"
   local remote="${DR_STORAGE_REMOTE:-${DR_REMOTE%/*}/02 — Supabase Storage (Images & Videos)}"
@@ -318,8 +332,8 @@ step_source_edge(){
   else
     log "note [source_edge] supabase CLI/token not present; skipped live drift check. Recorded inventory: dr/EDGE-FUNCTIONS-DEPLOYED-MANIFEST.md"
   fi
-  local remote="${DR_SOURCE_REMOTE:-${DR_REMOTE%/*}/04 — Edge Functions & Source Code}"
-  gpg --yes --batch --encrypt --recipient "$DR_GPG_RECIPIENT" "$bundle" && { shred -u "$bundle" 2>/dev/null || rm -f "$bundle"; }
+  local remote rcpt; remote="${DR_SOURCE_REMOTE:-${DR_REMOTE%/*}/04 — Edge Functions & Source Code}"; rcpt="$(resolve_recipient)"
+  gpg_encrypt "$rcpt" "$bundle" && { shred -u "$bundle" 2>/dev/null || rm -f "$bundle"; }
   retry 4 4 -- rclone copy "$(dirname "$bundle")" "$remote/source-$ts/" --transfers 2 --checkers 2 || fail_step source_edge "rclone upload failed"
   retry 3 4 -- rclone check "$(dirname "$bundle")" "$remote/source-$ts" --one-way || fail_step source_edge "remote checksum mismatch"
   log "ok   [source_edge] repo bundle + all $(ls -1 "$REPO_ROOT/supabase/functions" | grep -vc '^_shared$') edge functions committed, encrypted, uploaded -> $remote/source-$ts"
@@ -344,11 +358,18 @@ step_unattended_enc(){
     gpg --batch --quiet --passphrase '' --quick-generate-key 'dr-unattended-selftest@example.invalid' default default never >/dev/null 2>&1
     rcpt="dr-unattended-selftest@example.invalid"
   else
+    # Verify the recipient the UNATTENDED WEEKLY job will use — the ENV value, resolved LOCAL-ONLY.
+    # If a stale env recipient does not resolve to a local key, the weekly job would fail unattended,
+    # so stop here with the exact one-line fix rather than falsely reporting weekly-ready.
     rcpt="${DR_GPG_RECIPIENT:?}"; tmp="$(mktemp -d)"
+    if ! gpg --list-keys --no-auto-key-locate "$rcpt" >/dev/null 2>&1; then
+      rm -rf "$tmp"
+      need_action "the unattended WEEKLY backup reads DR_GPG_RECIPIENT='$rcpt' from $ENV_FILE, but that is not a local public key, so the weekly job could not encrypt. Set DR_GPG_RECIPIENT=\"support@strateloq.com\" (or the key fingerprint from 'gpg --list-keys') in $ENV_FILE, then re-run."
+    fi
   fi
   echo "unattended probe $(date -u)" > "$tmp/p"
-  if gpg --yes --batch --no-tty --encrypt --recipient "$rcpt" -o "$tmp/p.gpg" "$tmp/p" 2>/dev/null && [ -s "$tmp/p.gpg" ]; then
-    log "ok   [unattended_enc] public-key encryption works with NO passphrase/pinentry (weekly job can run unattended)"
+  if gpg_encrypt "$rcpt" --no-tty -o "$tmp/p.gpg" "$tmp/p" 2>/dev/null && [ -s "$tmp/p.gpg" ]; then
+    log "ok   [unattended_enc] public-key encryption to '$rcpt' works with NO passphrase/pinentry (weekly job can run unattended)"
     rm -rf "$tmp"
   else
     rm -rf "$tmp"; fail_step unattended_enc "unattended public-key encryption failed — the recipient key may be missing"
