@@ -104,13 +104,19 @@ if [ -n "$PRESET" ]; then
 fi
 
 # 6) export protected recovery material (passphrase-protected; store OFFLINE; never uploaded)
+# IDEMPOTENT: if a prior run already exported the secret key, do NOT overwrite it (and do not re-expose
+# it on disk if the founder already moved it offline). Only export when it is absent.
 REC="${DR_BACKUP_ROOT:-$HOME/strateloq-backups}/recovery"; mkdir -p "$REC"; chmod 700 "$REC"
-gpg --batch --yes --export-secret-keys --armor "$FPR" > "$REC/strateloq-backup-secret.asc" 2>/dev/null
-[ -f "$GNUPGHOME/openpgp-revocs.d/$FPR.rev" ] && cp -f "$GNUPGHOME/openpgp-revocs.d/$FPR.rev" "$REC/strateloq-backup-revoke.asc"
-gpg --export --armor "$FPR" > "$REC/strateloq-backup-public.asc" 2>/dev/null
-chmod 600 "$REC"/*.asc 2>/dev/null
-echo "  recovery material in $REC (secret key is passphrase-protected). MOVE it to OFFLINE media;"
-echo "  keep the passphrase ONLY in your password manager; never upload the secret key or passphrase."
+if [ -f "$REC/strateloq-backup-secret.asc" ]; then
+  echo "  recovery material already present in $REC — left untouched (not overwritten)."
+else
+  gpg --batch --yes --export-secret-keys --armor "$FPR" > "$REC/strateloq-backup-secret.asc" 2>/dev/null
+  [ -f "$GNUPGHOME/openpgp-revocs.d/$FPR.rev" ] && cp -f "$GNUPGHOME/openpgp-revocs.d/$FPR.rev" "$REC/strateloq-backup-revoke.asc"
+  gpg --export --armor "$FPR" > "$REC/strateloq-backup-public.asc" 2>/dev/null
+  chmod 600 "$REC"/*.asc 2>/dev/null
+  echo "  recovery material written to $REC (secret key is passphrase-protected). MOVE it to OFFLINE media;"
+  echo "  keep the passphrase ONLY in your password manager; never upload the secret key or passphrase."
+fi
 unset PASS PASS2 2>/dev/null
 
 # 7) validate Supabase connection (no credentials printed) — real mode only
