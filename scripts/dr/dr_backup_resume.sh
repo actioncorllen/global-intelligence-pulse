@@ -160,12 +160,41 @@ step_config(){
     need_action "add ONE line to $ENV_FILE — either the parent (derives 01..05):  DR_BACKUP_PARENT=\"strateloqdrive:Strateloq Technologies — Backups\"   OR just the DB folder:  DR_DB_REMOTE=\"strateloqdrive:Strateloq Technologies — Backups/01 — Supabase Database\""
   fi
   log "   [config] DB backup destination resolves to: $DR_DB_REMOTE"
-  # Supabase reachability (read-only; no credentials printed)
+  # SAFETY: the FULL production backup must land in the PRIMARY account folder
+  # ("Strateloq Technologies — Backups"), NEVER the secondary n8n DR system ("Strateloq-DR").
+  # Catch a stale/secondary destination BEFORE any upload (common cause: a leftover gdrive:/DR_REMOTE
+  # line in the env). This is not a silent override — it stops and asks.
+  case "$DR_DB_REMOTE" in
+    *Strateloq-DR*)
+      need_action "resolved DB destination points at the SECONDARY 'Strateloq-DR' system, not the primary — the full backup must NOT go there. Set the primary parent in $ENV_FILE and remove any stale gdrive:/DR_REMOTE line:  DR_BACKUP_PARENT=\"strateloqdrive:Strateloq Technologies — Backups\"" ;;
+  esac
+  case "$DR_DB_REMOTE" in
+    *"Strateloq Technologies — Backups/01 — Supabase Database"*) : ;;
+    *) log "WARN [config] destination is not the expected primary folder 'Strateloq Technologies — Backups/01 — Supabase Database' — confirm $ENV_FILE before the upload proceeds." ;;
+  esac
+  # Supabase reachability (read-only; password never printed)
   if retry 3 4 -- psql "$SUPABASE_DB_URL" -tAc 'select 1;' >/dev/null 2>&1; then
     log "ok   [config] env complete + Supabase reachable (read-only check)"
-  else
-    need_action "Supabase DB is not reachable with SUPABASE_DB_URL. Confirm the connection string is correct and that this host may reach the Supabase pooler, then re-run. (Nothing was printed; the value stays secret.)"
+    return 0
   fi
+  # psql failed — diagnose the ACTUAL cause (DNS vs network vs auth) WITHOUT exposing the password.
+  local rest hostport host port dns tcp
+  rest="${SUPABASE_DB_URL#*://}"; rest="${rest#*@}"          # strip scheme + user:pass@
+  hostport="${rest%%/*}"; hostport="${hostport%%\?*}"        # host[:port]
+  host="${hostport%%:*}"; port="${hostport#*:}"; [ "$port" = "$hostport" ] && port=5432
+  if command -v getent >/dev/null 2>&1; then getent hosts "$host" >/dev/null 2>&1 && dns=OK || dns=FAIL; else dns=SKIP; fi
+  if timeout 8 bash -c ">/dev/tcp/$host/$port" >/dev/null 2>&1; then tcp=OK; else tcp=FAIL; fi
+  log "   [config] connectivity diagnostic: host=$host port=$port dns=$dns tcp=$tcp  (credential never printed)"
+  # The Supabase DIRECT host is the usual culprit, so handle it FIRST (its fix stands regardless of
+  # how the local resolver behaves): it is IPv6-only unless the paid IPv4 add-on is on, so an
+  # IPv4-only WSL box cannot reach it. The Session pooler is IPv4 and correct for pg_dump.
+  case "$host" in
+    db.*.supabase.co)
+      need_action "the DIRECT host '$host' is IPv6-only unless the paid IPv4 add-on is enabled, so an IPv4-only WSL box cannot reach it (dns=$dns tcp=$tcp). Switch SUPABASE_DB_URL to the SESSION POOLER (IPv4, correct for pg_dump): user 'postgres.nxaunmyihhjixxxljcqt', host like 'aws-0-eu-central-1.pooler.supabase.com' (copy the EXACT host — aws-0 or aws-1 — from Supabase Dashboard -> Connect -> Session pooler), port 5432, database 'postgres'. Paste the full string the dashboard shows into $ENV_FILE, then re-run." ;;
+  esac
+  [ "$dns" = FAIL ] && need_action "DNS cannot resolve the DB host '$host'. Check the hostname in SUPABASE_DB_URL in $ENV_FILE, then re-run."
+  [ "$tcp" = OK ] && need_action "the DB host is reachable (tcp=OK) but the query failed — this is an AUTH/SSL issue, not the network. Re-check the DB credential in $ENV_FILE and, if missing, append '?sslmode=require' to SUPABASE_DB_URL, then re-run."
+  need_action "Supabase DB not reachable (host=$host port=$port dns=$dns tcp=$tcp). Use the Session pooler connection string from Supabase Dashboard -> Connect -> Session pooler in $ENV_FILE, then re-run."
 }
 
 step_keydb(){
