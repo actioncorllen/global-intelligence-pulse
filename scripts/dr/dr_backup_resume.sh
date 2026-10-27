@@ -59,12 +59,38 @@ scrub(){ sed -E \
   -e 's#(apikey|api_key|service_role|token|password|passphrase|secret)([=: ]+)[^[:space:]]+#\1\2***#gI'; }
 
 # ---- load config -------------------------------------------------------------------------------
+# Normalise ENV_FILE to an ABSOLUTE path first: `.` does a PATH lookup for a bare filename with no
+# slash (so `--env env` would source /usr/bin/env, not the file), and children get a stable path.
 if [ -n "$ENV_FILE" ]; then
+  case "$ENV_FILE" in
+    /*) : ;;
+    *)  ENV_FILE="$(cd "$(dirname "$ENV_FILE")" 2>/dev/null && pwd)/$(basename "$ENV_FILE")" ;;
+  esac
   [ -f "$ENV_FILE" ] || { echo "env file not found: $ENV_FILE" >&2; exit 2; }
   set -a; . "$ENV_FILE"; set +a
 elif [ "$SELFTEST" = 0 ] && [ -f "$HERE/dr_weekly_backup.env" ]; then
   ENV_FILE="$HERE/dr_weekly_backup.env"; set -a; . "$ENV_FILE"; set +a
 fi
+
+# ---- resolve offsite remotes from a single source of truth (reuses the EXISTING remote+folders) --
+# The founder need only set ONE of: DR_BACKUP_PARENT (the rclone remote:path of the backup parent
+# folder), or DR_DB_REMOTE, or DR_REMOTE. The five numbered sub-folders (01..05) are then derived so
+# a missing DR_DB_REMOTE no longer blocks the run. Explicit per-folder values always win; nothing new
+# is created — these are the already-verified "Strateloq Technologies — Backups/01..05" folders.
+if [ -z "${DR_BACKUP_PARENT:-}" ]; then
+  if   [ -n "${DR_DB_REMOTE:-}" ]; then DR_BACKUP_PARENT="${DR_DB_REMOTE%/*}"   # strip "/01 — Supabase Database"
+  elif [ -n "${DR_REMOTE:-}" ];    then DR_BACKUP_PARENT="${DR_REMOTE%/weekly}" # strip an optional trailing "/weekly"
+  fi
+fi
+if [ -n "${DR_BACKUP_PARENT:-}" ]; then
+  : "${DR_DB_REMOTE:=$DR_BACKUP_PARENT/01 — Supabase Database}"
+  : "${DR_STORAGE_REMOTE:=$DR_BACKUP_PARENT/02 — Supabase Storage (Images & Videos)}"
+  : "${DR_N8N_REMOTE:=$DR_BACKUP_PARENT/03 — n8n Workflows}"
+  : "${DR_SOURCE_REMOTE:=$DR_BACKUP_PARENT/04 — Edge Functions & Source Code}"
+  : "${DR_VERIFY_REMOTE:=$DR_BACKUP_PARENT/05 — Backup Verification & Recovery}"
+  : "${DR_REMOTE:=$DR_BACKUP_PARENT/weekly}"
+fi
+export DR_BACKUP_PARENT DR_DB_REMOTE DR_STORAGE_REMOTE DR_N8N_REMOTE DR_SOURCE_REMOTE DR_VERIFY_REMOTE DR_REMOTE 2>/dev/null || true
 
 if [ "$SELFTEST" = 1 ]; then
   # DR_SELFTEST_ROOT lets a test run twice against the SAME ledger to prove resume/idempotence;
@@ -124,15 +150,21 @@ step_config(){
   if [ "$SELFTEST" = 1 ]; then log "ok   [config] self-test (no real credentials)"; return 0; fi
   [ -n "$ENV_FILE" ] || need_action "create scripts/dr/dr_weekly_backup.env from dr_weekly_backup.env.example and pass --env (or place it next to this script), then re-run."
   local missing=""
-  for v in SUPABASE_DB_URL SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY DR_DB_REMOTE DR_REMOTE; do
+  for v in SUPABASE_DB_URL SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY; do
     [ -n "${!v:-}" ] || missing="$missing $v"
   done
   [ -z "$missing" ] || need_action "fill these in $ENV_FILE (secret values stay only in that file; it is git-ignored):$missing"
+  # DR_DB_REMOTE is normally derived above from DR_BACKUP_PARENT/DR_REMOTE. If it still is not set,
+  # give the ONE exact line to add (your verified remote + the existing 01 folder — not a new remote).
+  if [ -z "${DR_DB_REMOTE:-}" ]; then
+    need_action "add ONE line to $ENV_FILE — either the parent (derives 01..05):  DR_BACKUP_PARENT=\"strateloqdrive:Strateloq Technologies — Backups\"   OR just the DB folder:  DR_DB_REMOTE=\"strateloqdrive:Strateloq Technologies — Backups/01 — Supabase Database\""
+  fi
+  log "   [config] DB backup destination resolves to: $DR_DB_REMOTE"
   # Supabase reachability (read-only; no credentials printed)
   if retry 3 4 -- psql "$SUPABASE_DB_URL" -tAc 'select 1;' >/dev/null 2>&1; then
     log "ok   [config] env complete + Supabase reachable (read-only check)"
   else
-    need_action "Supabase DB is not reachable with SUPABASE_DB_URL. Confirm the connection string/password and that this host may reach the Supabase pooler, then re-run. (Nothing was printed; the value stays secret.)"
+    need_action "Supabase DB is not reachable with SUPABASE_DB_URL. Confirm the connection string is correct and that this host may reach the Supabase pooler, then re-run. (Nothing was printed; the value stays secret.)"
   fi
 }
 
