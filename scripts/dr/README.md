@@ -19,6 +19,10 @@ credentials (never commit their output if it contains data). See dr/runbook/RECO
 | dr_n8n_credential_readiness.py | Assess credential-recovery readiness from exports — per credential: usage (active-production/inactive/archived), scope (in-scope vs out-of-scope), type hostable, documented, mechanism → READY/MANUAL/BLOCKED/FOREIGN + scope-aware PASS/PARTIAL/BLOCKED. No secrets, no network | python3 |
 | **dr_weekly_backup.sh** | **Weekly orchestrator** — reuses the above to back up Supabase DB + Storage + all n8n workflows + the repo, gpg-encrypts, uploads to Google Drive via rclone, checksum-verifies (PASS/FAIL), flock no-overlap, retention, failure logging with secret scrubbing. `--self-test` runs the whole pipeline with fake data + local transport (no production). Config: `dr_weekly_backup.env` (see `.env.example`) | gpg, rclone, flock, pg_dump, git + the env file |
 | install/install-weekly-backup.ps1 | Windows Task Scheduler installer (run on Windows) — weekly Sunday task that launches `dr_weekly_backup.sh` inside WSL | PowerShell + WSL |
+| fix-gpg-agent-wsl.sh | Diagnose + durably fix GPG `agent_genkey failed: Permission denied` on WSL (root-owned `private-keys-v1.d`); refuses to run as root; verifies with a throwaway key; never creates/uses root keys | gpg (run as your user) |
+| dr_db_backup_to_drive.sh | One DB backup to the Google Drive **Supabase Database** folder — reuses `dr_db_logical_backup.sh`, adds decrypt+`pg_restore -l` integrity, SHA256 manifest, rclone upload + checksum-verify (PASS/FAIL); never deletes existing backups | gpg, rclone, pg_dump + env file |
+
+GPG fix + database backup runbook (with manual recovery): `dr/runbook/GPG-KEY-AND-DB-BACKUP.md`.
 
 Weekly backup automation + manual recovery procedure: `dr/runbook/WEEKLY-BACKUP-AUTOMATION.md`.
 
