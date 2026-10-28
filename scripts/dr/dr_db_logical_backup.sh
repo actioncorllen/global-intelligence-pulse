@@ -15,7 +15,7 @@ pg_dump "$SUPABASE_DB_URL" -Fc --no-owner --no-privileges -f "$DUMP"
 # when the recipient is not a local key (that is what produced the confusing "via WKD: No data"); it
 # now fails immediately and clearly instead. --trust-model always avoids an interactive trust prompt
 # so unattended weekly runs never hang (the recipient is our own chosen backup key).
-gpg --yes --no-auto-key-locate --trust-model always --encrypt --recipient "$DR_GPG_RECIPIENT" "$DUMP"
+gpg --batch --no-tty --yes --no-auto-key-locate --trust-model always --encrypt --recipient "$DR_GPG_RECIPIENT" "$DUMP"
 shred -u "$DUMP" 2>/dev/null || rm -f "$DUMP"
 echo "Wrote ${DUMP}.gpg — copy to the independent encrypted offsite destination (BLOCKED_EXTERNAL_DR_STORAGE until founder provisions one)."
 echo "Restore (to an ISOLATED target, never production): gpg -d ${DUMP}.gpg > d.dump && pg_restore -d <ISOLATED_DB_URL> --no-owner d.dump"

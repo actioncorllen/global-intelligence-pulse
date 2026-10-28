@@ -66,7 +66,7 @@ startlog(){ local d="${DR_BACKUP_ROOT:-$HOME/strateloq-backups}"; mkdir -p "$d" 
 clean_env(){ sed -e "1s/^$(printf '\357\273\277')//" -e 's/\r$//' "$1"; }
 # Encrypt LOCAL-ONLY (no network WKD) and with trust assumed (no interactive prompt) so the
 # unattended scheduled run never hangs or does a surprise lookup.
-gpg_encrypt(){ gpg --yes --batch --no-auto-key-locate --trust-model always --encrypt --recipient "$@"; }
+gpg_encrypt(){ gpg --yes --batch --no-tty --no-auto-key-locate --trust-model always --encrypt --recipient "$@"; }
 # Resolve DR_GPG_RECIPIENT to a LOCAL public key: the env value if it resolves, else the backup key's
 # UID support@strateloq.com, else the env value unchanged (encrypt then fails with a clear message).
 resolve_recipient(){
@@ -198,8 +198,14 @@ STAGE="$RUN_DIR/stage"
 LOG="$RUN_DIR/backup.log"
 mkdir -p "$STAGE"
 
-# everything after this is tee'd (scrubbed) to the run log
+# everything after this is tee'd (scrubbed) to the run log. The logger is an ASYNC process
+# substitution; without an explicit flush it can leave a 0-byte log when the script exits (the
+# "silent failure" we saw). Save the console fds, capture the writer PID, and on EXIT restore the
+# fds (closing the pipe) + wait for the writer so its buffered output is flushed to $LOG.
+exec 3>&1 4>&2
 exec > >(scrub | tee -a "$LOG") 2>&1
+LOGW=$!
+trap 'rc=$?; exec 1>&3 2>&4; wait "$LOGW" 2>/dev/null; exit $rc' EXIT
 
 echo "== Strateloq weekly DR backup =="
 echo "run=$RUN_TS transport=$DR_TRANSPORT remote=$DR_REMOTE retain=$DR_RETAIN self_test=$SELFTEST"
@@ -300,6 +306,7 @@ if [ "$overall_ok" = 1 ]; then
   echo "SUCCESS" > "$RUN_DIR/STATUS"
   : > "$RUN_DIR/.verified"
   echo "RESULT: PASS —$(summary_line)"
+  startlog "RESULT: PASS run=$RUN_TS —$(summary_line)"   # durable, synchronous record
   # Retention: keep the newest DR_RETAIN *verified* local runs; prune older ones + their remote sets.
   mapfile -t verified < <(for d in "$DR_BACKUP_ROOT"/runs/*/; do
       [ -f "${d}.verified" ] && basename "$d"; done | sort)
@@ -317,6 +324,9 @@ else
   echo "FAILED" > "$RUN_DIR/STATUS"
   echo "RESULT: FAIL —$(summary_line)"
   echo "Partial artifacts kept at $RUN_DIR (NOT uploaded as success, NOTHING pruned). See $LOG."
+  # Durable, synchronous failure record (independent of the async run-log writer) so the reason is
+  # never lost even if the per-run log is empty.
+  startlog "RESULT: FAIL run=$RUN_TS —$(summary_line) (see $LOG)"
 fi
 
 [ "$SELFTEST" = 1 ] && [ -n "$SELFTEST_TMP" ] && rm -rf "$SELFTEST_TMP"

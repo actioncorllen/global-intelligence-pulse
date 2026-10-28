@@ -165,7 +165,7 @@ resolve_recipient(){
   if gpg --list-keys --no-auto-key-locate "$KEY_EMAIL_DEFAULT" >/dev/null 2>&1; then printf '%s' "$KEY_EMAIL_DEFAULT"; return; fi
   printf '%s' "$r"
 }
-gpg_encrypt(){ gpg --yes --batch --no-auto-key-locate --trust-model always --encrypt --recipient "$@"; }
+gpg_encrypt(){ gpg --yes --batch --no-tty --no-auto-key-locate --trust-model always --encrypt --recipient "$@"; }
 
 if [ "$MODE" = "status" ]; then
   echo "== DR resume ledger ($STATE) =="
