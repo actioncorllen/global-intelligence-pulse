@@ -57,13 +57,32 @@ scrub() {
     -e 's#(apikey|api_key|key|token|password|service_role)([=:])[^[:space:]&]+#\1\2***#gI'
 }
 
+# Append an early, scrubbed diagnostic line to a persistent log, so a SCHEDULED run that fails BEFORE
+# the per-run log exists (bad env path, missing config) still leaves evidence — a Task Scheduler
+# "LastTaskResult 2" is otherwise opaque. Falls back to $HOME when DR_BACKUP_ROOT is not set yet.
+startlog(){ local d="${DR_BACKUP_ROOT:-$HOME/strateloq-backups}"; mkdir -p "$d" 2>/dev/null || true
+  printf '%s %s\n' "$(date -u +%FT%TZ)" "$*" | scrub >> "$d/dr-weekly-start.log" 2>/dev/null || true; }
+# Source a copy with a UTF-8 BOM / CR stripped (Windows/WSL gremlins); the founder's file is unchanged.
+clean_env(){ sed -e "1s/^$(printf '\357\273\277')//" -e 's/\r$//' "$1"; }
+# Encrypt LOCAL-ONLY (no network WKD) and with trust assumed (no interactive prompt) so the
+# unattended scheduled run never hangs or does a surprise lookup.
+gpg_encrypt(){ gpg --yes --batch --no-auto-key-locate --trust-model always --encrypt --recipient "$@"; }
+# Resolve DR_GPG_RECIPIENT to a LOCAL public key: the env value if it resolves, else the backup key's
+# UID support@strateloq.com, else the env value unchanged (encrypt then fails with a clear message).
+resolve_recipient(){
+  local r="${DR_GPG_RECIPIENT:-}"
+  if [ -n "$r" ] && gpg --list-keys --no-auto-key-locate "$r" >/dev/null 2>&1; then printf '%s' "$r"; return; fi
+  if gpg --list-keys --no-auto-key-locate "support@strateloq.com" >/dev/null 2>&1; then printf '%s' "support@strateloq.com"; return; fi
+  printf '%s' "$r"
+}
+
 # ---- config ------------------------------------------------------------------------------
 if [ -n "$ENV_FILE" ]; then
-  [ -f "$ENV_FILE" ] || { echo "env file not found: $ENV_FILE" >&2; exit 2; }
+  if [ ! -f "$ENV_FILE" ]; then echo "env file not found: $ENV_FILE" >&2; startlog "FATAL env file not found: $ENV_FILE (exit 2) — check the -RepoPath the scheduled task was installed with."; exit 2; fi
   # shellcheck disable=SC1090
-  set -a; . "$ENV_FILE"; set +a
+  set -a; . <(clean_env "$ENV_FILE"); set +a
 elif [ -f "$HERE/dr_weekly_backup.env" ] && [ "$SELFTEST" = 0 ]; then
-  set -a; . "$HERE/dr_weekly_backup.env"; set +a
+  set -a; . <(clean_env "$HERE/dr_weekly_backup.env"); set +a
 fi
 
 DR_TRANSPORT="${DR_TRANSPORT:-rclone}"
@@ -128,15 +147,41 @@ fi
 
 DR_BACKUP_ROOT="${DR_BACKUP_ROOT:-$HOME/strateloq-backups}"
 
-# ---- required config check ---------------------------------------------------------------
+# ---- derive the destination from a single parent (same contract as dr_backup_resume.sh) ---
+# An env that sets only DR_BACKUP_PARENT (the primary backup folder) is sufficient; DR_REMOTE is
+# derived from it. This is why the one-time orchestrator succeeded with the same env while the old
+# weekly job exited 2 on a missing DR_REMOTE.
+if [ "$SELFTEST" = 0 ]; then
+  if [ -z "${DR_BACKUP_PARENT:-}" ] && [ -n "${DR_REMOTE:-}" ]; then DR_BACKUP_PARENT="${DR_REMOTE%/weekly}"; fi
+  [ -n "${DR_BACKUP_PARENT:-}" ] && : "${DR_REMOTE:=$DR_BACKUP_PARENT/weekly}"
+  # Resolve the GPG recipient to a local key (tolerates a stale DR_GPG_RECIPIENT like dr@strateloq.com).
+  DR_GPG_RECIPIENT="$(resolve_recipient)"; export DR_GPG_RECIPIENT
+fi
+# n8n live export is OPTIONAL: only run it when BOTH creds are present. The workflow definitions are
+# independently protected (repo artifacts + the separate n8n DR workflow), so a weekly run without
+# n8n creds SKIPS that one component rather than failing the whole backup.
+N8N_ENABLED=0; [ -n "${N8N_BASE_URL:-}" ] && [ -n "${N8N_API_KEY:-}" ] && N8N_ENABLED=1
+
+# ---- required config check (logged, so a scheduled exit-2 is diagnosable) -----------------
 missing=""
 for v in DR_GPG_RECIPIENT DR_REMOTE; do [ -n "${!v:-}" ] || missing="$missing $v"; done
 if [ "$SELFTEST" = 0 ]; then
-  for v in SUPABASE_DB_URL SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY N8N_BASE_URL N8N_API_KEY; do
+  for v in SUPABASE_DB_URL SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY; do
     [ -n "${!v:-}" ] || missing="$missing $v"
   done
 fi
-[ -z "$missing" ] || { echo "ERROR: missing required config:$missing" >&2; exit 2; }
+if [ -n "$missing" ]; then
+  echo "ERROR: missing required config:$missing" >&2
+  startlog "FATAL missing required config:$missing (exit 2). Set these in the env file (DR_REMOTE derives from DR_BACKUP_PARENT; n8n creds are optional)."
+  exit 2
+fi
+# Real mode: the recipient must be a LOCAL key, or unattended encryption cannot work — fail clear.
+if [ "$SELFTEST" = 0 ] && ! gpg --list-keys --no-auto-key-locate "$DR_GPG_RECIPIENT" >/dev/null 2>&1; then
+  echo "ERROR: GPG recipient '$DR_GPG_RECIPIENT' is not a local public key" >&2
+  startlog "FATAL GPG recipient '$DR_GPG_RECIPIENT' not a local key (exit 2) — set DR_GPG_RECIPIENT=support@strateloq.com in the env."
+  exit 2
+fi
+startlog "weekly backup starting (self_test=$SELFTEST n8n=$N8N_ENABLED remote-parent=${DR_BACKUP_PARENT:-<unset>})"
 
 # ---- lock: no overlapping runs -----------------------------------------------------------
 mkdir -p "$DR_BACKUP_ROOT/runs"
@@ -175,12 +220,17 @@ collect_real() {
   # Supabase Storage objects -> tar (encrypted below)
   if ( cd "$STAGE" && bash "$HERE/dr_storage_backup.sh" "$DR_BUCKETS" ) ; then
     ok storage; else fail storage "storage download failed"; fi
-  # n8n workflow definitions (active/inactive/archived)
-  local nd="$STAGE/n8n-export-$RUN_TS"
-  if bash "$HERE/dr_n8n_export.sh" "$nd" ; then
-    n8n_state_counts "$nd"
-    tar -cf "$STAGE/strateloq-n8n-${RUN_TS}.tar" -C "$nd" . && rm -rf "$nd"
-    ok n8n-export; else fail n8n-export "n8n export failed"; fi
+  # n8n workflow definitions (active/inactive/archived) — OPTIONAL; only when both creds are present.
+  if [ "${N8N_ENABLED:-0}" = 1 ]; then
+    local nd="$STAGE/n8n-export-$RUN_TS"
+    if bash "$HERE/dr_n8n_export.sh" "$nd" ; then
+      n8n_state_counts "$nd"
+      tar -cf "$STAGE/strateloq-n8n-${RUN_TS}.tar" -C "$nd" . && rm -rf "$nd"
+      ok n8n-export; else fail n8n-export "n8n export failed"; fi
+  else
+    STATUS["n8n-export"]="SKIP"
+    echo "WARN [n8n-export]: N8N_BASE_URL/N8N_API_KEY not set — skipping live n8n export (not a failure). Workflow definitions stay protected in the repo and in the separate n8n DR workflow."
+  fi
 }
 n8n_state_counts() {
   python3 -I - "$1" <<'PY' || true
@@ -202,7 +252,7 @@ collect_selftest() {
   printf 'fake bundle\n'        > "$STAGE/strateloq-${RUN_TS}.bundle"
   printf 'fake n8n tar\n'       > "$STAGE/strateloq-n8n-${RUN_TS}.tar"
   # mimic the DB component already producing a .gpg:
-  gpg --yes --batch --encrypt --recipient "$DR_GPG_RECIPIENT" "$STAGE/strateloq-db-${RUN_TS}.dump" \
+  gpg_encrypt "$DR_GPG_RECIPIENT" "$STAGE/strateloq-db-${RUN_TS}.dump" \
     && { shred -u "$STAGE/strateloq-db-${RUN_TS}.dump" 2>/dev/null || rm -f "$STAGE/strateloq-db-${RUN_TS}.dump"; }
   ok git-bundle; ok db-dump; ok storage; ok n8n-export
 }
@@ -214,7 +264,7 @@ encrypt_plaintext() {
   local f
   for f in "$STAGE"/*.tgz "$STAGE"/*.tar "$STAGE"/*.bundle; do
     [ -e "$f" ] || continue
-    if gpg --yes --batch --encrypt --recipient "$DR_GPG_RECIPIENT" "$f"; then
+    if gpg_encrypt "$DR_GPG_RECIPIENT" "$f"; then
       shred -u "$f" 2>/dev/null || rm -f "$f"
     else
       fail encrypt "could not encrypt $(basename "$f")"
