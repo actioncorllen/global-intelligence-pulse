@@ -260,11 +260,34 @@ lg+, MobileNav). Live on-device pixel acceptance can't run from this container (
 **Constraints held:** no production frontend publication, no paid provider calls, no public signup, n8n
 service-role workflows preserved, no legitimate data deleted, no new provider spend enabled.
 
-### Awaiting founder approval
-1. **Publish the Phase-03 frontend preview to production** (03.02–03.09). It is built, green and unpublished.
-2. **03.10 live device acceptance** — confirm the responsive surfaces on a real phone/desktop after publish.
-3. (Optional, future) wire real generators to `fn_emit_notification` (service-side) so the notifications
-   feed carries live events; until then it shows the honest empty state.
+## Publication to production (founder-approved)
+All 6 pre-publish safety checks PASS (deployment=verified commit `ae2d91b8`; 9/9 core contracts present;
+security hardening holds — Monday service fns not authenticated-executable; founding-member gate
+`fn_workspace_access` unchanged; tenant isolation / Product Asset Lock / exact-SKU untouched;
+`research_budget_config.enabled=false` caps 0; **no billing table/function/plan in prod**; rollback =
+Lovable redeploy of the prior published commit).
+
+**Published:** `deploy_project` → deployment `f806de30-81bb-42ed-9230-2d34af379d03` (processing), target
+`https://https-www-globalintelligenceactions-com.lovable.app`; published source commit `ae2d91b8`
+(Lovable regenerated the project description to include the new managing-products/campaigns, recommendations
+and notifications surfaces, confirming the new build is the published source). Only the frontend was
+published; no backend/migration/billing change.
+
+**What could NOT be verified from this container (egress to the app host returns 403; workspace is
+auth-gated) — requires the founder's authenticated browser/phone:**
+- Authorised-user access to the new routes `/workspace` (Golden Standard Hub), `?view=opportunities`
+  (Product Explorer), `/workspace/my-products`, `/workspace/store`, Create Free Store flow,
+  `/workspace/my-campaigns`, `/workspace/recommendations`, and the top-bar Notifications bell/panel.
+- Functional click-through of each surface with real signed-in data + correct country context.
+- Responsive layouts on a real phone and desktop (03.10 live device acceptance).
+
+**Per founder instruction, 03.10 and overall Phase 03 are NOT marked PASS** until this live acceptance is
+completed on the founder's device. Backend + preview builds are verified green; the live signed-in pixels
+are the founder's to confirm.
+
+### Optional follow-up (not blocking)
+Wire real server-side generators to `fn_emit_notification` so the notifications feed carries live events;
+until then it shows the honest "You're all caught up" empty state.
 - 03.08 Integrate Opportunity Intelligence recommendations (country-specific evidence, honest UNKNOWN).
 - 03.09 Verify notifications and progress indicators — Notifications has **no backend contract** (likely PARTIAL/BLOCKED pending a backend unit).
 - 03.10 Complete responsive desktop/mobile acceptance.
