@@ -99,8 +99,29 @@ end-to-end: tenant `7c8ddf9d…` already has a hosted store (`has_hosted_store=t
 Per constraints, the creation RPC was NOT invoked here (it mutates/creates a store); full click-through
 E2E is covered by Phase 06.06 and the founder's live check. Permission checks unchanged.
 
+## 03.07 — Complete My Campaigns navigation — **PASS**
+New dedicated **My Campaigns** surface over existing campaign contracts — no new backend (Lovable preview
+`aedf8117`). Files: new `src/routes/workspace_.my-campaigns.tsx`, `my-campaigns-view.tsx`,
+`my-campaigns.ts` (status-label helper); edited `app-sidebar.tsx` + `mobile-nav.tsx` (nav item),
+`ecommerce-workspace.tsx` (hub card CTA), `routeTree.gen.ts`.
+- **Reuse / no new backend**: reads `campaignDrafts` (`get_own_marketing_campaign_drafts`) +
+  `campaignExecutions` (`fn_ecommerce_campaign_executions`) via the existing
+  `useEcommerceSecondaryIntelligence`. Guard scan of added lines: **0** `create or replace function`,
+  **0** `service_role`, **0** new `.rpc(`/edge `functions.invoke`.
+- **Two sections** ("Draft campaigns" / "Running campaigns"), each loads independently with honest states
+  (loading / "None yet." / "Campaigns aren't available in this environment yet." / per-section Try again);
+  page-level empty → "No campaigns yet — create an ad from a product." → Product Discovery.
+- **Customer-language status** (`my-campaigns.ts`): active→"Running", pending→"Awaiting review",
+  failed→"Needs attention", unknown→"Status not reported" (raw codes never shown). Name/platform/product/
+  date rendered only when present; invalid date omitted (no fabricated dates).
+- **Navigation**: "My Campaigns" (Megaphone) after My Store (or My Products) in desktop + mobile nav;
+  hub "My Campaigns" card CTA now `/workspace/my-campaigns` (count unchanged). Lists + links only — no
+  new create/commerce/publish path. Tenant/country isolation + Product Asset Lock preserved.
+- **Checks**: **438 tests pass (68 files)**, typecheck clean, lint clean on changed files, preview builds.
+  Not published.
+
 ## Remaining Phase 03 (in roadmap order)
-- 03.07 Complete My Campaigns navigation — next.
+- 03.08 Integrate Opportunity Intelligence recommendations (country-specific evidence, honest UNKNOWN) — next.
 - 03.08 Integrate Opportunity Intelligence recommendations (country-specific evidence, honest UNKNOWN).
 - 03.09 Verify notifications and progress indicators — Notifications has **no backend contract** (likely PARTIAL/BLOCKED pending a backend unit).
 - 03.10 Complete responsive desktop/mobile acceptance.
