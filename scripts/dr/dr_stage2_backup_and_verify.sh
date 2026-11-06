@@ -37,7 +37,9 @@ if [ -n "${DR_STAGE2_SET:-}" ]; then
 else
   # ---------- PRECHECK: creds + both recipients + n8n creds (names only) ----------
   [ -f "$ENVF" ] || die "env file not found: $ENVF"
-  set -a; . <(sed -e 's/\r$//' "$ENVF"); set +a
+  # Load ONLY assignment lines (strip BOM+CR, then keep KEY=val) so a malformed comment/junk
+  # line in the env file can never be executed by the shell (root cause of "c#: command not found").
+  set -a; . <(sed -e "1s/^$(printf '\357\273\277')//" -e 's/\r$//' "$ENVF" | grep -E '^[[:space:]]*(export[[:space:]]+)?[A-Za-z_][A-Za-z0-9_]*=' || true); set +a
   for v in SUPABASE_DB_URL SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY N8N_BASE_URL N8N_API_KEY DR_GPG_RECIPIENT DR_GPG_RECIPIENT_2; do
     [ -n "${!v:-}" ] || die "required config MISSING: $v (n8n creds are mandatory here so n8n cannot be skipped)"
   done

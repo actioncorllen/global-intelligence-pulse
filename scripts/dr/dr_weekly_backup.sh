@@ -63,7 +63,7 @@ scrub() {
 startlog(){ local d="${DR_BACKUP_ROOT:-$HOME/strateloq-backups}"; mkdir -p "$d" 2>/dev/null || true
   printf '%s %s\n' "$(date -u +%FT%TZ)" "$*" | scrub >> "$d/dr-weekly-start.log" 2>/dev/null || true; }
 # Source a copy with a UTF-8 BOM / CR stripped (Windows/WSL gremlins); the founder's file is unchanged.
-clean_env(){ sed -e "1s/^$(printf '\357\273\277')//" -e 's/\r$//' "$1"; }
+clean_env(){ sed -e "1s/^$(printf '\357\273\277')//" -e 's/\r$//' "$1" | grep -E '^[[:space:]]*(export[[:space:]]+)?[A-Za-z_][A-Za-z0-9_]*=' || true; }
 # Encrypt LOCAL-ONLY (no network WKD) and with trust assumed (no interactive prompt) so the
 # unattended scheduled run never hangs or does a surprise lookup.
 gpg_encrypt(){ local __r1="$1"; shift; gpg --yes --batch --no-tty --no-auto-key-locate --trust-model always --encrypt --recipient "$__r1" ${DR_GPG_RECIPIENT_2:+--recipient "$DR_GPG_RECIPIENT_2"} "$@"; }
