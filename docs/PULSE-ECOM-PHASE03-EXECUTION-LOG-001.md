@@ -120,8 +120,78 @@ New dedicated **My Campaigns** surface over existing campaign contracts — no n
 - **Checks**: **438 tests pass (68 files)**, typecheck clean, lint clean on changed files, preview builds.
   Not published.
 
-## Remaining Phase 03 (in roadmap order)
-- 03.08 Integrate Opportunity Intelligence recommendations (country-specific evidence, honest UNKNOWN) — next.
+## 03.08 — Integrate Opportunity Intelligence recommendations — **BLOCKED (needs approved backend unit)**
+The recommendations DATA + logic exist and are excellent: `fn_monday_top_opportunities(p_tenant, p_limit)`
+returns `ready_to_test[]` + `watchlist[]` with per-item **country-specific evidence and honest UNKNOWN**
+(verified live, tenant `7c8ddf9d…`: 0 ready-to-test, 5 watchlist, all WATCH with `why` = "held for
+SUPPLIER_STOCK_UNKNOWN, ECONOMICS_UNKNOWN"; items carry `decision, why, best_market, market_price(+scope),
+saturation, supplier_match, product_confidence, opportunity_sweet_spot, product_opportunity_score,
+image.available`). Contract `pulse_monday_top_opportunities_v2_nolegacy`.
+**Why blocked:** there is **no tenant-safe frontend read contract** for this feed. `fn_monday_top_opportunities`
+is `SECURITY DEFINER`, does **not** reference `auth.uid()`, has no role guard, and is EXECUTE-granted to
+`authenticated` — so a signed-in user could read **another tenant's** feed by passing a different `p_tenant`
+via PostgREST (cross-tenant exposure; the earlier spoof returned 0 only because no other tenant holds data).
+Wiring the browser to it would expose that gap. Safely integrating requires a **production backend unit**
+(founder-gated, rule 9 + migration governance) — NOT applied here:
+1. `REVOKE EXECUTE ON fn_monday_top_opportunities, fn_run_monday_product_opportunity FROM authenticated, anon`
+   (keep `service_role`).
+2. Add `get_own_opportunity_recommendations(p_limit int)` — `SECURITY DEFINER, SET search_path=''`, derives
+   tenant from `auth.uid()`, calls `fn_monday_top_opportunities(auth.uid(), p_limit)`, EXECUTE to
+   `authenticated` — the tenant-safe read the 03.08 frontend will consume.
+3. Then build the Lovable "Opportunity Intelligence" recommendations surface (ready-to-test + watchlist with
+   country evidence + honest UNKNOWN, launch actions locked) wired to the wrapper.
+Frontend recs surface deliberately NOT built until the safe contract exists.
+
+## ⚠ Security finding (tenant isolation) — needs founder decision
+`fn_monday_top_opportunities` (cross-tenant READ) and `fn_run_monday_product_opportunity` (ungated
+orchestrator **mutation** — a signed-in user could trigger the Monday pipeline; paid research is
+budget-disabled so likely no spend, but it is unauthorized compute/writes) are both `SECURITY DEFINER`,
+granted to `authenticated`, with no `auth.uid()`/role guard — most likely the default Supabase grant left
+on service-side functions. Recommended hardening (same migration as 03.08 step 1): revoke the
+`authenticated`/`anon` EXECUTE on these service-side functions and audit sibling `fn_*` service functions for
+the same default grant. `fn_learn_recommend` is SECURITY INVOKER (runs under caller RLS) → lower risk.
+No change applied — reported for approval.
+
+## 03.09 — Verify notifications and progress indicators — **PARTIAL**
+- **Progress indicators: PASS** — present throughout (AnalyzingView pipeline stages, loading skeletons,
+  per-section loading on My Products/My Campaigns, acquisition lifecycle progression, publish-readiness).
+- **Notifications: BLOCKED** — **no notifications backend exists** (verified: 0 `notif/alert/inbox` tables
+  or functions in production). A notifications feed needs a backend unit (table + `get_own_notifications`
+  read + write path) before any frontend can connect. Not fabricating a notifications UI.
+
+## 03.10 — Complete responsive desktop/mobile acceptance — **PARTIAL (code verified; live device QA = founder)**
+Responsive by construction: `DashboardShell` (AppSidebar lg+ / MobileNav), responsive grids on the new
+surfaces (hub 1/2/3-col, My Products, My Campaigns), Design-3 tokens; covered in jsdom component tests.
+Live on-device acceptance (actual phone/desktop pixels) cannot run from this container (egress blocks the
+app host) — it is the founder's live check (roadmap already notes "mobile live QA pending").
+
+---
+
+## Phase 03 summary (verdicts vs roadmap IDs)
+| ID | Milestone | Verdict |
+|----|-----------|---------|
+| 03.02 | Golden Standard Intelligence Hub | **PASS** (preview) |
+| 03.03 | Product Discovery navigation | **PASS** (reuse-verified) |
+| 03.04 | My Products management | **PASS** (preview) |
+| 03.05 | My Store access & management | **PASS** (reuse-verified) |
+| 03.06 | Create Free Store button + workflow | **PASS** (reuse-verified) |
+| 03.07 | My Campaigns navigation | **PASS** (preview) |
+| 03.08 | Opportunity Intelligence recommendations | **BLOCKED** — needs founder-approved backend unit (tenant-safe wrapper + grant hardening) |
+| 03.09 | Notifications & progress indicators | **PARTIAL** — progress PASS; notifications need a backend unit |
+| 03.10 | Desktop/mobile acceptance | **PARTIAL** — responsive code verified; live device QA = founder |
+
+All frontend builds are **Lovable preview only** (commits 08924afc → ebf9e617 → aedf8117); **nothing
+published to production**; no new backend applied; no paid provider calls. Founding-member access, tenant +
+country isolation, Product Asset Lock and exact-SKU preserved throughout.
+
+### Founder decisions needed to finish Phase 03
+1. **Approve the backend hardening + recommendations wrapper** (03.08 + the security finding) — one small
+   migration: revoke ungated `authenticated` grants on the Monday service functions + add
+   `get_own_opportunity_recommendations`. Then I build the 03.08 recs surface.
+2. **Approve a notifications backend unit** (03.09) — table + `get_own_notifications` read + write path —
+   then the notifications UI can be built.
+3. **Publish to production** when ready — the Phase-03 preview (03.02–03.07) is built and green but
+   unpublished, pending your go-ahead (rule 9).
 - 03.08 Integrate Opportunity Intelligence recommendations (country-specific evidence, honest UNKNOWN).
 - 03.09 Verify notifications and progress indicators — Notifications has **no backend contract** (likely PARTIAL/BLOCKED pending a backend unit).
 - 03.10 Complete responsive desktop/mobile acceptance.
