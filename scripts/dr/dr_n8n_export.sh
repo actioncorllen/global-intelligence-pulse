@@ -9,11 +9,14 @@ set -euo pipefail
 DEST="${1:-dr/n8n/export-$(date -u +%Y%m%dT%H%M%SZ)}"; mkdir -p "$DEST"
 curl -s "$N8N_BASE_URL/api/v1/workflows?limit=250" -H "X-N8N-API-KEY: $N8N_API_KEY" | \
 python3 -c '
-import sys,json,re,os
-dest=os.environ["DEST"]; data=json.load(sys.stdin).get("data",[])
+import sys, json, re
+dest = sys.argv[1]
+data = json.load(sys.stdin).get("data", [])
 for w in data:
-    name=re.sub(r"[^A-Za-z0-9_-]","_",w.get("name",""))[:60]
-    json.dump(w, open(f"{dest}/{w[\"id\"]}_{name}.json","w"), indent=2)
+    name = re.sub(r"[^A-Za-z0-9_-]", "_", str(w.get("name", "")))[:60]
+    wid = re.sub(r"[^A-Za-z0-9_.-]", "_", str(w.get("id", "wf"))) or "wf"
+    with open(f"{dest}/{wid}_{name}.json", "w") as fh:
+        json.dump(w, fh, indent=2)
 print(f"exported {len(data)} workflows to {dest}")
-' DEST="$DEST"
+' "$DEST"
 echo "Review exports for any accidental inline secrets before committing (n8n stores creds by reference, not value)."
