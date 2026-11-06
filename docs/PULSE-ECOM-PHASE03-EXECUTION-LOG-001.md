@@ -218,11 +218,53 @@ mobile) + hub card CTA → the page.
 - **Honest states:** loading / unauthenticated→sign-in / temporary_failure→Try again / empty copy.
 - **Checks:** **452 tests pass (69 files, ~14 new)**, typecheck clean, lint clean, preview builds. Not published.
 
-### Remaining
-- 03.09 notifications — inspecting existing event infra; build smallest tenant-safe backend if none; wire UI.
-- 03.10 responsive — verify via tests/preview tooling.
-- **Production publication of the Phase-03 frontend preview remains withheld** pending explicit founder
-  approval (constraint: no production frontend publication).
+### 03.09 — Notifications & progress indicators — **PASS**
+- **Backend** (mig_331, applied + verified): `pulse_notifications` (RLS owner-only) + `get_own_notifications`
+  / `mark_notification_read` / `mark_all_notifications_read` (SECURITY DEFINER `auth.uid`) + service-only
+  `fn_emit_notification`. Verified: owner read/unread, cross-tenant isolation (0), mark works, unauthenticated
+  empty, authenticated cannot emit; QA row self-removed.
+- **Frontend** (Lovable preview `ae2d91b8`): top-bar `NotificationsBell` + panel wired **only** to those 3
+  RPCs (guard: 0 direct `pulse_notifications` query, 0 `fn_emit_notification`, no tenant arg, no new backend);
+  unread badge from `unread_count`; list with unread styling + per-row mark-read + mark-all; honest
+  loading / unauthenticated / failure+retry / "You're all caught up" empty. `safeInternalLink` blocks
+  external/`//`/`javascript:` links (test-asserted). Progress indicators confirmed intact (unchanged).
+- **Checks:** 466 tests pass (70 files, ~14 new), typecheck + lint clean, preview builds. Not published.
+
+### 03.10 — Desktop/mobile acceptance — **PARTIAL (code verified; live device QA = founder)**
+All new Phase-03 surfaces are responsive by construction and exercised in jsdom component tests: hub
+(1/2/3-col), My Products, My Campaigns, Recommendations, and the notifications panel
+(`w-[min(22rem,calc(100vw-1.5rem))]`, `max-h-[min(60vh,26rem)]`) within the responsive shell (AppSidebar
+lg+, MobileNav). Live on-device pixel acceptance can't run from this container (egress blocks the app host)
+— it remains the founder's check (roadmap already notes "mobile live QA pending").
+
+---
+
+## FINAL Phase 03 completion report (verdicts vs roadmap IDs)
+| ID | Milestone | Verdict |
+|----|-----------|---------|
+| 03.02 | Golden Standard Intelligence Hub | **PASS** (preview) |
+| 03.03 | Product Discovery navigation | **PASS** (reuse-verified) |
+| 03.04 | My Products management | **PASS** (preview) |
+| 03.05 | My Store access & management | **PASS** (reuse-verified) |
+| 03.06 | Create Free Store button + workflow | **PASS** (reuse-verified) |
+| 03.07 | My Campaigns navigation | **PASS** (preview) |
+| 03.08 | Opportunity Intelligence recommendations | **PASS** (tenant-safe backend mig_329/330 + frontend) |
+| 03.09 | Notifications & progress indicators | **PASS** (backend mig_331 + frontend) |
+| 03.10 | Desktop/mobile acceptance | **PARTIAL** (responsive code verified; live device QA = founder) |
+| security | Tenant-isolation hardening (mig_329/330) | **RESOLVED + verified** |
+
+**Backend migrations applied to prod (founder-approved, reversible, verified):** mig_329, mig_330
+(tenant-isolation hardening + safe recs wrapper), mig_331 (tenant-safe notifications).
+**Frontend (Lovable preview, commits 08924afc→ebf9e617→aedf8117→9aa01383→ae2d91b8):** all green
+(466 tests, typecheck + lint clean), **NOT published to production.**
+**Constraints held:** no production frontend publication, no paid provider calls, no public signup, n8n
+service-role workflows preserved, no legitimate data deleted, no new provider spend enabled.
+
+### Awaiting founder approval
+1. **Publish the Phase-03 frontend preview to production** (03.02–03.09). It is built, green and unpublished.
+2. **03.10 live device acceptance** — confirm the responsive surfaces on a real phone/desktop after publish.
+3. (Optional, future) wire real generators to `fn_emit_notification` (service-side) so the notifications
+   feed carries live events; until then it shows the honest empty state.
 - 03.08 Integrate Opportunity Intelligence recommendations (country-specific evidence, honest UNKNOWN).
 - 03.09 Verify notifications and progress indicators — Notifications has **no backend contract** (likely PARTIAL/BLOCKED pending a backend unit).
 - 03.10 Complete responsive desktop/mobile acceptance.
