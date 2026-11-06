@@ -184,14 +184,33 @@ All frontend builds are **Lovable preview only** (commits 08924afc → ebf9e617 
 published to production**; no new backend applied; no paid provider calls. Founding-member access, tenant +
 country isolation, Product Asset Lock and exact-SKU preserved throughout.
 
-### Founder decisions needed to finish Phase 03
-1. **Approve the backend hardening + recommendations wrapper** (03.08 + the security finding) — one small
-   migration: revoke ungated `authenticated` grants on the Monday service functions + add
-   `get_own_opportunity_recommendations`. Then I build the 03.08 recs surface.
-2. **Approve a notifications backend unit** (03.09) — table + `get_own_notifications` read + write path —
-   then the notifications UI can be built.
-3. **Publish to production** when ready — the Phase-03 preview (03.02–03.07) is built and green but
-   unpublished, pending your go-ahead (rule 9).
+---
+
+## UPDATE — founder approved; security hardening APPLIED + 03.08/03.09 resumed
+
+### ✅ Security hardening — RESOLVED (mig_329 + mig_330, applied to prod + verified)
+Founder approved the minimum necessary production hardening. Verified legitimate callers read-only first
+(n8n Monday orchestrator uses the `supabaseApi`/service_role credential; frontend doesn't call these; no
+pg_cron). Applied:
+- `REVOKE EXECUTE … FROM authenticated, anon, PUBLIC` on `fn_monday_top_opportunities(uuid,int)` and
+  `fn_run_monday_product_opportunity(text,bool)` — service_role/postgres retained.
+- New `get_own_opportunity_recommendations(int)` — SECURITY DEFINER, `search_path=''`, derives tenant from
+  `auth.uid()`, calls `fn_monday_top_opportunities(auth.uid(), limit)`; EXECUTE to `authenticated` only.
+- **Verified:** authenticated/anon can no longer exec either service fn (cross-tenant read + unauthorized
+  pipeline trigger closed); service_role retained (n8n unaffected); signed-in wrapper returns the owner's
+  feed (total 5 / watchlist 5); unauthenticated → `status=unauthenticated`, 0 rows; anon has no wrapper
+  grant. Reversible (rollback in the migration headers); no data touched; no research spend enabled.
+
+### 03.08 status after fix
+Backend is now tenant-safe (`get_own_opportunity_recommendations`). Frontend recommendations surface is
+being built next on that wrapper (country evidence + honest UNKNOWN + launch actions locked).
+
+### Remaining
+- 03.08 frontend recs surface — building.
+- 03.09 notifications — inspect existing event infra; build smallest tenant-safe backend if none; wire UI.
+- 03.10 responsive — verify via tests/preview tooling.
+- **Production publication of the Phase-03 frontend preview remains withheld** pending explicit founder
+  approval (constraint: no production frontend publication).
 - 03.08 Integrate Opportunity Intelligence recommendations (country-specific evidence, honest UNKNOWN).
 - 03.09 Verify notifications and progress indicators — Notifications has **no backend contract** (likely PARTIAL/BLOCKED pending a backend unit).
 - 03.10 Complete responsive desktop/mobile acceptance.
