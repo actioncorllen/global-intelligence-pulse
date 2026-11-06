@@ -48,9 +48,33 @@ No implementation defect found; nothing rebuilt. Live in-browser QA deferred to 
 
 ---
 
+## 03.04 — Complete My Products management — **PASS**
+New dedicated, navigable **My Products** surface over the existing acquisition contract — no rebuild of
+the acquisition logic (Lovable preview `ebf9e617`). Files: new `src/routes/workspace_.my-products.tsx`,
+`src/components/business-discovery/my-products-view.tsx`, `src/lib/business-discovery/my-products.ts`
+(pure state→customer-language helper), shared `src/hooks/use-acquisition-actions.ts` (the sourcing
+screen and this page now share ONE actions hook over the existing `acquisition-api.ts`); edited
+`app-sidebar.tsx` + `mobile-nav.tsx` (nav item), `ecommerce-workspace.tsx` (hub card CTA), `routeTree.gen.ts`.
+- **Reuse / no new backend**: reads `get_own_product_acquisitions` via `useProductAcquisitions`; actions
+  (select supplier / prepare / review package / approve / discard / Create Free Store) reuse the existing
+  authorised API. Guard scan of added lines: **0** new `create or replace function`, **0** `service_role`,
+  **0** new edge `functions.invoke` — purely a frontend surface over existing contracts.
+- **Customer-language states** (`my-products.ts`): DISCOVERED/SOURCED→"In sourcing", SELECTED→"Supplier
+  selected", PREPARING→"Preparing listing", READY_FOR_REVIEW→"Ready for your review", APPROVED,
+  PREPARE_FAILED→"Needs attention", DISCARDED, unknown→"Status being updated". Raw states never rendered;
+  `formatAddedDate` returns null on invalid (no fabricated dates); counts are real array lengths.
+- **Navigation**: "My Products" added after "Products" in desktop + mobile nav (ecommerce only); hub
+  "My Products" card CTA now links to `/workspace/my-products`.
+- **Honest states**: loading skeleton, Try-again on failure, sign-in redirect, and empty state
+  ("No products yet — add products from Product Discovery").
+- **Access / isolation**: route mirrors `workspace_.store.tsx` gate exactly (session → `/auth` redirect);
+  data tenant-isolated server-side via `auth.uid` RPCs; founding-member access + Product Asset Lock +
+  exact-SKU unchanged (surface only lists + triggers existing authorised actions).
+- **Checks**: **427 tests pass (21 new** covering page, status labels, both nav menus, hub-card link**)**,
+  typecheck clean, lint clean on changed files. Not published.
+
 ## Remaining Phase 03 (in roadmap order)
-- 03.04 Complete My Products management — **in progress** (build: dedicated acquisitions management surface).
-- 03.05 Complete My Store access and management.
+- 03.05 Complete My Store access and management — next.
 - 03.06 Verify Create Free Store button + existing creation workflow.
 - 03.07 Complete My Campaigns navigation.
 - 03.08 Integrate Opportunity Intelligence recommendations (country-specific evidence, honest UNKNOWN).
