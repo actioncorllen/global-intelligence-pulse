@@ -201,13 +201,25 @@ pg_cron). Applied:
   feed (total 5 / watchlist 5); unauthenticated → `status=unauthenticated`, 0 rows; anon has no wrapper
   grant. Reversible (rollback in the migration headers); no data touched; no research spend enabled.
 
-### 03.08 status after fix
-Backend is now tenant-safe (`get_own_opportunity_recommendations`). Frontend recommendations surface is
-being built next on that wrapper (country evidence + honest UNKNOWN + launch actions locked).
+### 03.08 — Integrate Opportunity Intelligence recommendations — **PASS** (backend hardened + frontend built)
+Backend tenant-safe via `get_own_opportunity_recommendations` (mig_329). Frontend (Lovable preview
+`9aa01383`): new `/workspace/recommendations` ("Opportunity Intelligence") — `opportunity-recommendations-
+api.ts` + hook + `OpportunityRecommendationsView` + route + nav (Target icon, after Products, desktop +
+mobile) + hub card CTA → the page.
+- **Reuse / safe wiring (guard-scanned added lines):** `get_own_opportunity_recommendations` ×6, and
+  **0** `fn_monday_top_opportunities`, **0** `p_tenant`, **0** `create or replace function`/`service_role`/
+  new edge `functions.invoke` — the browser never calls the raw function or passes a tenant.
+- **Two sections** "Ready to test" + "Watchlist"; each card: product + TEST/WATCH/AVOID badge (shared
+  decision colours), `why` rendered **verbatim** (honest UNKNOWN reasons preserved), per-item `best_market`
+  country chip (**country isolation — not coerced to a single workspace country**), market_price(+scope)/
+  saturation/confidence/score only when present, image only when `image.available` else honest reason.
+- **Launch actions locked:** view-only "View in Products" link + a "View only — launch actions are locked"
+  badge; a test asserts **no** ad/store/publish action on this surface. Read-only → no provider spend.
+- **Honest states:** loading / unauthenticated→sign-in / temporary_failure→Try again / empty copy.
+- **Checks:** **452 tests pass (69 files, ~14 new)**, typecheck clean, lint clean, preview builds. Not published.
 
 ### Remaining
-- 03.08 frontend recs surface — building.
-- 03.09 notifications — inspect existing event infra; build smallest tenant-safe backend if none; wire UI.
+- 03.09 notifications — inspecting existing event infra; build smallest tenant-safe backend if none; wire UI.
 - 03.10 responsive — verify via tests/preview tooling.
 - **Production publication of the Phase-03 frontend preview remains withheld** pending explicit founder
   approval (constraint: no production frontend publication).
