@@ -87,7 +87,7 @@ fi
 # 1) dump + encrypt (reuse the component script) — real mode only
 if [ "$SELFTEST" = 1 ]; then
   printf 'fake pg_dump %s\n' "$TS" > "$STAGE/plain.tmp"
-  gpg --yes --batch --encrypt --recipient "$DR_GPG_RECIPIENT" -o "$STAGE/strateloq-db-$TS.dump.gpg" "$STAGE/plain.tmp" \
+  gpg --yes --batch --encrypt --recipient "$DR_GPG_RECIPIENT" ${DR_GPG_RECIPIENT_2:+--recipient "$DR_GPG_RECIPIENT_2"} -o "$STAGE/strateloq-db-$TS.dump.gpg" "$STAGE/plain.tmp" \
     && { shred -u "$STAGE/plain.tmp" 2>/dev/null || rm -f "$STAGE/plain.tmp"; echo "ok   [dump] (self-test fake)"; } || fail dump
 else
   if ( cd "$STAGE" && bash "$HERE/dr_db_logical_backup.sh" >/dev/null ); then echo "ok   [dump] encrypted dump produced"; else fail dump "pg_dump/gpg failed"; fi

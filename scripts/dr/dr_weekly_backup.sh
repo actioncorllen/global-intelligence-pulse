@@ -66,7 +66,7 @@ startlog(){ local d="${DR_BACKUP_ROOT:-$HOME/strateloq-backups}"; mkdir -p "$d" 
 clean_env(){ sed -e "1s/^$(printf '\357\273\277')//" -e 's/\r$//' "$1"; }
 # Encrypt LOCAL-ONLY (no network WKD) and with trust assumed (no interactive prompt) so the
 # unattended scheduled run never hangs or does a surprise lookup.
-gpg_encrypt(){ gpg --yes --batch --no-tty --no-auto-key-locate --trust-model always --encrypt --recipient "$@"; }
+gpg_encrypt(){ local __r1="$1"; shift; gpg --yes --batch --no-tty --no-auto-key-locate --trust-model always --encrypt --recipient "$__r1" ${DR_GPG_RECIPIENT_2:+--recipient "$DR_GPG_RECIPIENT_2"} "$@"; }
 # Resolve DR_GPG_RECIPIENT to a LOCAL public key: the env value if it resolves, else the backup key's
 # UID support@strateloq.com, else the env value unchanged (encrypt then fails with a clear message).
 resolve_recipient(){
