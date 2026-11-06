@@ -73,10 +73,34 @@ screen and this page now share ONE actions hook over the existing `acquisition-a
 - **Checks**: **427 tests pass (21 new** covering page, status labels, both nav menus, hub-card link**)**,
   typecheck clean, lint clean on changed files. Not published.
 
+## 03.05 — Complete My Store access and management — **PASS (reuse-verified)**
+My Store is fully built over existing contracts; nothing rebuilt.
+- **Live contracts (signed-in sim, tenant `7c8ddf9d…`)**: `fn_hosted_store_get` → `ok, has_hosted_store=true`;
+  `fn_store_website` → `ok, has_website=true, catalog_count=0` (honest empty catalog); `fn_store_connection_status`
+  → `ok, has_connected=false`. All respond; empty catalog surfaces honestly, not fabricated.
+- **Access**: `/workspace/store` route (session-gated like My Products); "My Store" nav item shown when
+  `hasHostedStore` (`showMyStore`); hub "My Store" card → `/workspace/store`.
+- **Management (`StoreWebsitePanel`)**, all on existing mutation contracts: edit store display name
+  (`fn_store_set_display_name`), set featured hero (`fn_store_set_website_hero`), show/hide products
+  (`fn_store_set_product_visibility`), product lifecycle (`fn_store_product_set_lifecycle`), remove from
+  store (`fn_store_remove_product`), edit/preview/publish product pages (ProductPageBuilder +
+  PublishControls + `publishWebsitePages`), website preview. Honest states: "unavailable", per-page
+  publish blockers, and an honest "AI product-image generation requires connecting Google Gemini
+  (external setup)" (BLOCKED_EXTERNAL_CONNECTION) — no paid provider call enabled.
+- Tenant isolation (auth.uid), Product Asset Lock and exact-SKU unchanged. Live pixel QA deferred (egress).
+
+## 03.06 — Verify Create Free Store button + existing creation workflow — **PASS (reuse-verified)**
+The "Create Free Store" button is present on **approved** products (acquisition sourcing card in
+`workspace-sections.tsx` and the My Products approved state) and opens the existing `ProductPageBuilder`
+creation flow (`setBuilderOpen(true)`) — not a placeholder. The creation contracts are all live:
+`fn_create_free_store`, `fn_create_pulse_store_draft`, `fn_generate_storefront_runtime`,
+`fn_product_card_create_store`, `fn_storefront_publish` (+ edge `storefront`). Proof the workflow runs
+end-to-end: tenant `7c8ddf9d…` already has a hosted store (`has_hosted_store=true`, `has_website=true`).
+Per constraints, the creation RPC was NOT invoked here (it mutates/creates a store); full click-through
+E2E is covered by Phase 06.06 and the founder's live check. Permission checks unchanged.
+
 ## Remaining Phase 03 (in roadmap order)
-- 03.05 Complete My Store access and management — next.
-- 03.06 Verify Create Free Store button + existing creation workflow.
-- 03.07 Complete My Campaigns navigation.
+- 03.07 Complete My Campaigns navigation — next.
 - 03.08 Integrate Opportunity Intelligence recommendations (country-specific evidence, honest UNKNOWN).
 - 03.09 Verify notifications and progress indicators — Notifications has **no backend contract** (likely PARTIAL/BLOCKED pending a backend unit).
 - 03.10 Complete responsive desktop/mobile acceptance.
