@@ -382,3 +382,17 @@ roadmap.md. No route/RPC/edge/workflow added; no billing/research/ads/signup tou
 **NOT published** — preview only; awaiting founder approval to re-publish (which will refresh the live deploy
 from the current preview source). 03.08 / 03.10 / overall Phase 03 remain **NOT marked PASS** until founder live
 acceptance of the four corrected behaviours on the production site.
+
+### PUBLISHED (founder-approved, 2026-11-07)
+**Pre-publish safety confirmed:** Lovable `latest_commit_sha` = `f0f44bdf` (exact match to the tested preview;
+no newer build existed); frontend-only diff (no migration/billing/research-budget/advertising/registration
+change). **Rollback target = previously-published source `ae2d91b8`** (frontend-only revert; backend/migrations
+untouched, so rollback is clean).
+**Deploy:** `deploy_project` → deployment `35a32cfa-b716-42c1-a68f-d7460edd1fc0`, target
+`https://https-www-globalintelligenceactions-com.lovable.app` (strateloq.com); accepted/processing. After the
+deploy `get_project` reports `is_published: true`, published source `latest_commit_sha = f0f44bdf`.
+**Not verifiable from this container:** egress to the production host returns **403** (CONNECT tunnel) and the
+workspace is auth-gated, so deployment-propagation and all signed-in behaviour (checks 2–7 below) must be
+confirmed on the founder's authenticated browser/device. Each was verified at code + automated-test level in the
+published source `f0f44bdf` (475 tests pass incl. the View-Product regression tests; typecheck + lint clean).
+**Still NOT marked live PASS** — founder device acceptance outstanding.
