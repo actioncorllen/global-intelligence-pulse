@@ -179,17 +179,50 @@ they demonstrate the isolation the rules depend on.
 
 ---
 
-## 6. Planned changes (prepared-only; NOT applied / NOT published)
+## 6. Changes delivered (prepared-only; NOT applied / NOT published)
 
-- **Backend (prepared migration, not applied):** a pure, read-only `fn_opportunity_tier(...)` helper + a derived
-  `tier` + `tier_reasons[]` added to each card object inside `fn_monday_top_opportunities` (and surfaced through the
-  unchanged `get_own_opportunity_recommendations` wrapper). No new table, no re-score, no decision change, no new
-  grants, SECURITY DEFINER + `search_path=''` preserved, tenant scoping via `auth.uid()` unchanged.
-- **Frontend (Lovable preview, not published):** tier badge on the premium card (design preserved), a
-  "Ready to Test — Platinum Opportunities" section gated on `tier=PLATINUM && decision=TEST` with honest empty state,
-  tier legend/explanations, country selector surfacing market-specific evidence, evidence-freshness line, ROI-honesty
-  labels, exact-product navigation unchanged. No image generation/substitution. My Store / billing / signup /
-  advertising publishing untouched.
+- **Backend (prepared migration `mig_334_opportunity_tiers.sql`, NOT applied):** pure, read-only
+  `fn_opportunity_tier(jsonb)` + `fn_evidence_window_fresh(jsonb)` helpers, and a derived `tier` + `tier_reasons[]`
+  (plus `evidence_confidence`, `evidence_fresh`, `roi_basis`) added to each card inside `fn_monday_top_opportunities`,
+  with new top-level `ready_to_test_platinum` (tier=PLATINUM AND decision=TEST), `ready_to_test_platinum_count`,
+  `tier_counts`, `tier_policy`. Surfaced through the unchanged `get_own_opportunity_recommendations` wrapper. No new
+  table, no re-score, no decision change, no new grants, SECURITY DEFINER + `search_path=''` preserved, tenant scoping
+  via `auth.uid()` unchanged; `ready_to_test`/`watchlist` + counts preserved; contract →
+  `pulse_monday_top_opportunities_v3_tiers`.
+
+- **Frontend (Lovable preview `28b4c4f2`, built on `9da86c94`; NOT published):**
+  - `opportunity-recommendations-api.ts` — fail-closed decoder extended: `tier` (only the three literals else null),
+    `tierReasons`, `evidenceConfidence`, `evidenceFresh` (only explicit `true`), `roiBasis`; outcome adds
+    `readyToTestPlatinum`, `readyToTestPlatinumCount`, `tierCounts` (null unless all four counts finite — never
+    0-filled). Existing keys unchanged; still calls `get_own_opportunity_recommendations(p_limit:20)`.
+  - `opportunity-recommendations-view.tsx` — restrained tier badge beside the decision badge (only when the server
+    returns a tier; PLATINUM strongest → GOLD → PREMIUM muted, each with a one-line tooltip); headline
+    **"Ready to Test — Platinum Opportunities"** section over `readyToTestPlatinum` with the honest empty state; tier
+    legend (shows `tier_counts` only when all four present); per-card **evidence-freshness** line; per-card
+    **ROI-honesty** line ("No measured ROI yet — evidence & readiness only, not a profit guarantee"; adds "Economics are
+    estimated, not measured" when flagged); **country-filter** chip row ("All markets" default) narrowing all sections by
+    best market. Premium card design, exact-product `?product=` nav, translations, images (no generation), locked launch
+    actions preserved.
+  - **Fail-closed:** `mig_334` unapplied → live RPC returns no tier fields → preview shows no badges, Platinum section
+    honest-empty, watchlist = the 8 current WATCH items (today's honest state). Lights up once `mig_334` is approved+applied.
+
+### Frontend verification (Lovable preview `28b4c4f2`)
+- **500 tests pass** (71 files; **+11 new**): tier decode for each literal + null; `tier_reasons`/`roi_basis`/
+  `evidence_*` fail-closed; `ready_to_test_platinum` + counts + `tier_counts` decode; **absent tier fields → tier null,
+  Platinum [], tierCounts null** (regression — pre-tier fixtures still decode); Platinum+Test fixture renders under the
+  Platinum section with a PLATINUM badge; empty Platinum → honest empty state; tier-null card → no badge; country filter
+  narrows by market; ROI-honesty line present; View Product still navigates by canonical `productId`.
+- `bunx tsgo --noEmit` clean; eslint clean on changed files (8 pre-existing-style warnings re: co-located helper
+  exports); preview build OK.
+- **Not verifiable from container:** live signed-in appearance (egress 403 + auth-gated) → founder device acceptance;
+  populated-tier appearance in preview requires `mig_334` applied (founder approval).
+- **Production unchanged:** still runs `9da86c94`; `28b4c4f2` is preview-only (`deploy_project` NOT called).
+
+### Open UX decision (does not block approval)
+With 0 TEST products today this is theoretical: the build keeps the existing decision-based "Ready to test" section (all
+decision=TEST) **below** the new Platinum section, so a future PLATINUM+TEST product would appear in both. Options:
+(a) keep as-is; (b) make "Ready to Test" show only Platinum+Test and group other TEST-decision products separately.
+Recommend (a) for now; switch on your word.
 
 ## 6b. EIGHTH — rule behaviour tests (read-only on prod data + synthetic cases; migration NOT applied)
 
