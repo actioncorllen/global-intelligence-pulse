@@ -14,12 +14,15 @@
 # Reads nothing from, and writes nothing to, production. The plaintext dump is shredded on every exit.
 #
 # Required (env or flags):
-#   RESTORE_DB_URL   postgres connection string for the ISOLATED target (never logged). The password
-#                    may be OMITTED (recommended): the drill then reads it once from the terminal and
-#                    hands it to libpq via a restricted mode-600 temporary PGPASSFILE that is shredded
-#                    on exit — never via PGPASSWORD, argv, shell history or logs. This is immune to the
-#                    shell-quoting/whitespace corruption that makes PGPASSWORD fail where an interactive
-#                    psql prompt (which reads the tty directly) succeeds for the SAME password.
+#   RESTORE_DB_URL   postgres connection string for the ISOLATED target (never logged). OMIT the
+#                    password (recommended): the drill reads it once from /dev/tty (as interactive psql
+#                    does) and exports it as PGPASSWORD for its own psql/pg_restore children — set inside
+#                    the script, so no shell quoting/whitespace can corrupt it, and never in argv,
+#                    history or logs. A read-only auth preflight then proves login works BEFORE any
+#                    decrypt or reset. (PGPASSWORD needs no host/port/db/user match or 0600-file rule,
+#                    unlike a temp .pgpass, which libpq silently ignores on a mismatch and then sends no
+#                    password -> "password authentication failed".) A pre-set PGPASSWORD/PGPASSFILE or an
+#                    in-URL password is still honoured for automation.
 #                    e.g. postgresql://postgres.zdeedmuocbbkuwuovlbz@aws-1-eu-west-1.pooler.supabase.com:5432/postgres
 #   DR_DUMP          path to the encrypted dump  strateloq-db-<ts>.dump.gpg
 # Optional:
@@ -145,43 +148,49 @@ else
   echo "checksum: $(sha256sum "$DR_DUMP" | awk '{print $1}')  (no SHA256SUMS supplied to compare against)"
 fi
 
-# ---- private, mode-700 workspace; shred plaintext + any temp pgpass on ANY exit ----
+# ---- private, mode-700 workspace; shred plaintext on ANY exit ----
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/dr-restore.XXXXXX")"; chmod 700 "$WORK"
 PLAIN="$WORK/d.dump"
-PASSFILE="$WORK/pgpass"        # restricted temp libpq password file (created below only if needed)
 cleanup() {
-  for f in "$PLAIN" "$PASSFILE"; do
-    [ -f "$f" ] && { shred -u "$f" 2>/dev/null || rm -f "$f"; }
-  done
+  [ -f "$PLAIN" ] && { shred -u "$PLAIN" 2>/dev/null || rm -f "$PLAIN"; }
   rm -rf "$WORK"
 }
 trap cleanup EXIT
 
-# ---- secure DB authentication (no PGPASSWORD / argv / history / logs) -------
-# Interactive psql works because it reads the password straight from the terminal. PGPASSWORD can
-# FAIL for the SAME password if the shell altered it on assignment (unquoted/"-quoted $, ! or
-# backtick; a leading/trailing space stripped when IFS is unset; a stray CR from a pasted value) —
-# SCRAM rejects one wrong byte exactly like a wrong password. To be immune to all of that, when the
-# URL carries no password we read it ONCE from /dev/tty (as psql itself does) and hand it to libpq
-# via a mode-600 PGPASSFILE. Honours a pre-set PGPASSFILE/PGPASSWORD or an in-URL password for
-# automation; otherwise PGPASSWORD is never used.
-if [ "${URL_HASPW:-0}" = "0" ] && [ -z "${PGPASSFILE:-}" ] && [ -z "${PGPASSWORD:-}" ]; then
+# ---- secure DB authentication (no argv / history / logs) + read-only preflight -------
+# Interactive psql works because it reads the password straight from the terminal, so we do the same:
+# read it ONCE from /dev/tty and hand it to libpq via PGPASSWORD exported INSIDE this script. Setting
+# it here (not in a shell assignment the operator typed) means no quoting/expansion/whitespace damage,
+# and it never appears in argv, history or logs. PGPASSWORD needs NO host/port/db/user match and NO
+# 0600-file rule — the two ways a temporary .pgpass gets silently ignored by libpq, which then sends no
+# password and the server answers "password authentication failed" (the exact Stage-3 symptom).
+_pwlen="?"
+if [ "${URL_HASPW:-0}" = "0" ] && [ -z "${PGPASSWORD:-}" ] && [ -z "${PGPASSFILE:-}" ]; then
   if [ -r /dev/tty ]; then
     printf 'Isolated DR DB password (hidden): ' >&2
     IFS= read -rs _pw < /dev/tty; echo >&2
   else
-    echo "ERROR: no terminal available to read the DB password. Supply a mode-600 PGPASSFILE instead." >&2
+    echo "ERROR: no terminal to read the DB password; export PGPASSWORD or PGPASSFILE for automation." >&2
     exit 2
   fi
-  _pw="${_pw%$'\r'}"; _pw="${_pw%$'\n'}"              # tolerate a pasted CRLF; typed input is unaffected
+  _pw="${_pw%$'\r'}"; _pw="${_pw%$'\n'}"              # strip a pasted CR/LF; typed input is unaffected
   [ -n "$_pw" ] || { echo "ERROR: empty DB password" >&2; exit 2; }
-  _epw="${_pw//\\/\\\\}"; _epw="${_epw//:/\\:}"; unset _pw   # escape \ then : for the .pgpass format
-  ( umask 077; printf '%s:%s:%s:%s:%s\n' "$PGH" "$PGP" "$PGDB" "$PGU" "$_epw" > "$PASSFILE" )
-  unset _epw
-  chmod 600 "$PASSFILE"
-  export PGPASSFILE="$PASSFILE"
-  echo "   auth: restricted temporary PGPASSFILE (mode 600, shredded on exit); PGPASSWORD not used"
+  export PGPASSWORD="$_pw"; _pwlen=${#_pw}; unset _pw
+  echo "   auth: PGPASSWORD set from a hidden /dev/tty prompt (not argv/history/logs); length=$_pwlen"
 fi
+
+# Read-only AUTH PREFLIGHT — prove we can log in to the ISOLATED target BEFORE decrypt and BEFORE any
+# destructive reset. Fails closed with the exact (non-secret) connection parameters so a credential or
+# host/port/db/user problem is diagnosed without ever touching the target.
+if ! psql "$RESTORE_DB_URL" -tAc "select current_user, current_database()" > "$WORK/auth.out" 2> "$WORK/auth.log"; then
+  _src="in-URL"; [ -n "${PGPASSFILE:-}" ] && _src="PGPASSFILE"; [ -n "${PGPASSWORD:-}" ] && _src="PGPASSWORD"
+  echo "ERROR: authentication preflight FAILED — the target was NOT modified." >&2
+  echo "   target: host=$PGH port=$PGP db=$PGDB user=$PGU  (password length=${_pwlen}, source=$_src; value never shown)" >&2
+  sed 's/^/   psql: /' "$WORK/auth.log" | head -4 >&2
+  echo "   compare this working form:  psql -h $PGH -p $PGP -U $PGU -d $PGDB -W -c 'select 1'" >&2
+  exit 5
+fi
+echo "   auth preflight OK: $(tr -d '[:space:]' < "$WORK/auth.out")"
 
 t1_epoch="$(date -u +%s)"; echo "T1  restore start: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
