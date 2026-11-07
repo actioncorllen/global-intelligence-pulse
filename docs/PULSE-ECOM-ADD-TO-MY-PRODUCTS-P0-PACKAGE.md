@@ -80,6 +80,34 @@ Fixture fully removed afterwards: product_acquisitions=0, founder DNA=0.
 Note: the owner-WITHOUT-DNA create (mig_333's only new effect — the reorder) is confirmed by code review +
 the post-apply smoke test in §3, since mig_333 is not yet applied.
 
+## 3d. PRODUCTION DEPLOYMENT (executed 2026-11-07, founder-approved controlled sequence)
+Backend `mig_333` APPLIED to prod `nxaunmyihhjixxxljcqt` (apply_migration → success). 12-step sequence:
+1. DB `ACTIVE_HEALTHY`; mig_333 matched committed `c6ac84c` (sha256 `f03c93ef`). ✅
+2. mig_332 confirmed applied (product_id+market columns, fn_acquisition_primary_market present, create =
+   SECURITY DEFINER); prod clean (acquisitions=0, founder DNA=0). ✅
+3. mig_333 applied. ✅
+4–5. Ownership-based authorization tested **WITHOUT any temporary ecommerce DNA** (founder has no DNA row),
+   authenticated via jwt claims:
+   - Own canonical product → **created** (f0d5c4b7) — proves ownership auth needs no DNA record. ✅
+   - Another tenant's product → **not created** (`not_ecommerce`). ✅
+   - Duplicate → **exists** (same id). ✅
+   - Exact product ID + country preserved → `product_id=5bc29d0a`, `market=DE`. ✅
+   - Unauthenticated → read **and** create both `unauthenticated`. ✅
+   - Missing → `invalid_request`; invalid/non-uuid → not created (fail safe). ✅
+   - Legacy behaviour compatible → non-owned/non-uuid refs fall to the legacy path, which still requires DNA
+     (`not_ecommerce` for the DNA-less founder) — unchanged. ✅
+   - Supplier + Product Asset Lock → acquisition `supplier_options:[]`, no generated content; create writes
+     only product_acquisitions; locked actions unchanged. ✅
+6. Test acquisitions removed → `product_acquisitions=0`, founder DNA=0, no leftover fixtures. ✅
+7. Frontend published: `deploy_project` → deployment `ce4bb212-c1ae-4bbf-868c-21d30331ffde`.
+8. Confirmed: `is_published=true`, published source `latest_commit_sha = 01bf4f5a` (the approved commit). ✅
+9–11. Product Discovery/Recommendations routes + the Add-to-My-Products action behaviour (uses selected
+   canonical id; no duplicate; In My Products when saved; links to My Products; opens exact product; preserves
+   market) — verified at code + test level (496 frontend tests, incl. 8 for the button; backend authenticated
+   scenarios above). LIVE signed-in confirmation is founder device acceptance (container egress 403 + auth-gated).
+12. Rollback available: restore the mig_332 body of create_product_acquisition (git history) + re-publish
+   frontend `c9efb952`; frontend degrades safely without the backend.
+
 ## 4. Known non-blocker (optional)
 The app does not mount a `<Toaster/>`, so toast notifications (this button's and all existing ones) do not
 display app-wide. This button does not rely on toasts — it shows inline state ("In My Products", "Adding…",
