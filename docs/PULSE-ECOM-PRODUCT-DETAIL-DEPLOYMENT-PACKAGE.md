@@ -112,6 +112,43 @@ so frontend and backend can be applied/rolled back independently.
    (exact product + market), unresolved item never opens another product.
 
 ---
+## 6b. DEPLOYMENT ACCEPTANCE (executed 2026-11-07, controlled sequence)
+Backend `mig_332` APPLIED to prod `nxaunmyihhjixxxljcqt` (Supabase apply_migration → `{success:true}`).
+1. DB `ACTIVE_HEALTHY` (PG 17.6); additive+reversible; empty table → recovery-safe. ✅
+2. Migration file matched committed `ed76aed` (sha256 52dccb63…). ✅
+3. Schema/grants/ownership unchanged pre-apply. ✅
+4. Applied. ✅
+5. Columns: `product_id uuid` (nullable) FK→commerce_products `on_delete=SET NULL`; `market text` (nullable). ✅
+6. Privileges: create_product_acquisition (authenticated+service_role EXECUTE, SECURITY DEFINER/owner postgres —
+   unchanged); get_own_product_acquisitions (authenticated+service_role, SECURITY INVOKER — unchanged);
+   fn_acquisition_primary_market (service_role-only, SECURITY DEFINER). ✅
+7. Authenticated-context test (jwt claims; controlled fixture = founder temp DNA + real owned product):
+   create_product_acquisition('5bc29d0a') → created; cross-tenant attempt on another tenant's product
+   ('2f6f6101') → NOT created (no_winning_intelligence; canonical branch denied by ownership); idempotent
+   retry → exists. ✅
+8. Exact-product + market contract: get_own returned product_id=5bc29d0a, market=DE, snapshot carrying the
+   same canonical id. ✅
+9. Fixture smoke test cleaned up: acquisition deleted, temp DNA removed → product_acquisitions=0, founder DNA
+   absent. ✅
+10. Existing acquisition/supplier RPCs (select_product_supplier, discard_product_acquisition,
+    approve_product_acquisition) intact with unchanged grants. ✅
+No critical security/identity failure → frontend published.
+
+Frontend PUBLISHED: `deploy_project` → deployment `47d6439f-2809-44e7-abee-a2f508581274`, target strateloq.com;
+`is_published=true`, published source `latest_commit_sha = c9efb952` (matches the tested preview: variant name
++ TikTok labels + My Products drawer). Not verifiable from this container (egress 403 + auth-gated) → founder
+device acceptance for the post-publication checklist.
+
+### CRITICAL finding for the P0 follow-up (not a deployment blocker)
+`create_product_acquisition` has a PRE-EXISTING gate: it requires a `member_business_dna` row with
+`dna_extended.commerce.is_ecommerce='true'`. The founder (and all current product owners) have NO such row,
+so in production the function returns `not_ecommerce` for every real owner — no acquisition can be created via
+the existing path. This (plus the absent "Add to My Products" UI) is why My Products is empty. The P0
+"Add to My Products" work must address this gate (smallest safe option: let the canonical-id-first branch
+authorize on product OWNERSHIP alone — `user_id=auth.uid()` — independent of the DNA/is_ecommerce flag, which
+stays on the legacy winning_product_intelligence path). This is an authorization-gate change needing its own
+reviewed build + separate approval.
+
 ## 7. Open items / follow-ups (not blockers)
 - **No UI creates acquisitions today.** My Products will stay empty until an "Add to My Products" action is
   wired (a separate product decision). The canonical-id-first workflow is ready to receive the canonical id
