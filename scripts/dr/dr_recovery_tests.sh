@@ -147,10 +147,12 @@ ensure_unlocked(){
   [ "$UNLOCKED" = 1 ] && return 0
   [ -f "$KEYFILE" ] || die "PRIMARY key export not found: $KEYFILE"
   mkdir -p "$GH"; chmod 700 "$GH"
-  printf '%s\n' "allow-loopback-pinentry" "allow-preset-passphrase" "default-cache-ttl 3600" "max-cache-ttl 7200" > "$GH/gpg-agent.conf"
+  [ -f "$GH/gpg-agent.conf" ] || printf '%s\n' "allow-loopback-pinentry" "allow-preset-passphrase" "default-cache-ttl 3600" "max-cache-ttl 7200" > "$GH/gpg-agent.conf"
   GNUPGHOME="$GH" gpg --batch --import "$KEYFILE" 2>/dev/null || die "could not import PRIMARY into the isolated keyring"
-  GNUPGHOME="$GH" gpg-connect-agent reloadagent /bye >/dev/null 2>&1
+  # check the cache BEFORE any reload (reloadagent would flush a passphrase cached by a prior run)
   if any_cached; then USE_AGENT=1; UNLOCKED=1; info "unlock: PRIMARY already cached in the local gpg-agent (no prompt)"; return 0; fi
+  printf '%s\n' "allow-loopback-pinentry" "allow-preset-passphrase" "default-cache-ttl 3600" "max-cache-ttl 7200" > "$GH/gpg-agent.conf"
+  GNUPGHOME="$GH" gpg-connect-agent reloadagent /bye >/dev/null 2>&1
   [ -r /dev/tty ] || die "no terminal to read the PRIMARY passphrase (and agent cache empty)"
   printf 'PRIMARY backup-key passphrase (hidden, asked once): ' >&2; IFS= read -rs PP < /dev/tty; echo >&2
   PP="${PP%$'\r'}"; PP="${PP%$'\n'}"; [ -n "$PP" ] || die "empty passphrase"
