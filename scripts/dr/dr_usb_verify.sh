@@ -85,17 +85,37 @@ AVAIL_KB="$(df -Pk "$DR_USB" | awk 'NR==2{print $4}')"
 info "existing top-level entries (preserved):"
 ls -1 "$DR_USB" 2>/dev/null | sed 's/^/        • /' | tee -a "$REPORT" >/dev/null; ls -1 "$DR_USB" 2>/dev/null | sed 's/^/          /'
 
-# ---- locate the source set ----
-sect "Locate verified set $DR_SET_TS"
+# ---- locate the source set: local first, else retrieve the ENCRYPTED set from Google Drive ----
+sect "Locate verified set $DR_SET_TS (local, else rclone from Google Drive)"
+DR_RCLONE_REMOTE="${DR_RCLONE_REMOTE:-strateloqdrive}"
+DR_RCLONE_PATH="${DR_RCLONE_PATH:-Strateloq Technologies — Backups/weekly/$DR_SET_TS}"
 SRC="${DR_SET_SRC:-}"
+# (a) explicit / well-known local set dirs
 if [ -z "$SRC" ]; then
-  for d in "$HOME/restore/$DR_SET_TS" "$HOME/strateloq-backups/weekly/$DR_SET_TS" "$HOME/strateloq-backups/$DR_SET_TS" "./$DR_SET_TS"; do
-    [ -d "$d" ] && [ -f "$d/SHA256SUMS" ] && { SRC="$d"; break; }; done
+  for d in "$HOME/restore/$DR_SET_TS" "$HOME/strateloq-backups/weekly/$DR_SET_TS" "$HOME/strateloq-backups/$DR_SET_TS" "$HOME/strateloq-backups/runs/$DR_SET_TS" "./$DR_SET_TS"; do
+    [ -d "$d" ] && [ -f "$d/SHA256SUMS" ] && { SRC="$d"; break; }
+  done
 fi
+# (b) broader local find for the set's DB archive (handles other layouts without globstar)
 if [ -z "$SRC" ]; then
-  SRC="$(dirname "$(ls "$HOME"/**/strateloq-db-*"$DR_SET_TS"*.dump.gpg "$HOME"/*/strateloq-db-*"$DR_SET_TS"*.dump.gpg 2>/dev/null | head -1)" 2>/dev/null)"
+  HIT="$(find "$HOME" -maxdepth 5 -type f -name "strateloq-db-*${DR_SET_TS}*.dump.gpg" 2>/dev/null | head -1)"
+  [ -n "$HIT" ] && [ -f "$(dirname "$HIT")/SHA256SUMS" ] && SRC="$(dirname "$HIT")"
 fi
-[ -n "$SRC" ] && [ -d "$SRC" ] && [ -f "$SRC/SHA256SUMS" ] || die "could not find the set $DR_SET_TS locally (looked in ~/restore, ~/strateloq-backups). Set DR_SET_SRC=/path/to/$DR_SET_TS and re-run."
+# (c) retrieve the existing ENCRYPTED set from Google Drive via the configured rclone remote.
+#     This downloads .gpg files only — it is NOT a new backup, and nothing is uploaded.
+if [ -z "$SRC" ] || [ ! -f "$SRC/SHA256SUMS" ]; then
+  if command -v rclone >/dev/null 2>&1 && rclone listremotes 2>/dev/null | grep -qx "${DR_RCLONE_REMOTE}:"; then
+    STAGE="$HOME/restore/$DR_SET_TS"; mkdir -p "$STAGE"
+    info "set not present locally — retrieving from ${DR_RCLONE_REMOTE}:${DR_RCLONE_PATH} (encrypted .gpg only; no new backup, no upload)"
+    if rclone copy "${DR_RCLONE_REMOTE}:${DR_RCLONE_PATH}" "$STAGE" --transfers 4 --checkers 8 --retries 3 2>"$WORK/rclone.log"; then
+      if [ -f "$STAGE/SHA256SUMS" ]; then SRC="$STAGE"; pass "retrieved the verified set from Google Drive to $STAGE"
+      else info "rclone copy finished but SHA256SUMS not found under $STAGE (check DR_RCLONE_PATH)"; fi
+    else info "rclone copy failed: $(tail -n1 "$WORK/rclone.log" 2>/dev/null)"; fi
+  else
+    info "rclone not installed or remote '${DR_RCLONE_REMOTE}:' not configured — cannot retrieve from Drive"
+  fi
+fi
+[ -n "$SRC" ] && [ -d "$SRC" ] && [ -f "$SRC/SHA256SUMS" ] || die "could not locate or retrieve set $DR_SET_TS (local dirs + rclone ${DR_RCLONE_REMOTE}:${DR_RCLONE_PATH}). Set DR_SET_SRC=/path, or DR_RCLONE_PATH to the Drive folder, and re-run."
 pass "source set located: $SRC"
 SET_KB="$(du -sk "$SRC" | awk '{print $1}')"
 [ "${AVAIL_KB:-0}" -gt "$((SET_KB + 51200))" ] && pass "free space sufficient (set ≈ $((SET_KB/1024)) MB, free ≈ $((AVAIL_KB/1024)) MB)" || fail "insufficient free space (need ≈ $((SET_KB/1024)) MB, free ≈ $((AVAIL_KB/1024)) MB) — NOT copying"
