@@ -329,6 +329,16 @@ Corrected predicates exercised exactly as shipped:
 No cross-tenant access (SECURITY DEFINER scoped to `auth.uid()` via the wrapper, unchanged); stable canonical
 `commerce_products.id`; honest UNKNOWNs preserved; no prod writes; no paid provider calls.
 
+### E. Final verified Lovable preview — `d6452bd` (built on `28b4c4f2` → `9da86c94`; NOT published)
+Copy-only refinement: tier-legend wording updated to the corrected evidence floor (PREMIUM = "corroborated demand
+evidence from a named source, recent enough to rely on — commercial validation still incomplete"), and the
+decision-vs-score clarification line added verbatim. Badge tooltips shortened to match. Everything else (Platinum
+section + empty state, country filter, evidence-freshness line, ROI-honesty line, exact-product nav, images, locked
+actions) unchanged; fail-closed preserved. **501 tests pass** (71 files), `bunx tsgo --noEmit` clean, eslint clean on
+changed files (8 pre-existing-style warnings), preview build OK. Production remains `9da86c94` (`deploy_project` NOT
+called). Rollback for frontend = re-publish `9da86c94`; rollback for backend = restore prior `fn_monday_top_opportunities`
+and drop `fn_opportunity_tier` + `fn_evidence_window_fresh`.
+
 ## 7. Guardrails honored
 No new paid provider calls; Product Asset Lock, exact-SKU identity, country isolation, tenant RLS preserved; research
 cost controls and commercial permissions untouched; nothing applied to prod and nothing published without founder
