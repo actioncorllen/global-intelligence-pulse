@@ -91,11 +91,24 @@ PP=$(getpass DR_PRIMARY_PASS "PRIMARY passphrase (hidden): ")
 EP=$(getpass DR_ESCROW_PASS  "ESCROW passphrase (hidden): ")
 decrypt_db_with(){ # $1=fpr $2=pass $3=label
   local gh; gh=$(mktemp -d "$RAM/k.XXXXXX"); chmod 700 "$gh"
-  GNUPGHOME="$gh" gpg --batch --import "$REC/dr-$1.secret.asc" 2>/dev/null
-  if printf '%s' "$2" | GNUPGHOME="$gh" gpg --batch --yes --pinentry-mode loopback --passphrase-fd 0 -d "$DB" 2>/dev/null > "$gh/d.dump"; then
-    local n; n=$(pg_restore -l "$gh/d.dump" 2>/dev/null | grep -vc '^;')
-    [ "${n:-0}" -gt 0 ] && ok "decrypt-$3" "$3 alone decrypts DB; $n TOC entries" || no "decrypt-$3" "$3 decrypted but pg_restore TOC empty/invalid"
-  else no "decrypt-$3" "$3 could not decrypt the DB dump"; fi
+  echo "allow-loopback-pinentry" > "$gh/gpg-agent.conf"   # isolated home must allow loopback like ~/.gnupg
+  if ! GNUPGHOME="$gh" gpg --batch --import "$REC/dr-$1.secret.asc" 2>"$gh/imp.log"; then
+    no "decrypt-$3" "could not import $3 key export: $REC/dr-$1.secret.asc"; sed 's/^/     gpg: /' "$gh/imp.log" | head -3; rm -rf "$gh"; return; fi
+  printf '%s' "$2" | GNUPGHOME="$gh" gpg --batch --yes --pinentry-mode loopback --passphrase-fd 0 -d "$DB" >"$gh/d.dump" 2>"$gh/dec.log"
+  if [ "$(head -c 5 "$gh/d.dump" 2>/dev/null)" = "PGDMP" ]; then
+    ok "decrypt-$3" "$3 ALONE decrypts the DB (valid PGDMP archive)"
+    if pg_restore -l "$gh/d.dump" >"$gh/toc" 2>"$gh/pgr.log"; then
+      local n; n=$(grep -vc '^;' "$gh/toc")
+      [ "${n:-0}" -gt 0 ] && ok "pgrestore-$3" "pg_restore -l: $n TOC entries" || no "pgrestore-$3" "pg_restore TOC empty"
+    else
+      no "pgrestore-$3" "pg_restore -l failed — local client ($(pg_restore --version 2>/dev/null | grep -oE '[0-9]+' | head -1)) may be older than the Supabase-17 dump; install postgresql-client-17"
+      sed 's/^/     pg_restore: /' "$gh/pgr.log" | head -2
+    fi
+  elif grep -qiE 'bad passphrase|decryption failed|bad session key' "$gh/dec.log"; then
+    no "decrypt-$3" "$3 PASSPHRASE appears incorrect (gpg reports bad passphrase) — value not shown"
+  else
+    no "decrypt-$3" "$3 could not decrypt — gpg diagnostics:"; sed 's/^/     gpg: /' "$gh/dec.log" | head -4
+  fi
   rm -rf "$gh"
 }
 if [ -n "$DB" ] && [ -f "$DB" ]; then decrypt_db_with "$P_FPR" "$PP" PRIMARY; decrypt_db_with "$E_FPR" "$EP" ESCROW; fi
