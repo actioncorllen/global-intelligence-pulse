@@ -14,8 +14,13 @@
 # Reads nothing from, and writes nothing to, production. The plaintext dump is shredded on every exit.
 #
 # Required (env or flags):
-#   RESTORE_DB_URL   postgres connection string for the ISOLATED target (a secret; never logged).
-#                    e.g. postgresql://postgres.zdeedmuocbbkuwuovlbz:<pw>@aws-0-eu-west-1.pooler.supabase.com:5432/postgres
+#   RESTORE_DB_URL   postgres connection string for the ISOLATED target (never logged). The password
+#                    may be OMITTED (recommended): the drill then reads it once from the terminal and
+#                    hands it to libpq via a restricted mode-600 temporary PGPASSFILE that is shredded
+#                    on exit — never via PGPASSWORD, argv, shell history or logs. This is immune to the
+#                    shell-quoting/whitespace corruption that makes PGPASSWORD fail where an interactive
+#                    psql prompt (which reads the tty directly) succeeds for the SAME password.
+#                    e.g. postgresql://postgres.zdeedmuocbbkuwuovlbz@aws-1-eu-west-1.pooler.supabase.com:5432/postgres
 #   DR_DUMP          path to the encrypted dump  strateloq-db-<ts>.dump.gpg
 # Optional:
 #   DR_RESTORE_SUMS  path to SHA256SUMS covering DR_DUMP (checksum-verify before decrypt)
@@ -86,15 +91,23 @@ if printf '%s' "$RESTORE_DB_URL" | grep -q "$PROD_REF"; then
   exit 3
 fi
 
-# Show the target WITHOUT the password, so the operator can confirm it is the isolated project.
-TARGET_DESC="$(python3 -I - "$RESTORE_DB_URL" <<'PY'
+# Extract connection fields WITHOUT the password, so we can (a) confirm the isolated target and
+# (b) build a restricted temporary .pgpass when the URL carries no password. urlsplit is tolerant of
+# any special characters; we never print or store the password here.
+_url_fields="$(python3 -I - "$RESTORE_DB_URL" <<'PY'
 import sys, urllib.parse as u
 p = u.urlsplit(sys.argv[1])
-print("host=%s port=%s db=%s user=%s" % (p.hostname, p.port, (p.path or '/').lstrip('/'), p.username))
+host = p.hostname or ''
+port = str(p.port or 5432)
+db   = (p.path or '/').lstrip('/') or 'postgres'
+user = p.username or ''
+haspw = '1' if p.password is not None else '0'
+print('\t'.join([host, port, db, user, haspw]))
 PY
 )"
+IFS=$'\t' read -r PGH PGP PGDB PGU URL_HASPW <<<"$_url_fields"
 echo "== Strateloq DR restore drill =="
-echo "Target (isolated): $TARGET_DESC"
+echo "Target (isolated): host=$PGH port=$PGP db=$PGDB user=$PGU"
 echo "Encrypted dump:    $DR_DUMP"
 
 if [ "${DR_RESTORE_CONFIRM:-0}" != "1" ]; then
@@ -128,16 +141,43 @@ else
   echo "checksum: $(sha256sum "$DR_DUMP" | awk '{print $1}')  (no SHA256SUMS supplied to compare against)"
 fi
 
-# ---- private, mode-700 workspace; shred plaintext on ANY exit ---------------
+# ---- private, mode-700 workspace; shred plaintext + any temp pgpass on ANY exit ----
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/dr-restore.XXXXXX")"; chmod 700 "$WORK"
 PLAIN="$WORK/d.dump"
+PASSFILE="$WORK/pgpass"        # restricted temp libpq password file (created below only if needed)
 cleanup() {
-  if [ -f "$PLAIN" ]; then
-    shred -u "$PLAIN" 2>/dev/null || rm -f "$PLAIN"
-  fi
+  for f in "$PLAIN" "$PASSFILE"; do
+    [ -f "$f" ] && { shred -u "$f" 2>/dev/null || rm -f "$f"; }
+  done
   rm -rf "$WORK"
 }
 trap cleanup EXIT
+
+# ---- secure DB authentication (no PGPASSWORD / argv / history / logs) -------
+# Interactive psql works because it reads the password straight from the terminal. PGPASSWORD can
+# FAIL for the SAME password if the shell altered it on assignment (unquoted/"-quoted $, ! or
+# backtick; a leading/trailing space stripped when IFS is unset; a stray CR from a pasted value) —
+# SCRAM rejects one wrong byte exactly like a wrong password. To be immune to all of that, when the
+# URL carries no password we read it ONCE from /dev/tty (as psql itself does) and hand it to libpq
+# via a mode-600 PGPASSFILE. Honours a pre-set PGPASSFILE/PGPASSWORD or an in-URL password for
+# automation; otherwise PGPASSWORD is never used.
+if [ "${URL_HASPW:-0}" = "0" ] && [ -z "${PGPASSFILE:-}" ] && [ -z "${PGPASSWORD:-}" ]; then
+  if [ -r /dev/tty ]; then
+    printf 'Isolated DR DB password (hidden): ' >&2
+    IFS= read -rs _pw < /dev/tty; echo >&2
+  else
+    echo "ERROR: no terminal available to read the DB password. Supply a mode-600 PGPASSFILE instead." >&2
+    exit 2
+  fi
+  _pw="${_pw%$'\r'}"; _pw="${_pw%$'\n'}"              # tolerate a pasted CRLF; typed input is unaffected
+  [ -n "$_pw" ] || { echo "ERROR: empty DB password" >&2; exit 2; }
+  _epw="${_pw//\\/\\\\}"; _epw="${_epw//:/\\:}"; unset _pw   # escape \ then : for the .pgpass format
+  ( umask 077; printf '%s:%s:%s:%s:%s\n' "$PGH" "$PGP" "$PGDB" "$PGU" "$_epw" > "$PASSFILE" )
+  unset _epw
+  chmod 600 "$PASSFILE"
+  export PGPASSFILE="$PASSFILE"
+  echo "   auth: restricted temporary PGPASSFILE (mode 600, shredded on exit); PGPASSWORD not used"
+fi
 
 t1_epoch="$(date -u +%s)"; echo "T1  restore start: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
