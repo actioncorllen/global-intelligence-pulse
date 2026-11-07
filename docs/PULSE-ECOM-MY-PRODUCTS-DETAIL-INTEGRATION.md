@@ -46,9 +46,19 @@ preparing the minimal additive backend change. **Backend NOT applied to prod; fr
   `1fe5b267`, `d1e42001` → **NULL** (no market-tagged media yet — honest unresolved, not fabricated).
 - **Drawer ownership is enforced server-side:** fn_product_media_state etc. check
   `commerce_products.user_id = auth.uid()`, so a resolved product always belongs to the member (req 10).
-- **Frontend tests** (in the Lovable preview build): acquisition WITH productId → "View Product" opens the
-  drawer for that exact productId+market; acquisition WITHOUT productId → unresolved state, drawer never
-  opens, never another product. (Results recorded on build completion.)
+- **Frontend tests** (Lovable preview build `c9efb95`): **488 tests pass** (71 files, +5 new), typecheck
+  clean, lint 0 errors on changed files, preview build OK. Covered: acquisition WITH productId → "View Product"
+  opens the reused `ExplorerDrawer` for that EXACT productId+market (cp-222/GB, cp-111/DE), remounts per
+  product on switch; acquisition WITHOUT productId (null/blank) → unresolved state ("Product details not
+  available yet."), drawer never opens, never another product, Manage still available;
+  `acquisitionToExplorerItem` seeds the exact id + market with every metric null (no fabrication); decoder
+  reads product_id/market and stays null when missing/null/blank/non-string. Guard-scan of the diff: no new
+  backend (no create-or-replace-function / service_role / functions.invoke / new .rpc). Not published.
+  Frontend files: `acquisition-api.ts` (+`productId`,`market`), `my-products-view.tsx` (View Product + reused
+  drawer + unresolved state), `my-products-view.test.tsx`, new `acquisition-api.test.ts`, and four
+  placeholder `ProductAcquisition` literals updated with the two nullable fields for type-check only
+  (`product-page-builder.tsx`, `dev.product-page-builder.tsx`, `my-products.test.ts`,
+  `product-page-builder.canonical.test.tsx`).
 
 ## 5. Follow-up for guaranteed coverage (req 6) — separate, flagged, NOT in this migration
 Until the upstream discovery projection that writes `winning_product_intelligence` candidates stamps the
