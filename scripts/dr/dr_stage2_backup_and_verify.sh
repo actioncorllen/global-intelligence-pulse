@@ -29,7 +29,9 @@ export TMPDIR="$RAM"
 WORK=$(mktemp -d "$RAM/dr-stage2.XXXXXX"); chmod 700 "$WORK"
 trap 'rm -rf "$WORK" 2>/dev/null || true' EXIT
 
-getpass(){ local _e="${!1:-}" _x; if [ -n "$_e" ]; then _x="$_e"; else printf '%s' "$2" >&2; read -rs _x; echo >&2; fi; [ -n "$_x" ] || die "empty passphrase"; printf '%s' "$_x"; }
+getpass(){ local _e="${!1:-}" _x; if [ -n "$_e" ]; then _x="$_e"; else printf '%s' "$2" >&2; read -rs _x; echo >&2; fi
+  _x="${_x%$'\r'}"; _x="${_x%$'\n'}"   # strip a trailing CR/LF a Windows/WSL terminal may append (agent cache masks it; an isolated keyring does not)
+  [ -n "$_x" ] || die "empty passphrase"; printf '%s' "$_x"; }
 
 SET=""
 if [ -n "${DR_STAGE2_SET:-}" ]; then
@@ -104,10 +106,13 @@ decrypt_db_with(){ # $1=fpr $2=pass $3=label
       no "pgrestore-$3" "pg_restore -l failed — local client ($(pg_restore --version 2>/dev/null | grep -oE '[0-9]+' | head -1)) may be older than the Supabase-17 dump; install postgresql-client-17"
       sed 's/^/     pg_restore: /' "$gh/pgr.log" | head -2
     fi
-  elif grep -qiE 'bad passphrase|decryption failed|bad session key' "$gh/dec.log"; then
-    no "decrypt-$3" "$3 PASSPHRASE appears incorrect (gpg reports bad passphrase) — value not shown"
+  elif grep -qi 'Bad passphrase' "$gh/dec.log"; then
+    no "decrypt-$3" "$3 passphrase rejected by gpg: Bad passphrase (isolated keyring, agent-cache-independent) — value not shown"
+    grep -i 'Bad passphrase' "$gh/dec.log" | head -1 | sed 's/^/     gpg: /'
+  elif grep -qi 'No secret key' "$gh/dec.log"; then
+    no "decrypt-$3" "$3 secret key NOT present/usable in the isolated keyring (import/capability issue, NOT a passphrase problem):"; sed 's/^/     gpg: /' "$gh/dec.log" | head -4
   else
-    no "decrypt-$3" "$3 could not decrypt — gpg diagnostics:"; sed 's/^/     gpg: /' "$gh/dec.log" | head -4
+    no "decrypt-$3" "$3 could not decrypt — true gpg diagnostics:"; sed 's/^/     gpg: /' "$gh/dec.log" | head -4
   fi
   rm -rf "$gh"
 }
