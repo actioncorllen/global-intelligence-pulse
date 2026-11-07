@@ -49,6 +49,37 @@ the existing acquisition system and canonical identity contract. Founder-approve
    View Product opens the exact product + market; unresolved never opens another product; country isolation
    and Product Asset Lock intact; no restricted commercial actions.
 
+## 3b. mig_333 review (ownership, tenant isolation, auth, idempotency, mig_332 compatibility)
+- **Ownership enforcement:** canonical branch matches `commerce_products WHERE id=v_ref::uuid AND
+  user_id=auth.uid()`; only the caller's own product resolves, and the INSERT stores that exact `product_id`.
+- **Tenant isolation:** `auth.uid()` throughout; idempotency scoped `WHERE user_id=v_uid`; market via
+  `fn_acquisition_primary_market(v_uid, v_pid)` (tenant-scoped). A non-owned id never matches → never acquired.
+- **Authentication:** `v_uid := auth.uid()`; returns `unauthenticated` when null (verified).
+- **Idempotency:** `WHERE user_id=v_uid AND state<>'DISCARDED' AND product_id=v_pid` → returns `exists`
+  (verified: duplicate add → `exists`, same acquisition_id).
+- **mig_332 compatibility:** mig_333 is a single `CREATE OR REPLACE` of create_product_acquisition; the
+  `product_id`/`market` columns, `fn_acquisition_primary_market`, and `get_own_product_acquisitions` from
+  mig_332 are untouched. The canonical-branch body is identical to mig_332's — only its position moves ahead
+  of the DNA gate; the legacy winning_product_intelligence path is unchanged. Builds cleanly on mig_332.
+
+## 3c. Authenticated test results (controlled fixture on prod; mig_332 applied + temp founder DNA; cleaned up)
+Run under the founder's JWT via set_config('request.jwt.claims'); the canonical-branch code exercised is
+identical to what mig_333 ships. All PASS:
+| Scenario | Result |
+|---|---|
+| Add an owned product | `created` (acquisition 322096b2) ✅ |
+| Reject another tenant's product | `no_winning_intelligence` → not created ✅ |
+| Prevent duplicate | `exists` (same acquisition_id) ✅ |
+| Preserve product ID + selected market | `product_id=5bc29d0a`, `market=DE`; snapshot product_id matches ✅ |
+| Open same product from My Products | get_own returns that exact product_id → View Product opens it (frontend tested) ✅ |
+| Missing identity | `invalid_request` ✅ |
+| Invalid uuid (well-formed, not real) | `no_winning_intelligence` → not created (never opens another product) ✅ |
+| Non-uuid string | `no_winning_intelligence` → not created ✅ |
+| Supplier + Product Asset Lock controls | acquisition created with `supplier_options:[]`, no prepared_package / generated content; create_product_acquisition writes only product_acquisitions; drawer locked actions + ProductCommerceActions unchanged ✅ |
+Fixture fully removed afterwards: product_acquisitions=0, founder DNA=0.
+Note: the owner-WITHOUT-DNA create (mig_333's only new effect — the reorder) is confirmed by code review +
+the post-apply smoke test in §3, since mig_333 is not yet applied.
+
 ## 4. Known non-blocker (optional)
 The app does not mount a `<Toaster/>`, so toast notifications (this button's and all existing ones) do not
 display app-wide. This button does not rely on toasts — it shows inline state ("In My Products", "Adding…",
