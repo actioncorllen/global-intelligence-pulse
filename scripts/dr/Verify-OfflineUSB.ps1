@@ -75,16 +75,18 @@ Write-Host ("  staging visible to WSL at: $w")
 # WSL interop args (optionally pin the distro).
 $pre = @(); if($Distro){ $pre = @('-d', $Distro) }
 
-# Validate WSL can actually see the staging dir, using the EXIT CODE (never stdout).
-& wsl.exe @pre -e bash -lc ("test -d '" + $w + "'")
-if($LASTEXITCODE -ne 0){ Die ("WSL cannot see the staging path $w (distro: $(if($Distro){$Distro}else{'default'})). Check the WSL automount root.") }
-
-# Run the tested verifier in WSL over the C: staging. Bash vars kept literal; $w/$SetTs injected.
-$body = 'S=~/strateloq-dr-validate/scripts/dr/dr_usb_verify.sh; [ -f "$S" ] || S=$(find ~ -maxdepth 6 -type f -path "*scripts/dr/dr_usb_verify.sh" 2>/dev/null | head -1); [ -f "$S" ] || { echo "ABORT: dr_usb_verify.sh not found under your WSL home"; exit 2; }; ( cd "$(dirname "$S")/../.." && git pull --ff-only >/dev/null 2>&1 || true ); DR_VERIFY_ONLY=1 DR_USB=__W__ DR_SET_TS=__TS__ bash "$S"'
-$body = $body.Replace('__W__', ("'" + $w + "'")).Replace('__TS__', ("'" + $SetTs + "'"))
+# Pass config to WSL via the ENVIRONMENT (WSLENV), NOT on the bash command line. This keeps the bash
+# invocation quote-free (no PowerShell->bash quoting to break - the cause of the "unexpected end of
+# file" error) and makes spaces/special characters in the path safe (env values are never word-split).
+$env:DR_VERIFY_ONLY = '1'
+$env:DR_USB         = $w
+$env:DR_SET_TS      = $SetTs
+$base = ''; if($env:WSLENV){ $base = $env:WSLENV + ':' }
+$env:WSLENV = $base + 'DR_VERIFY_ONLY/u:DR_USB/u:DR_SET_TS/u'   # /u = pass Win->WSL verbatim (no path translation)
 
 Write-Host '== run WSL verifier (reads the C: staging via /mnt; decrypts via the existing GPG-agent; one hidden prompt only if the cache is cold) =='
-& wsl.exe @pre -e bash -lc $body
+# Quote-free command: invoke the existing script directly; it reads DR_USB/DR_VERIFY_ONLY/DR_SET_TS from the environment.
+& wsl.exe @pre -e bash -lc 'cd ~/strateloq-dr-validate || exit 9; git pull --ff-only >/dev/null 2>&1; bash scripts/dr/dr_usb_verify.sh'
 $rc = $LASTEXITCODE
 
 Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue   # drop the encrypted staging copy
