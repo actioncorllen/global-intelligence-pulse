@@ -37,7 +37,7 @@ Write-Host ('== stage set to ' + $stage + ' (read-only copy FROM the USB; USB un
 Copy-Item -LiteralPath $set  -Destination $stage -Recurse -Force
 Copy-Item -LiteralPath $keys -Destination $stage -Recurse -Force
 
-$w = (wsl.exe wslpath "$stage").Trim()
+$w = (@(wsl.exe wslpath "$stage")[0]).Trim()   # first line only (robust if wsl returns an array)
 if([string]::IsNullOrWhiteSpace($w)){ Die 'could not map the staging folder into WSL (/mnt/c)' }
 
 # Run the tested verifier in WSL over the C: staging. Bash vars kept literal; $w/$SetTs injected.
