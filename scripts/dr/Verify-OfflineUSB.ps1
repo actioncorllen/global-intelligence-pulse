@@ -15,7 +15,8 @@
 #>
 param(
   [string]$UsbDrive = '',          # optional: force a drive (e.g. 'E:'); empty = auto-detect by content
-  [string]$SetTs    = '20261107T113707Z'
+  [string]$SetTs    = '20261107T113707Z',
+  [string]$Distro   = ''           # optional: target a specific WSL distro (e.g. 'Ubuntu'); empty = default
 )
 $ErrorActionPreference = 'Stop'
 function Die($m){ Write-Host ("OFFLINE USB VERIFICATION: FAIL - " + $m) -ForegroundColor Red; exit 1 }
@@ -64,15 +65,26 @@ Write-Host ('== stage set to ' + $stage + ' (read-only copy FROM the USB; USB un
 Copy-Item -LiteralPath $set  -Destination $stage -Recurse -Force
 Copy-Item -LiteralPath $keys -Destination $stage -Recurse -Force
 
-$w = (@(wsl.exe wslpath "$stage")[0]).Trim()   # first line only (robust if wsl returns an array)
-if([string]::IsNullOrWhiteSpace($w)){ Die 'could not map the staging folder into WSL (/mnt/c)' }
+# Convert the Windows staging path to its WSL /mnt path IN POWERSHELL. Do NOT parse wsl.exe stdout
+# (its encoding under PowerShell can yield a null/garbled value - the cause of the .Trim() error).
+if($stage -notmatch '^[A-Za-z]:\\'){ Die ("staging path is not a drive-letter path: $stage") }
+$w = '/mnt/' + $stage.Substring(0,1).ToLower() + ($stage.Substring(2) -replace '\\','/')
+if([string]::IsNullOrWhiteSpace($w)){ Die 'could not derive the WSL path for the staging folder' }
+Write-Host ("  staging visible to WSL at: $w")
+
+# WSL interop args (optionally pin the distro).
+$pre = @(); if($Distro){ $pre = @('-d', $Distro) }
+
+# Validate WSL can actually see the staging dir, using the EXIT CODE (never stdout).
+& wsl.exe @pre -e bash -lc ("test -d '" + $w + "'")
+if($LASTEXITCODE -ne 0){ Die ("WSL cannot see the staging path $w (distro: $(if($Distro){$Distro}else{'default'})). Check the WSL automount root.") }
 
 # Run the tested verifier in WSL over the C: staging. Bash vars kept literal; $w/$SetTs injected.
 $body = 'S=~/strateloq-dr-validate/scripts/dr/dr_usb_verify.sh; [ -f "$S" ] || S=$(find ~ -maxdepth 6 -type f -path "*scripts/dr/dr_usb_verify.sh" 2>/dev/null | head -1); [ -f "$S" ] || { echo "ABORT: dr_usb_verify.sh not found under your WSL home"; exit 2; }; ( cd "$(dirname "$S")/../.." && git pull --ff-only >/dev/null 2>&1 || true ); DR_VERIFY_ONLY=1 DR_USB=__W__ DR_SET_TS=__TS__ bash "$S"'
 $body = $body.Replace('__W__', ("'" + $w + "'")).Replace('__TS__', ("'" + $SetTs + "'"))
 
-Write-Host '== run WSL verifier (reads /mnt/c staging; decrypts via the existing GPG-agent; one hidden prompt only if the cache is cold) =='
-& wsl.exe -e bash -lc $body
+Write-Host '== run WSL verifier (reads the C: staging via /mnt; decrypts via the existing GPG-agent; one hidden prompt only if the cache is cold) =='
+& wsl.exe @pre -e bash -lc $body
 $rc = $LASTEXITCODE
 
 Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue   # drop the encrypted staging copy
