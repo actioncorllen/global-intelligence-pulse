@@ -90,29 +90,39 @@ PY
 n8n_verify(){ python3 - "$1" "$2" <<'PY'
 import sys,sqlite3,json,glob,os
 db,jd=sys.argv[1],sys.argv[2]
-src={}; srcn=0; srcactive=0
+# Key by WORKFLOW ID, not name: n8n workflow names are NOT unique, and import:workflow preserves ids.
+# (Name-keying collapses duplicate-named workflows and yields a spurious single mismatch.)
+src={}; srcn=0; srcactive=0; src_names={}
 for f in glob.glob(os.path.join(jd,'**','*.json'),recursive=True):
     try: w=json.load(open(f))
     except Exception: continue
     srcn+=1
     if w.get('active'): srcactive+=1
-    src[str(w.get('name','?'))]=(len(w.get('nodes') or []), len((w.get('connections') or {}).keys()))
+    wid=str(w.get('id') or os.path.basename(f))
+    src[wid]=(len(w.get('nodes') or []), len((w.get('connections') or {}).keys()))
+    src_names[wid]=str(w.get('name','?'))
 try:
     con=sqlite3.connect("file:%s?mode=ro"%db, uri=True); cur=con.cursor()
     integ=cur.execute("PRAGMA integrity_check").fetchone()[0]
     cnt=cur.execute("select count(*) from workflow_entity").fetchone()[0]
     act=cur.execute("select count(*) from workflow_entity where active in (1,'1')").fetchone()[0]
     rows={}
-    for name,nodes,conns in cur.execute("select name,nodes,connections from workflow_entity"):
+    for wid,name,nodes,conns in cur.execute("select id,name,nodes,connections from workflow_entity"):
         try: nn=len(json.loads(nodes) or [])
         except Exception: nn=-1
         try: cc=len((json.loads(conns) or {}).keys()) if conns else 0
         except Exception: cc=-1
-        rows[str(name)]=(nn,cc)
+        rows[str(wid)]=(nn,cc)
 except Exception as e:
     print("SRCN=%d ERR=%s"%(srcn,str(e).replace(' ','_'))); sys.exit(0)
-diff=sum(1 for n in (set(rows)|set(src)) if rows.get(n)!=src.get(n))
-print("SRCN=%d SRCACTIVE=%d INTEGRITY=%s COUNT=%s ACTIVE=%s MATCH=%d DIFF=%d"%(srcn,srcactive,integ,cnt,act,1 if diff==0 else 0,diff))
+missing=[i for i in src if i not in rows]      # in archive, absent from recovery DB -> data loss
+extra=[i for i in rows if i not in src]        # in recovery DB, absent from archive
+fdiff=[i for i in src if i in rows and src[i]!=rows[i]]  # same id, different (nodes,connections)
+match=1 if not missing and not extra and not fdiff else 0
+print("SRCN=%d SRCACTIVE=%d INTEGRITY=%s COUNT=%s ACTIVE=%s MATCH=%d MISSING=%d EXTRA=%d FDIFF=%d"%(srcn,srcactive,integ,cnt,act,match,len(missing),len(extra),len(fdiff)))
+for i in missing[:6]: print("DETAIL MISSING id=%s name=%s src_nodes_conns=%s"%(i,src_names.get(i,'?'),src[i]))
+for i in extra[:6]:   print("DETAIL EXTRA id=%s"%i)
+for i in fdiff[:6]:   print("DETAIL DIFF id=%s name=%s src(nodes,conns)=%s db=%s"%(i,src_names.get(i,'?'),src[i],rows[i]))
 PY
 }
 
@@ -250,12 +260,15 @@ t1(){
     docker cp "$N8N_CONTAINER_DEFAULT:/home/node/.n8n/database.sqlite" "$WORK/n8n.sqlite" >/dev/null 2>&1; dbfile="$WORK/n8n.sqlite"
   fi
   [ -f "$dbfile" ] || { fail "could not obtain an n8n database to verify"; return; }
-  local R; R="$(n8n_verify "$dbfile" "$jdir")"; info "n8n verify: $R"
-  eval "$(printf '%s\n' "$R" | tr ' ' '\n' | sed 's/^/LOC_/' | sed 's/=/="/; s/$/"/')" 2>/dev/null
+  local R SUM; R="$(n8n_verify "$dbfile" "$jdir")"; SUM="$(printf '%s\n' "$R"|grep '^SRCN='|head -1)"
+  info "n8n verify (keyed by workflow id): $SUM"
+  printf '%s\n' "$R" | grep '^DETAIL ' | while IFS= read -r _d; do info "${_d#DETAIL }"; done
+  eval "$(printf '%s\n' "$SUM" | tr ' ' '\n' | sed 's/^/LOC_/' | sed 's/=/="/; s/$/"/')" 2>/dev/null
   [ "${LOC_INTEGRITY:-}" = "ok" ] && pass "n8n recovery DB integrity_check = ok" || fail "n8n DB integrity: ${LOC_INTEGRITY:-?}"
   [ "${LOC_COUNT:-}" = 136 ] && pass "all 136 workflows present in the recovery n8n DB" || fail "recovery n8n workflow rows = ${LOC_COUNT:-?} (expected 136)"
   [ "${LOC_ACTIVE:-x}" = 0 ] && pass "every recovered workflow is INACTIVE (0 active)" || fail "active workflows in recovery DB = ${LOC_ACTIVE:-?} (expected 0)"
-  [ "${LOC_MATCH:-0}" = 1 ] && pass "names + node counts + connection counts match the source archive for all workflows" || fail "names/nodes/connections differ on ${LOC_DIFF:-?} workflow(s) vs source"
+  if [ "${LOC_MATCH:-0}" = 1 ]; then pass "names + node counts + connection counts match the source archive for all 136 workflows (keyed by workflow id)"
+  else fail "n8n structure differs vs source archive — missing=${LOC_MISSING:-?} (data loss), extra=${LOC_EXTRA:-?}, field-diff=${LOC_FDIFF:-?} (import transformation to review); see DETAIL lines above for the exact workflow id(s)"; fi
   [ -n "$N8N_STARTED" ] && { docker rm -f "$N8N_STARTED" >/dev/null 2>&1; N8N_STARTED=""; info "throwaway n8n removed (127.0.0.1 only; no credentials; nothing activated)"; }
 }
 if begin n8n "$(find_one 'strateloq-n8n-*.tar.gpg')"; then t1; finish; fi
@@ -281,8 +294,15 @@ t2(){
     [ "$up" = "$nfiles" ] && pass "uploaded all $up object(s) into a PRIVATE local bucket" || fail "uploaded $up of $nfiles objects"
     if [ -n "$one" ]; then local code; code="$(curl -s -o /dev/null -w '%{http_code}' "$SB_API/storage/v1/object/public/$bucket/$one")"
       case "$code" in 200) fail "PRIVATE object publicly readable (HTTP 200) — access control FAILED";; *) pass "anonymous public GET denied (HTTP $code) — private stays private";; esac
-      local signed; signed="$(curl -s -X POST "$SB_API/storage/v1/object/sign/$bucket/$one" -H "Authorization: Bearer $SB_SR" -d '{"expiresIn":60}'|jget signedURL signedUrl)"
-      [ -n "$signed" ] && { local sc; sc="$(curl -s -o /dev/null -w '%{http_code}' "$SB_API${signed}")"; [ "$sc" = 200 ] && pass "authorised retrieval via signed URL works (HTTP 200)" || fail "signed-URL retrieval HTTP $sc"; } || fail "could not mint a signed URL"
+      # Sign: the storage API needs Content-Type: application/json to parse expiresIn (missing header
+      # was the mint failure). The returned signedURL is relative to /storage/v1, so prefix it correctly.
+      local resp signed; resp="$(curl -s -X POST "$SB_API/storage/v1/object/sign/$bucket/$one" -H "Authorization: Bearer $SB_SR" -H "Content-Type: application/json" -d '{"expiresIn":60}')"
+      signed="$(printf '%s' "$resp" | jget signedURL signedUrl)"
+      if [ -n "$signed" ]; then
+        local surl; case "$signed" in http*) surl="$signed";; /storage/v1/*) surl="$SB_API$signed";; /*) surl="$SB_API/storage/v1$signed";; *) surl="$SB_API/storage/v1/$signed";; esac
+        local sc; sc="$(curl -s -o /dev/null -w '%{http_code}' "$surl")"
+        [ "$sc" = 200 ] && pass "signed URL generated AND authorised retrieval works (HTTP 200)" || fail "signed URL minted but retrieval HTTP $sc"
+      else fail "could not mint a signed URL (API response: $(printf '%s' "$resp"|head -c 160))"; fi
     fi
     restore_dump_local && { local meta; meta="$(sbsql 'select count(*) from storage.objects')"; info "restored storage.objects metadata rows: ${meta:-?} (object paths map to these tenant/records)"; }
   else skip "local Supabase stack unavailable — bucket upload + access-control not run (decrypt, count, checksums done)"; fi
