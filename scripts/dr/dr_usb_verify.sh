@@ -60,9 +60,15 @@ ensure_unlocked(){ [ "$UNLOCKED" = 1 ] && return 0
   if any_cached; then USE_AGENT=1; UNLOCKED=1; info "unlock: PRIMARY already cached in the local gpg-agent (no prompt)"; return 0; fi
   printf '%s\n' "allow-loopback-pinentry" "allow-preset-passphrase" "default-cache-ttl 3600" "max-cache-ttl 7200" > "$GH/gpg-agent.conf"
   GNUPGHOME="$GH" gpg-connect-agent reloadagent /bye >/dev/null 2>&1
-  [ -r /dev/tty ] || { info "agent cache empty and no terminal — cannot decrypt without a prompt"; return 1; }
-  printf 'PRIMARY backup-key passphrase (hidden, asked once): ' >&2; IFS= read -rs PP < /dev/tty; echo >&2
-  PP="${PP%$'\r'}"; PP="${PP%$'\n'}"; [ -n "$PP" ] || { info "empty passphrase"; return 1; }
+  # Read the passphrase hidden. Under PowerShell->`wsl.exe -e bash -lc` the console is on stdin (fd 0),
+  # NOT /dev/tty, so prefer fd 0 when it is a TTY; fall back to /dev/tty; honour DR_GPG_PASSPHRASE for
+  # automation. Never echoed; CR (added by the Windows console) is stripped.
+  PP=""
+  if [ -n "${DR_GPG_PASSPHRASE:-}" ]; then PP="$DR_GPG_PASSPHRASE"
+  elif [ -t 0 ]; then printf 'PRIMARY backup-key passphrase (hidden, asked once): ' >&2; IFS= read -rs PP; echo >&2
+  elif { : < /dev/tty; } 2>/dev/null; then printf 'PRIMARY backup-key passphrase (hidden, asked once): ' > /dev/tty; IFS= read -rs PP < /dev/tty; printf '\n' > /dev/tty
+  else info "agent cache empty and no interactive terminal — run from an interactive WSL shell, or pass DR_GPG_PASSPHRASE"; return 1; fi
+  PP="${PP%$'\r'}"; PP="${PP%$'\n'}"; [ -n "$PP" ] || { info "empty passphrase entered"; return 1; }
   local pb; pb="$(preset_bin)"
   if [ -n "$pb" ]; then local g ok=1; for g in $(grips); do printf '%s' "$PP"|GNUPGHOME="$GH" "$pb" --preset "$g" >/dev/null 2>&1 || ok=0; done
     { [ "$ok" = 1 ] && any_cached; } && { USE_AGENT=1; unset PP; info "unlock: PRIMARY cached in the local gpg-agent (bounded TTL)"; } || USE_AGENT=0
