@@ -339,6 +339,39 @@ changed files (8 pre-existing-style warnings), preview build OK. Production rema
 called). Rollback for frontend = re-publish `9da86c94`; rollback for backend = restore prior `fn_monday_top_opportunities`
 and drop `fn_opportunity_tier` + `fn_evidence_window_fresh`.
 
+## 6d. PRODUCTION DEPLOYMENT (executed 2026-11-07, founder-approved controlled sequence)
+
+Backend `mig_334` APPLIED to prod `nxaunmyihhjixxxljcqt`; frontend `d6452bd` PUBLISHED.
+
+1. **DB health / schema / rollback** — DB `ACTIVE_HEALTHY` (PG 17.6.1.127); mig_334 references only existing objects;
+   rollback artifact `mig_334_ROLLBACK.sql` captured (prior v2 `fn_monday_top_opportunities` + drop the 2 helpers). ✅
+2. **Applied mig_334** (`apply_migration` → success). A runtime bug was caught on first live call
+   (`reasons := reasons || 'literal'` is mis-resolved by plpgsql as array‖array → "malformed array literal");
+   fixed to `array_append` and re-applied (`apply_migration` → success). Repo migration file matches the deployed body. ✅
+3. **Authenticated tier classification + isolation** (jwt claims):
+   - Authenticated as founder → `tier_counts {PLATINUM:0, GOLD:0, PREMIUM:2, UNTIERED:6}`, `ready_to_test_platinum_count=0`,
+     contract `pulse_monday_top_opportunities_v3_tiers`. ✅
+   - **Tenant isolation:** unauthenticated → `status=unauthenticated` (no data); a different authenticated uid → all
+     counts 0 (no founder data leaked). ✅
+   - **Country isolation** (deployed `fn_opportunity_tier`): *cool mist humidifier* → GB (score 100, band EXCEPTIONAL,
+     evidence NONE) = **UNTIERED**, NL/BE/IT (MEDIUM) = **PREMIUM**. Same product, tier differs by country; a top score
+     never promotes without corroborated evidence. ✅
+4. **Eight recommendations** → **2 PREMIUM** (More Adventskalender DE, ESN DE), **6 UNTIERED**, **0 GOLD, 0 PLATINUM**,
+   0 TEST — matches the reviewed package exactly. ✅
+5. **Ready to Test = PLATINUM + TEST** → server-enforced (`ready_to_test_platinum` filters `decision='TEST' AND tier='PLATINUM'`);
+   currently empty (0). ✅
+6. **Frontend published** — `deploy_project` → deployment `3e9f188a-1ec2-4d06-bc29-79e160ee33b8`; `is_published=true`,
+   published source `latest_commit_sha = d6452bd`. ✅
+7. **Regression / safety** — security advisors: 6 total, **none** reference the 3 deployed functions (all pre-existing;
+   the new helpers are IMMUTABLE/STABLE with `search_path=''`, no SECURITY DEFINER; `fn_monday_top_opportunities` keeps
+   its prior SECURITY DEFINER posture). Existing contract keys (`ready_to_test`, `watchlist`, counts, `total_opportunities`)
+   preserved; decision engine (`fn_pod_evaluate`, `fn_opportunity_band`, TEST/WATCH/AVOID) untouched; no data mutated. ✅
+8. **Rollback available** — backend: run `supabase/migrations/mig_334_ROLLBACK.sql`; frontend: re-publish `9da86c94`.
+9. **Remaining:** LIVE signed-in browser acceptance on device (container egress 403 + auth-gated): confirm the tier
+   legend wording + decision-vs-score line render, the "Ready to Test — Platinum Opportunities" honest empty state shows,
+   the two PREMIUM cards carry the PREMIUM badge, the country filter switches market-specific evidence, and View Product
+   opens the exact product. No paid provider calls, advertising, billing or signup were touched.
+
 ## 7. Guardrails honored
 No new paid provider calls; Product Asset Lock, exact-SKU identity, country isolation, tenant RLS preserved; research
 cost controls and commercial permissions untouched; nothing applied to prod and nothing published without founder
