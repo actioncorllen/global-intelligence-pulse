@@ -307,6 +307,78 @@ No change to the route, `OpportunityRecommendationsView`, `opportunity-recommend
 the locked view-only actions; no other nav label changed; no route/backend/billing/research/signup change.
 **Checks:** 466 tests pass (70 files), typecheck + lint clean, preview builds. **NOT published** — awaiting
 founder approval to re-publish (which will also refresh the live deploy).
-- 03.08 Integrate Opportunity Intelligence recommendations (country-specific evidence, honest UNKNOWN).
-- 03.09 Verify notifications and progress indicators — Notifications has **no backend contract** (likely PARTIAL/BLOCKED pending a backend unit).
-- 03.10 Complete responsive desktop/mobile acceptance.
+
+---
+
+## 03.08 live acceptance corrections — Recommendations page (preview `f0f44bdf`; publish pending approval)
+**Reported (founder acceptance, 4 confirmed problems on https://strateloq.com/workspace/recommendations):**
+1. Product names not consistently in English.
+2. Recommended products have no visible images.
+3. Cards unattractive / text-heavy / poorly organised.
+4. **CRITICAL:** clicking "View Product" did not open the selected product — it returned the customer to the
+   general Product Discovery pool (a product-navigation / identity-continuity defect).
+
+**Root causes (diagnosed, read-only, in the published build):**
+1. The card rendered `rec.product` — the raw source-language title — verbatim; no translation applied.
+2. The card showed only a text note ("Product image available — view it in Products."); it never fetched the
+   real media. It also relied on the feed's own `image` flag rather than the authoritative media source.
+3. `RecommendationCard` was a flat text block: raw metrics, the raw `why` string (with backend codes like
+   `SUPPLIER_STOCK_UNKNOWN`), and no image/visual hierarchy.
+4. The `ProductsLink` CTA was `<Link to="/workspace" search={{ view: "opportunities" }}>` — i.e. it routed to
+   the **general Products Explorer pool**, never to the selected product. There was no mechanism on the
+   recommendations surface to open a specific product; the Explorer's detail panel (`ExplorerDrawer`) was an
+   internal, non-exported component opened only by Explorer card state.
+
+**Fix (Lovable preview `f0f44bdf` — corrections only, reuse-only, NO new backend, NO duplicate detail screen,
+NO second identity system):**
+- **View Product opens the EXACT product (P0).** `ExplorerDrawer` exported from `product-explorer.tsx`
+  (export-only; no behaviour change) and reused on the recommendations page. The route
+  `workspace_.recommendations.tsx` gains `validateSearch` accepting optional `?product=<canonical product_id>`;
+  "View Product" calls `navigate({ to: "/workspace/recommendations", search: { product: productId } })`.
+  The view resolves the product by **exact canonical id only** —
+  `list.find(r => r.productId !== null && r.productId === productId)` — never by title, fuzzy match, card
+  position or array index. The drawer is opened for that product's canonical `product_id` + its own
+  `best_market` (via `recommendationToExplorerItem`). Closing returns to the list; refresh and browser
+  back/forward are URL-driven and preserved. An id **absent from the member's feed** shows an inline
+  `"This recommended product is no longer available."` notice and clears the param — it **never** navigates to
+  the pool or opens a different product. **Zero** `view:"opportunities"` navigations remain in the recs view.
+- **Images restored safely.** Each card uses `useProductMedia(rec.productId, rec.bestMarket)` +
+  `cardImageUrl(...)` — the **same authoritative source the Products page uses** (`fn_product_media_state`),
+  not the feed's `image` flag. No media → clean "Image unavailable" placeholder. No paid calls, no fabricated
+  images; Product Asset Lock preserved (display only).
+- **English presentation via existing translation.** `useRecTranslations` →
+  `useTextTranslations(contentLang, itemTranslatableTexts({title, category}), marketSourceLang(bestMarket))`
+  + `resolveDisplayText`; each card translates from **its own country's source language**. The original title
+  shows beneath with a globe icon; no translation → original shown as-is.
+- **Reason codes humanised for display only (raw values preserved).** New display helpers in
+  `opportunity-recommendations-api.ts`: `humanizeReasonText`, `humanizeReasonCode`, `displayHumanScalar`.
+  Exact mappings: `SUPPLIER_STOCK_UNKNOWN` → "Supplier stock has not been verified.";
+  `ECONOMICS_UNKNOWN` → "Profitability cannot yet be confirmed.";
+  `LOCAL_UNVALIDATED` → "No verified local market price is available." Other `*_UNKNOWN/_UNVALIDATED` → neutral
+  "… not yet verified." The **decoded `Recommendation` keeps raw values untouched**; only display text changes.
+- **Premium responsive card.** Grid 1/2/3 cols (mobile/tablet/desktop), equal heights: image, title, country,
+  TEST/WATCH/AVOID badge, short explanation, only the metrics the server actually returned, supplier match line
+  (when present), the "View Product" button and a "View only — launch actions are locked" note.
+
+**Scope preserved:** reads **only** `get_own_opportunity_recommendations` (tenant derived server-side via
+`auth.uid()`, never passed from the browser — mig_329/330 contract); locked view-only actions kept
+(`concreteProductActionsAllowed={false}` inside the reused drawer); country isolation per `best_market`; Product
+Asset Lock. **Guard-scan of the diff (added lines) = 0** occurrences of `create or replace function`,
+`service_role`, `functions.invoke`, `fn_monday_top_opportunities`, `fn_run_monday_product_opportunity`, or any
+new `.rpc(`. 7 files changed: the recs view + its test, the recs api, the route, the Explorer export, AGENTS.md,
+roadmap.md. No route/RPC/edge/workflow added; no billing/research/ads/signup touched.
+
+**Mandatory testing (Lovable agent, reported):**
+- **Tests:** 475 pass across 70 files (`bunx vitest run`), including the **regression test** that asserts
+  "View Product sets `?product=<that id>` and opens the drawer for that EXACT product" and that
+  "a `?product` absent from the feed shows an inline error and clears the param — **no pool navigation**".
+- **Typecheck:** `bunx tsgo --noEmit` clean.
+- **Lint:** 0 errors in changed files (4 pre-existing prettier-only warnings in `product-explorer.tsx` on
+  lines untouched by the export-only change).
+- **Build:** preview auto-build "build OK" after the final type fix.
+- **Not verifiable from this container:** signed-in live pixels (no auth-gated backend reachable from here) —
+  the founder's device acceptance.
+
+**NOT published** — preview only; awaiting founder approval to re-publish (which will refresh the live deploy
+from the current preview source). 03.08 / 03.10 / overall Phase 03 remain **NOT marked PASS** until founder live
+acceptance of the four corrected behaviours on the production site.
