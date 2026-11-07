@@ -47,6 +47,20 @@ Branch `claude/nifty-bardeen-f9nddu`. Preview HEAD commit `9da86c9` (built on `a
 - Not verifiable from the container (egress 403 + auth-gated): live signed-in appearance — founder device
   acceptance.
 
+## PRODUCTION PUBLICATION (executed 2026-11-07, founder-approved)
+1. Preview confirmed still at `9da86c94` (matches approval). ✅
+2. No newer/unverified build had replaced it (agentFinished=true, last_edited 12:42:52). ✅
+3. Rollback target preserved: prior production `01bf4f5a` (deploy `ce4bb212`). ✅
+4–5. Published: `deploy_project` → deployment `80dcdb7d-f691-4bde-9aa9-330bf4c877b9`, target strateloq.com;
+   `is_published=true`, published source `latest_commit_sha = 9da86c94`, status `ready`. ✅
+6–8. Nav = Products → Recommendations → My Store → My Campaigns; My Products + Add to My Products absent from
+   nav, drawer and hub; hub shows 5 cards incl. My Store — asserted by the test suite (nav + hub tests).
+   LIVE signed-in confirmation = founder device acceptance (container egress 403 + auth-gated).
+9–11. Add to My Store workflow + safeguards unchanged; Product Discovery, Recommendations, canonical identity,
+   country isolation, supplier SKU correspondence, Product Asset Lock, tenant security preserved; mig_332,
+   mig_333 and backend acquisition contracts NOT modified or rolled back. ✅
+12. Regression: 489 tests pass, typecheck + lint clean, build OK; guard-scan of both diffs = no backend. ✅
+
 ## Status
 - **Current production** still runs `01bf4f5a` (deploy `ce4bb212`), which still shows My Products + the Add
   button, until this consolidation is approved and published.
