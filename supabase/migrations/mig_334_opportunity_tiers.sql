@@ -113,18 +113,19 @@ BEGIN
   demand_qualified      := (corroborated AND v_sourced AND v_fresh);
 
   -- Record the reasons any Platinum condition fails (used for card explanation + downgrade transparency).
-  IF NOT all_gates_pass        THEN reasons := reasons || 'not_all_gates_pass'; END IF;
-  IF NOT no_critical_blocker   THEN reasons := reasons || 'open_blockers'; END IF;
-  IF NOT supplier_exact        THEN reasons := reasons || 'supplier_not_exact'; END IF;
-  IF NOT stock_known           THEN reasons := reasons || 'stock_or_shipping_unconfirmed'; END IF;
-  IF NOT econ_credible         THEN reasons := reasons || 'landed_cost_or_margin_unknown'; END IF;
-  IF NOT price_local_validated THEN reasons := reasons || 'local_price_unvalidated'; END IF;
-  IF NOT saturation_ok         THEN reasons := reasons || 'saturation_unsuitable_or_unknown'; END IF;
-  IF NOT conf_high             THEN reasons := reasons || 'evidence_confidence_below_high'; END IF;
+  -- NOTE: use array_append (not `||` with a bare literal, which plpgsql mis-resolves as array||array).
+  IF NOT all_gates_pass        THEN reasons := array_append(reasons,'not_all_gates_pass'); END IF;
+  IF NOT no_critical_blocker   THEN reasons := array_append(reasons,'open_blockers'); END IF;
+  IF NOT supplier_exact        THEN reasons := array_append(reasons,'supplier_not_exact'); END IF;
+  IF NOT stock_known           THEN reasons := array_append(reasons,'stock_or_shipping_unconfirmed'); END IF;
+  IF NOT econ_credible         THEN reasons := array_append(reasons,'landed_cost_or_margin_unknown'); END IF;
+  IF NOT price_local_validated THEN reasons := array_append(reasons,'local_price_unvalidated'); END IF;
+  IF NOT saturation_ok         THEN reasons := array_append(reasons,'saturation_unsuitable_or_unknown'); END IF;
+  IF NOT conf_high             THEN reasons := array_append(reasons,'evidence_confidence_below_high'); END IF;
   -- PREMIUM-floor transparency: why a demand signal is not yet qualified.
-  IF NOT corroborated          THEN reasons := reasons || 'demand_not_corroborated'; END IF;
-  IF NOT v_sourced             THEN reasons := reasons || 'no_sourced_demand_evidence'; END IF;
-  IF NOT v_fresh               THEN reasons := reasons || 'evidence_provenance_stale_or_absent'; END IF;
+  IF NOT corroborated          THEN reasons := array_append(reasons,'demand_not_corroborated'); END IF;
+  IF NOT v_sourced             THEN reasons := array_append(reasons,'no_sourced_demand_evidence'); END IF;
+  IF NOT v_fresh               THEN reasons := array_append(reasons,'evidence_provenance_stale_or_absent'); END IF;
 
   IF all_gates_pass AND no_critical_blocker AND supplier_exact AND stock_known AND econ_credible
      AND price_local_validated AND saturation_ok AND conf_high AND prodconf_ok AND v_fresh AND v_sourced THEN
