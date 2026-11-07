@@ -111,9 +111,10 @@ BEGIN
   enriched AS (
     SELECT t.*,
       (t.tier_obj->>'tier') AS tier,
-      (t.asset IS NOT NULL OR t.market_ref_img IS NOT NULL) AS has_authentic_image,
-      ((t.tier_obj->>'tier') IN ('PREMIUM','GOLD','PLATINUM')
-        AND (t.asset IS NOT NULL OR t.market_ref_img IS NOT NULL)) AS showcase_eligible
+      -- "authentic usable image" = a RIGHTS-CLEARED supplier/authoritative image (product_asset_intelligence hero).
+      -- Marketplace (eBay) images are NOT rights-cleared for display, so they never count here (link-only reference).
+      (t.asset IS NOT NULL) AS has_authentic_image,
+      ((t.tier_obj->>'tier') IN ('PREMIUM','GOLD','PLATINUM') AND t.asset IS NOT NULL) AS showcase_eligible
     FROM tiered t
   ),
   cards AS (
@@ -122,8 +123,9 @@ BEGIN
       'best_market', country_code, 'decision', decision, 'lifecycle', lifecycle_state,
       'tier', tier, 'tier_reasons', coalesce(tier_obj->'reasons','[]'::jsonb),
       'showcase_eligible', showcase_eligible,
-      'has_authentic_image', has_authentic_image, 'authentic_image_count',
-        (CASE WHEN asset IS NOT NULL THEN 1 ELSE 0 END) + coalesce(market_img_count,0),
+      'has_authentic_image', has_authentic_image,
+      'authentic_image_count', (CASE WHEN asset IS NOT NULL THEN 1 ELSE 0 END),
+      'marketplace_reference_count', coalesce(market_img_count,0),
       'product_confidence', product_confidence, 'product_opportunity_score', product_opportunity_score,
       'evidence_confidence', overall_evidence_confidence,
       -- A product never reads "fresh" unless its demand is CORROBORATED (confidence>=MEDIUM) AND sourced — so a
@@ -139,6 +141,9 @@ BEGIN
       'roi_basis', jsonb_build_object(
         'measured_roi','none','basis','No measured ROI yet — tier reflects evidence quality & commercial-readiness, not profit',
         'observed_sales', false, 'economics_estimated', econ_known),
+      -- Image display is rights-gated. Supplier-authoritative (rights-cleared) images display. Marketplace (eBay)
+      -- images have NO established display rights -> we never copy/display them; we expose a source reference LINK
+      -- only (the listing URL), so the member can open the original. Nothing here is launch-safe or unlocks PAL.
       'image', CASE
         WHEN asset IS NOT NULL THEN jsonb_build_object(
                    'available',true,'url',asset->>'source_url','identity_state',asset->>'identity_state',
@@ -147,12 +152,15 @@ BEGIN
                    'note', CASE WHEN (asset->>'hero_eligible')::boolean THEN 'exact-product supplier image'
                            ELSE 'comparable supplier image ('||(asset->>'identity_state')||') — NOT the exact candidate; shown as reference' END)
         WHEN market_ref_img IS NOT NULL THEN jsonb_build_object(
-                   'available',true,'url',market_ref_img->>'url','identity_state','MARKETPLACE_MATCHED',
+                   'available',false,
+                   'reference_available',true,
+                   'reference_url',market_ref_img->>'source_url',
+                   'source',market_ref_img->>'source',
                    'rights_state',coalesce(market_ref_img->>'rights_state','MARKETPLACE_PUBLIC_LISTING'),
-                   'hero_eligible',false,'reference',true,'source',market_ref_img->>'source',
-                   'source_url',market_ref_img->>'source_url','asset_type','IMAGE',
-                   'note','Reference — marketplace listing, not supplier-authorised (research only; not for publishing)')
-        ELSE jsonb_build_object('available',false,'reason','IMAGE_UNAVAILABLE — no supplier-authorised or matched marketplace image resolved') END,
+                   'display_rights','NOT_ESTABLISHED',
+                   'reason','IMAGE_NOT_RIGHTS_CLEARED — marketplace listing; shown as source reference link only, image not copied',
+                   'note','Reference — marketplace listing (display rights not established); source link only, not supplier-authorised, not for publishing')
+        ELSE jsonb_build_object('available',false,'reason','IMAGE_UNAVAILABLE — no supplier-authorised image resolved') END,
       'commercial_assets', public.fn_product_commercial_readiness_badge(product_id, country_code),
       'why', (CASE WHEN corroborated_sourced
                    THEN 'Real demand'||CASE WHEN metric_scope='LOCAL' THEN ' + validated local price' ELSE '' END
@@ -193,9 +201,9 @@ BEGIN
     'tier_policy', jsonb_build_object(
       'tiers', jsonb_build_array('PREMIUM','GOLD','PLATINUM'),
       'ready_to_test_platinum_rule','tier=PLATINUM AND decision=TEST',
-      'showcase_rule','tier IN (PREMIUM,GOLD,PLATINUM) AND has_authentic_image; weak/untiered stay in research, not deleted',
+      'showcase_rule','tier IN (PREMIUM,GOLD,PLATINUM) AND has_authentic_image (RIGHTS-CLEARED supplier image); weak/untiered OR image-less stay in research, not deleted',
       'premium_floor','corroborated demand (overall_evidence_confidence>=MEDIUM) AND named source provenance AND sufficient freshness; a high score or opportunity_band alone never earns a tier; evidence_confidence=NONE or no sourced demand => UNTIERED',
-      'image_policy','supplier-authoritative hero preferred; else MATCHED marketplace image shown as REFERENCE (research only, never launch-safe, never unlocks Product Asset Lock); no fabrication/substitution',
+      'image_policy','display only RIGHTS-CLEARED supplier-authoritative images; marketplace (eBay) images have no established display rights so they are NEVER copied/displayed — only a source reference link is exposed; no fabrication/substitution; nothing here is launch-safe or unlocks Product Asset Lock',
       'note','tier is derived from existing evidence contracts; orthogonal to the gate-gated TEST/WATCH/AVOID decision (opportunity_band is a pure score bucket); never re-scores or promotes to fill a section'),
     'campaign_activation', false, 'advertising_spend', 0,
     'note','READY_TO_TEST are launch-eligible only after downstream gates; WATCHLIST are emerging, not launch-ready; WINNER is post-performance only. tier reflects evidence quality & commercial-readiness, not a profit guarantee; measured ROI only with real attributable outcome data; "Real demand" is shown only when corroborated+sourced; reference marketplace images are research-only and never unlock publishing. Legacy research-concept products excluded.',
