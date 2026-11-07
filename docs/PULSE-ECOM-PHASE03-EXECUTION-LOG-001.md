@@ -288,6 +288,25 @@ are the founder's to confirm.
 ### Optional follow-up (not blocking)
 Wire real server-side generators to `fn_emit_notification` so the notifications feed carries live events;
 until then it shows the honest "You're all caught up" empty state.
+
+---
+
+## 03.08 live findability fix — "Recommendations" nav label (preview; publish pending approval)
+**Reported:** founder on production could not find the Recommendations button.
+**Root cause (not a missing route/registration):** the published build `ae2d91b8` DID contain the route
+`/workspace/recommendations` (accessible; account resolves `category=ecommerce`; feed returns 8 opportunities)
+and DID register the nav item in both desktop + mobile — but the item was **labeled "Opportunities"**, sitting
+right after the relabeled "Products". The founder was searching for "Recommendations" and the hub card CTA
+said "View opportunities", so the feature was present but unfindable by name.
+**Fix (Lovable preview `8ce03891`, label-only — reuses the existing page/route/backend):**
+- `app-sidebar.tsx` + `mobile-nav.tsx`: `recommendationsItem.label` "Opportunities" → "Recommendations".
+- `GoldenStandardHub` Opportunity Intelligence card CTA "View opportunities" → "View recommendations".
+- Nav tests updated to the new labels.
+No change to the route, `OpportunityRecommendationsView`, `opportunity-recommendations-api.ts`,
+`get_own_opportunity_recommendations`, the Target icon, the `isEcommerce` visibility, country isolation, or
+the locked view-only actions; no other nav label changed; no route/backend/billing/research/signup change.
+**Checks:** 466 tests pass (70 files), typecheck + lint clean, preview builds. **NOT published** — awaiting
+founder approval to re-publish (which will also refresh the live deploy).
 - 03.08 Integrate Opportunity Intelligence recommendations (country-specific evidence, honest UNKNOWN).
 - 03.09 Verify notifications and progress indicators — Notifications has **no backend contract** (likely PARTIAL/BLOCKED pending a backend unit).
 - 03.10 Complete responsive desktop/mobile acceptance.
