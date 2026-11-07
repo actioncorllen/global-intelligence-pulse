@@ -14,21 +14,48 @@
   Run it with the one command the assistant provided, or:  powershell -ExecutionPolicy Bypass -File Verify-OfflineUSB.ps1
 #>
 param(
-  [string]$UsbDrive = 'D:',
+  [string]$UsbDrive = '',          # optional: force a drive (e.g. 'E:'); empty = auto-detect by content
   [string]$SetTs    = '20261107T113707Z'
 )
 $ErrorActionPreference = 'Stop'
 function Die($m){ Write-Host ("OFFLINE USB VERIFICATION: FAIL - " + $m) -ForegroundColor Red; exit 1 }
 
-$set  = Join-Path $UsbDrive ("Strateloq-Verified-Backup-" + $SetTs)
-$keys = Join-Path $UsbDrive 'Strateloq-Recovery-Keys'
+$setName = "Strateloq-Verified-Backup-$SetTs"
+# A drive IS the Strateloq USB when it carries the verified set (with SHA256SUMS) AND the keys folder.
+function Test-StrateloqUsb($root){
+  try {
+    return (Test-Path -LiteralPath ([IO.Path]::Combine($root, $setName, 'SHA256SUMS'))) -and
+           (Test-Path -LiteralPath ([IO.Path]::Combine($root, 'Strateloq-Recovery-Keys')))
+  } catch { return $false }
+}
 
-Write-Host '== validate USB location (Windows side) =='
-if(-not (Test-Path -LiteralPath ($UsbDrive + '\'))){ Die ($UsbDrive + ' is not accessible in Windows - attach the USB and retry') }
-if(-not (Test-Path -LiteralPath $set)){ Die ('backup folder not found: ' + $set) }
-if(-not (Test-Path -LiteralPath (Join-Path $set 'SHA256SUMS'))){ Die ('SHA256SUMS missing in ' + $set) }
-if(-not (Test-Path -LiteralPath $keys)){ Die ('Recovery-Keys folder not found: ' + $keys) }
-Write-Host ('  OK: ' + $set + '  and  ' + $keys)
+Write-Host '== discover the USB by its Strateloq backup structure (drive letter is not assumed) =='
+$root = $null
+if($UsbDrive){
+  $r = ($UsbDrive.TrimEnd('\') + '\')
+  if(-not (Test-Path -LiteralPath $r)){ Die ("specified drive $UsbDrive is not present in Windows") }
+  if(-not (Test-StrateloqUsb $r)){ Die ("drive $UsbDrive does not contain $setName\SHA256SUMS and Strateloq-Recovery-Keys") }
+  $root = $r
+} else {
+  $drives = [System.IO.DriveInfo]::GetDrives() | Where-Object { $_.IsReady -and ($_.DriveType -eq 'Removable' -or $_.DriveType -eq 'Fixed') }
+  $matches = @($drives | Where-Object { Test-StrateloqUsb $_.RootDirectory.FullName })
+  if($matches.Count -eq 0){
+    $rem = @($drives | Where-Object { $_.DriveType -eq 'Removable' } | ForEach-Object { $_.Name })
+    Write-Host ("  ready removable drives seen: " + $(if($rem.Count){ ($rem -join ', ') } else { '(none)' }))
+    Die ("no drive contains $setName - Windows cannot currently see the USB with this backup set. " +
+         "Prerequisite: plug the USB in and wait for Windows to assign it a drive letter (it should appear in File Explorer); " +
+         "then re-run. If your set is a different date, pass -SetTs <ts>. The USB is never formatted, initialised or modified.")
+  }
+  if($matches.Count -gt 1){
+    $cands = ($matches | ForEach-Object { $_.Name }) -join ', '
+    Die ("multiple drives contain $setName ($cands) - re-run with -UsbDrive <letter:> to choose. Not guessing.")
+  }
+  $root = $matches[0].RootDirectory.FullName
+}
+$root = $root.TrimEnd('\') + '\'
+$set  = [IO.Path]::Combine($root, $setName)
+$keys = [IO.Path]::Combine($root, 'Strateloq-Recovery-Keys')
+Write-Host ("  selected USB: $root  (contains $setName + Strateloq-Recovery-Keys)")
 
 $stage = Join-Path $env:TEMP ('strateloq-usb-verify-' + $SetTs)
 if(Test-Path -LiteralPath $stage){ Remove-Item -LiteralPath $stage -Recurse -Force }
