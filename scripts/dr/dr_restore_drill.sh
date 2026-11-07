@@ -26,8 +26,12 @@
 #   DR_RESTORE_SUMS  path to SHA256SUMS covering DR_DUMP (checksum-verify before decrypt)
 #   DR_RESET_PUBLIC=1    drop+recreate the public schema first for a pristine restore (recommended;
 #                        the isolated target may hold a stale earlier drill)
-#   DR_GPG_PASSPHRASE    supply the key passphrase non-interactively via gpg loopback; if unset, gpg
-#                        prompts you interactively (more secure — nothing in env/argv)
+#   DR_GPG_PASSPHRASE    backup-key passphrase (CR/LF stripped); if unset the drill prompts hidden on
+#                        /dev/tty. Decryption mirrors Stage 2: ONE key is imported into a throwaway
+#                        keyring, so a two-recipient dump cannot make gpg pick the wrong key/passphrase.
+#   DR_P_FPR             fingerprint of the recovery key to decrypt with (default: PRIMARY, as Stage 2)
+#   DR_RECOVERY_DIR      dir holding the key exports (default: $HOME/strateloq-backups/recovery)
+#   DR_KEY_FILE          explicit secret-key export to import (default: $DR_RECOVERY_DIR/dr-$DR_P_FPR.secret.asc)
 #   DR_RESTORE_CONFIRM=1 required to actually restore (guard against an accidental run)
 #   EXPECT_TABLES / EXPECT_ROUTINES / EXPECT_POLICIES / EXPECT_TRIGGERS
 #                        structural expectations; default to the live production baseline captured
@@ -181,15 +185,57 @@ fi
 
 t1_epoch="$(date -u +%s)"; echo "T1  restore start: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
-# ---- decrypt (uses YOUR offline private key) --------------------------------
+# ---- decrypt — IDENTICAL to Stage 2's proven PRIMARY path (dr_stage2_backup_and_verify.sh) ----
+# The production dump is encrypted to TWO recipients (PRIMARY + ESCROW). Decrypting in your AMBIENT
+# ~/.gnupg (which holds BOTH secret keys) lets gpg select the OTHER key for a PKESK packet and then
+# reject your PRIMARY passphrase as "Bad passphrase" — exactly why Stage 3 failed while Stage 2 (which
+# imports ONLY the chosen key into a throwaway keyring) passed. So we do the same here: import ONE key
+# into an isolated keyring with loopback enabled, and decrypt with a CR/LF-stripped passphrase.
+DR_P_FPR="${DR_P_FPR:-AD834A2029AA703FA41B119B9D9E63310CA63035}"      # PRIMARY (Stage 2 default)
+DR_RECOVERY_DIR="${DR_RECOVERY_DIR:-$HOME/strateloq-backups/recovery}"
+DR_KEY_FILE="${DR_KEY_FILE:-$DR_RECOVERY_DIR/dr-$DR_P_FPR.secret.asc}"
+
+# passphrase: from DR_GPG_PASSPHRASE or a hidden /dev/tty prompt — CR/LF stripped (a Windows/WSL
+# terminal appends CR; Stage 2 strips it, an ambient agent cache can mask it, an isolated keyring cannot)
 if [ -n "${DR_GPG_PASSPHRASE:-}" ]; then
-  printf '%s' "$DR_GPG_PASSPHRASE" | \
-    gpg --batch --yes --pinentry-mode loopback --passphrase-fd 0 --decrypt "$DR_DUMP" > "$PLAIN"
+  _pp="${DR_GPG_PASSPHRASE%$'\r'}"; _pp="${_pp%$'\n'}"
+elif [ -r /dev/tty ]; then
+  printf 'Backup key passphrase (hidden): ' >&2; IFS= read -rs _pp < /dev/tty; echo >&2
+  _pp="${_pp%$'\r'}"; _pp="${_pp%$'\n'}"
 else
-  echo "   (gpg will prompt for your backup key passphrase)"
-  gpg --yes --decrypt "$DR_DUMP" > "$PLAIN"
+  echo "ERROR: no DR_GPG_PASSPHRASE and no terminal to prompt for the backup key passphrase" >&2; exit 4
 fi
-[ -s "$PLAIN" ] || { echo "ERROR: decryption produced an empty file" >&2; exit 4; }
+[ -n "$_pp" ] || { echo "ERROR: empty backup key passphrase" >&2; exit 4; }
+
+GH="$WORK/gh"
+if [ -f "$DR_KEY_FILE" ]; then
+  mkdir -p "$GH"; chmod 700 "$GH"
+  echo "allow-loopback-pinentry" > "$GH/gpg-agent.conf"   # isolated home must allow loopback like ~/.gnupg
+  if ! GNUPGHOME="$GH" gpg --batch --import "$DR_KEY_FILE" 2>"$GH/imp.log"; then
+    echo "ERROR: could not import the recovery key export: $DR_KEY_FILE" >&2
+    sed 's/^/   gpg: /' "$GH/imp.log" | head -3 >&2; unset _pp; exit 4; fi
+  printf '%s' "$_pp" | GNUPGHOME="$GH" gpg --batch --yes --pinentry-mode loopback --passphrase-fd 0 \
+    -d "$DR_DUMP" > "$PLAIN" 2>"$GH/dec.log" || true
+  echo "   decrypt: isolated keyring, imported ONLY $DR_P_FPR (deterministic key selection — Stage-2-equivalent)"
+  DEC_LOG="$GH/dec.log"
+else
+  echo "   WARN: recovery key export not found ($DR_KEY_FILE); falling back to the ambient keyring" >&2
+  printf '%s' "$_pp" | gpg --batch --yes --pinentry-mode loopback --passphrase-fd 0 \
+    --decrypt "$DR_DUMP" > "$PLAIN" 2>"$WORK/dec.log" || true
+  DEC_LOG="$WORK/dec.log"
+fi
+unset _pp
+if [ ! -s "$PLAIN" ]; then
+  echo "ERROR: decryption produced no output." >&2
+  [ -f "$DEC_LOG" ] && sed 's/^/   gpg: /' "$DEC_LOG" | head -5 >&2
+  if grep -qi 'Bad passphrase' "$DEC_LOG" 2>/dev/null; then
+    echo "   -> gpg rejected the passphrase for the imported key $DR_P_FPR (isolated keyring, agent-cache-independent)." >&2
+  elif grep -qi 'No secret key\|decryption failed: No secret key' "$DEC_LOG" 2>/dev/null; then
+    echo "   -> the imported key cannot decrypt this dump (wrong key / not a recipient), NOT a passphrase problem." >&2
+  fi
+  exit 4
+fi
+head -c 5 "$PLAIN" | grep -q 'PGDMP' || { echo "ERROR: decrypted output is not a PostgreSQL custom archive (no PGDMP magic)" >&2; exit 4; }
 
 # ---- integrity: the dump's own table of contents ----------------------------
 toc="$(pg_restore -l "$PLAIN" | grep -cvE '^(;|$)' || true)"
