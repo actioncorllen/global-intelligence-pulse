@@ -258,6 +258,77 @@ Literal execution of the applied plpgsql `fn_opportunity_tier` / refined `fn_mon
 a post-apply authenticated smoke test on founder approval (same pattern as mig_332/mig_333); the logic exercised above
 is identical to the shipped function body.
 
+## 6c. FINAL REVIEW (founder correction, 2026-11-07) — evidence-quality tightening + decision/band investigation
+
+### A. Corrected PREMIUM floor (no promotion on score/band alone)
+Per the founder: PREMIUM must require **a defensible, corroborated demand signal with source provenance and
+sufficient freshness**; if evidence confidence is NONE and no independently-supported demand evidence exists, the
+product is **UNTIERED**. `mig_334` `fn_opportunity_tier` was updated accordingly (the band-only path is removed):
+
+- **`corroborated`** = `overall_evidence_confidence ∈ {MEDIUM, HIGH}` (the engine's own corroboration rollup).
+- **`has_sourced_demand`** = at least one demand sub-signal (`buyer_search_intent` / `marketplace_validation` /
+  `demand_momentum`) carries a named `source` (provenance). Computed in `fn_monday_top_opportunities` from `pme.evidence`.
+- **`fresh`** = explicit `evidence_window` timestamp when present, else the evaluation snapshot time
+  (`product_market_evaluations.created_at`), within a **45-day** horizon.
+- **PREMIUM** now requires `band ≠ AVOID` **AND** `corroborated` **AND** `has_sourced_demand` **AND** `fresh`.
+- **GOLD** additionally requires `corroborated + has_sourced_demand + fresh` (on top of validated local price,
+  credible economics, suitable saturation, resolved supplier). **PLATINUM** additionally requires `has_sourced_demand`
+  (it already required HIGH confidence + freshness). GOLD/PLATINUM commercial-readiness requirements are otherwise
+  **preserved**; PLATINUM + TEST still gates Ready-to-Test; country isolation, honest UNKNOWNs, Product Asset Lock and
+  tenant isolation all preserved. `tier_reasons` now also emits `demand_not_corroborated`, `no_sourced_demand_evidence`,
+  `evidence_provenance_stale_or_absent` for transparency.
+
+### B. Revised evaluation of the 8 recommendations (corrected rule; prod read-only)
+| # | Product | Mkt | Decision | Band | Score | OverallEvid | Sourced demand | Fresh | **Tier (revised)** | Change |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | More Adventskalender 2026 | DE | WATCH | STRONG_TEST | 77.6 | MEDIUM | DataForSEO + eBay | yes | **PREMIUM** | — |
+| 2 | ESN Designer Proteinriegel | DE | WATCH | WATCH | 49.7 | MEDIUM | DataForSEO + eBay | yes | **PREMIUM** | — |
+| 3 | Beleuchtete Krippen | DE | WATCH | HIGH_CONFIDENCE_TEST | 87.0 | NONE | none | — | **UNTIERED** | ↓ was PREMIUM |
+| 4 | Illuminated Snowman | GB | WATCH | TRENDING_WATCH | 56.0 | NONE | eBay only | — | **UNTIERED** | ↓ was PREMIUM |
+| 5 | Makita Adventskalender | DE | WATCH | WATCH | 53.0 | NONE | eBay only | — | **UNTIERED** | — |
+| 6 | Herren-Fleecejacke | DE | WATCH | WATCH | 48.0 | NONE | none | — | **UNTIERED** | — |
+| 7 | Ankerkraut Adventskalender | DE | WATCH | AVOID | 22.7 | LOW | DataForSEO + eBay | yes | **UNTIERED** | — (band AVOID) |
+| 8 | Hit the Slab | DE | WATCH | AVOID | 10.0 | NONE | DataForSEO | — | **UNTIERED** | — (band AVOID) |
+
+**Revised distribution: 2 PREMIUM, 0 GOLD, 0 PLATINUM, 6 UNTIERED, 0 TEST → Ready-to-Test-Platinum EMPTY.**
+The two high-score/no-corroboration products (Beleuchtete Krippen 87, Illuminated Snowman 56) correctly drop to
+UNTIERED. Only the two products with MEDIUM engine-corroborated demand **and** named sources (DataForSEO search
+intent + eBay marketplace validation) **and** recent evidence (26 days) remain PREMIUM.
+
+### C. Investigation — `opportunity_band=AVOID` with `decision=WATCH`: INTENTIONAL, not a defect
+Validated against the engine contracts (read-only), **engine not changed**:
+- `fn_opportunity_band(score)` / the inline band in `fn_pod_evaluate` is a **pure score bucket** (score<40 → AVOID).
+  The band is a score descriptor, **not** a decision.
+- `fn_pod_evaluate` derives `decision` by an **ordered precedence** (lines 128–133): `has_fail`→AVOID;
+  **`has_watch`→WATCH (`CANNOT_TEST_UNTIL_GATES_RESOLVE`)**; score NULL→WATCH; score≥70 ∧ conf∈{MEDIUM,HIGH}→TEST;
+  score≥40→WATCH; else→AVOID. Because **`has_watch` is evaluated before the low-score→AVOID branch**, a low-scoring
+  product whose readiness gates are still WATCH is held at **WATCH ("gather evidence"), not condemned to AVOID**.
+- Confirmed in data: *Hit the Slab* (score 10, band AVOID, decision WATCH) has `decision_reasons =
+  ["CANNOT_TEST_UNTIL_GATES_RESOLVE","BAND_AVOID",…]` and all six gates WATCH. The engine transparently records both
+  the AVOID band and the reason the decision is WATCH.
+- Engine contract note: *"Execution readiness gates ACTION, never the opportunity decision."* This is the documented,
+  validated design (`pulse_product_opportunity_decision_v1`). **No engine decision is changed.**
+- **Customer-facing clarification added** (Lovable copy): "Test / Watch / Avoid is decided on commercial-readiness
+  evidence, not the raw opportunity score. A product with a low score can still show Watch — it is being held for more
+  evidence, not rejected — and a high score never becomes Test until the readiness gates pass."
+
+### D. Regression tests (read-only on prod data + synthetic; migration NOT applied)
+Corrected predicates exercised exactly as shipped:
+| Case | Expected | Got |
+|---|---|---|
+| High score (88) + band HIGH_CONFIDENCE_TEST + evidence NONE + no source | UNTIERED | **null** ✅ |
+| MEDIUM conf + named source + fresh | PREMIUM | **PREMIUM** ✅ |
+| MEDIUM conf + named source but **stale** (>45d) | UNTIERED | **null** ✅ |
+| MEDIUM conf but **no source** | UNTIERED | **null** ✅ |
+| GOLD (corroborated+sourced+fresh + local price + econ + sat + supplier) | GOLD | **GOLD** ✅ |
+| PLATINUM (all + HIGH conf + sourced + fresh + decision TEST) | PLATINUM | **PLATINUM** ✅ |
+| Same product DE PLATINUM vs **FR** (no corroboration) | country isolation | DE PLATINUM / FR **null** ✅ |
+| AVOID-band / WATCH-decision consistency | WATCH held, band AVOID, untiered | confirmed ✅ |
+| Real 8 recommendations | 2 PREMIUM / 6 UNTIERED / 0 GOLD / 0 PLATINUM | **matches** ✅ |
+
+No cross-tenant access (SECURITY DEFINER scoped to `auth.uid()` via the wrapper, unchanged); stable canonical
+`commerce_products.id`; honest UNKNOWNs preserved; no prod writes; no paid provider calls.
+
 ## 7. Guardrails honored
 No new paid provider calls; Product Asset Lock, exact-SKU identity, country isolation, tenant RLS preserved; research
 cost controls and commercial permissions untouched; nothing applied to prod and nothing published without founder

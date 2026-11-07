@@ -65,6 +65,9 @@ DECLARE
   v_has_landed      boolean := coalesce((p->>'has_landed')::boolean,false);
   v_stock           text := coalesce(p->>'stock_state','UNKNOWN');
   v_fresh           boolean := coalesce((p->>'fresh')::boolean,false);
+  -- has_sourced_demand: at least one demand sub-signal (buyer_search_intent / marketplace_validation /
+  -- demand_momentum) carries a named source → defensible source provenance for the demand signal.
+  v_sourced         boolean := coalesce((p->>'has_sourced_demand')::boolean,false);
   -- derived predicates
   all_gates_pass        boolean;
   no_critical_blocker   boolean;
@@ -77,7 +80,8 @@ DECLARE
   prodconf_ok           boolean;
   no_gate_fail          boolean;
   supplier_resolved     boolean;
-  demand_signal         boolean;
+  corroborated          boolean;  -- engine's own evidence-confidence rollup says demand is corroborated
+  demand_qualified      boolean;  -- corroborated AND source provenance AND fresh (the PREMIUM evidence floor)
   reasons               text[] := ARRAY[]::text[];
   v_tier                text := null;
 BEGIN
@@ -101,8 +105,12 @@ BEGIN
   saturation_ok         := (v_gates->>'saturation'='PASS' AND v_sat_level IN ('LOW','MODERATE'));
   conf_high             := (v_overall = 'HIGH');
   prodconf_ok           := (v_prodconf IN ('MEDIUM','HIGH'));
-  demand_signal         := (v_band IN ('EXCEPTIONAL','HIGH_CONFIDENCE','HIGH_CONFIDENCE_TEST','STRONG_TEST','TRENDING_WATCH')
-                            OR v_overall IN ('MEDIUM','HIGH'));
+  -- PREMIUM evidence floor (founder correction): a product is NOT tiered on a high score/band alone.
+  -- It needs a DEFENSIBLE, CORROBORATED demand signal (engine evidence-confidence rollup >= MEDIUM),
+  -- with SOURCE PROVENANCE (a named demand source), and SUFFICIENT FRESHNESS. If evidence confidence is
+  -- NONE (or no sourced demand exists), the product is UNTIERED regardless of score/band.
+  corroborated          := (v_overall IN ('MEDIUM','HIGH'));
+  demand_qualified      := (corroborated AND v_sourced AND v_fresh);
 
   -- Record the reasons any Platinum condition fails (used for card explanation + downgrade transparency).
   IF NOT all_gates_pass        THEN reasons := reasons || 'not_all_gates_pass'; END IF;
@@ -113,18 +121,21 @@ BEGIN
   IF NOT price_local_validated THEN reasons := reasons || 'local_price_unvalidated'; END IF;
   IF NOT saturation_ok         THEN reasons := reasons || 'saturation_unsuitable_or_unknown'; END IF;
   IF NOT conf_high             THEN reasons := reasons || 'evidence_confidence_below_high'; END IF;
+  -- PREMIUM-floor transparency: why a demand signal is not yet qualified.
+  IF NOT corroborated          THEN reasons := reasons || 'demand_not_corroborated'; END IF;
+  IF NOT v_sourced             THEN reasons := reasons || 'no_sourced_demand_evidence'; END IF;
   IF NOT v_fresh               THEN reasons := reasons || 'evidence_provenance_stale_or_absent'; END IF;
 
   IF all_gates_pass AND no_critical_blocker AND supplier_exact AND stock_known AND econ_credible
-     AND price_local_validated AND saturation_ok AND conf_high AND prodconf_ok AND v_fresh THEN
+     AND price_local_validated AND saturation_ok AND conf_high AND prodconf_ok AND v_fresh AND v_sourced THEN
     v_tier := 'PLATINUM';
-  ELSIF v_overall IN ('MEDIUM','HIGH') AND price_local_validated AND saturation_ok AND econ_credible
+  ELSIF corroborated AND v_sourced AND v_fresh AND price_local_validated AND saturation_ok AND econ_credible
      AND v_gates->>'supplier'='PASS' AND supplier_resolved AND no_gate_fail AND v_nexec = 0 THEN
     v_tier := 'GOLD';
-  ELSIF v_band <> 'AVOID' AND demand_signal THEN
+  ELSIF v_band <> 'AVOID' AND demand_qualified THEN
     v_tier := 'PREMIUM';
   ELSE
-    v_tier := null;  -- untiered: emerging signal, insufficient evidence to tier
+    v_tier := null;  -- untiered: high score/band alone never qualifies; needs corroborated+sourced+fresh demand
   END IF;
 
   RETURN jsonb_build_object('tier', v_tier, 'reasons', to_jsonb(reasons));
@@ -151,7 +162,13 @@ BEGIN
       coalesce((pme.economics->>'known')::boolean,false) AS econ_known,
       (pme.landed_cost IS NOT NULL) AS has_landed,
       coalesce(pme.stock_state,'UNKNOWN') AS stock_st,
-      public.fn_evidence_window_fresh(pme.evidence_window) AS ev_fresh
+      -- Source provenance: at least one demand sub-signal carries a named source.
+      ((pme.evidence->'buyer_search_intent'->>'source') IS NOT NULL
+        OR (pme.evidence->'marketplace_validation'->>'source') IS NOT NULL
+        OR (pme.evidence->'demand_momentum'->>'source') IS NOT NULL) AS has_sourced_demand,
+      -- Freshness: explicit evidence_window when present, else the evaluation snapshot time, within 45 days.
+      (public.fn_evidence_window_fresh(pme.evidence_window)
+        OR (pme.created_at IS NOT NULL AND pme.created_at > now() - interval '45 days')) AS ev_fresh
     FROM public.product_opportunity_decisions d
     JOIN public.commerce_products cp ON cp.id=d.product_id
     LEFT JOIN public.product_market_evaluations pme
@@ -194,6 +211,7 @@ BEGIN
       'econ_known', c.econ_known,
       'has_landed', c.has_landed,
       'stock_state', c.stock_st,
+      'has_sourced_demand', c.has_sourced_demand,
       'fresh', c.ev_fresh
     )) AS tier_obj
     FROM capped c
@@ -260,7 +278,8 @@ BEGIN
     'tier_policy', jsonb_build_object(
       'tiers', jsonb_build_array('PREMIUM','GOLD','PLATINUM'),
       'ready_to_test_platinum_rule','tier=PLATINUM AND decision=TEST',
-      'note','tier is derived from existing evidence contracts (hard_gates, supplier identity, economics, landed_cost, stock_state, local price, saturation, evidence confidence+freshness); it is orthogonal to the TEST/WATCH/AVOID decision and never re-scores or promotes to fill a section'),
+      'premium_floor','corroborated demand (overall_evidence_confidence>=MEDIUM) AND named source provenance AND sufficient freshness; a high score or opportunity_band alone never earns a tier; evidence_confidence=NONE or no sourced demand => UNTIERED',
+      'note','tier is derived from existing evidence contracts (hard_gates, supplier identity, economics, landed_cost, stock_state, local price, saturation, evidence confidence, demand source provenance + freshness); it is orthogonal to the gate-gated TEST/WATCH/AVOID decision (opportunity_band is a pure score bucket, not the decision) and never re-scores or promotes to fill a section'),
     'campaign_activation', false, 'advertising_spend', 0,
     'note','READY_TO_TEST are launch-eligible only after downstream gates; WATCHLIST are emerging, not launch-ready; WINNER is post-performance only. commercial_assets is an independent launch-readiness dimension. tier reflects evidence quality & commercial-readiness, not a profit guarantee; measured ROI is only shown with real attributable outcome data. Legacy research-concept products are excluded.',
     'contract','pulse_monday_top_opportunities_v3_tiers');
