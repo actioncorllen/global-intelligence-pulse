@@ -80,3 +80,26 @@ Two reversible steps, **await founder approval** (nothing applied/published):
 1. Apply `mig_335_recommendations_quality.sql` (CREATE OR REPLACE of `fn_monday_top_opportunities`; rollback = restore the mig_334 body).
 2. Publish frontend `27ba521c` (rollback = re-publish `d6452bd`).
 Guardrails preserved: tenant isolation/RLS, canonical identity, exact-SKU integrity, Product Asset Lock, supplier-media rights, provider budgets — no new paid calls, billing, ads or signup.
+
+## 10. PRODUCTION DEPLOYMENT (executed 2026-11-07, founder-approved controlled sequence)
+1. Current versions confirmed: backend `pulse_monday_top_opportunities_v3_tiers` (mig_334), frontend published `d6452bd`; preview head `27ba521c`. ✅
+2. DB `ACTIVE_HEALTHY` (PG 17.6.1.127); rollback = restore mig_334 body of `fn_monday_top_opportunities`. ✅
+3. Migration matched the reviewed/committed `mig_335_recommendations_quality.sql`. ✅
+4. `mig_335` applied (`apply_migration` → success). ✅
+5–7. Authenticated (founder JWT) live checks: contract `pulse_monday_top_opportunities_v4_recs_quality`;
+   `showcase_eligible_count=0`; `tier_counts {PLATINUM:0, GOLD:0, PREMIUM:2, UNTIERED:6}`; watchlist=8; the 2 PREMIUM
+   (More Adventskalender, ESN) → `why="Real demand"`, `evidence_fresh=true`; the 6 untiered → `why="Demand not
+   sufficiently verified"`, `evidence_fresh=false`; marketplace images `available:false` + `display_rights:NOT_ESTABLISHED`
+   (reference link only). Tenant isolation: unauthenticated → `unauthenticated`; cross-tenant uid → 0 rows. ✅
+8. Product Asset Lock: Krippen FastMoss REFERENCE_ONLY videos → `fn_media_launch_eligibility`=`false`
+   (`CANONICAL_PRODUCT_LINEAGE_REQUIRED`), unchanged. ✅
+9. Frontend published: `deploy_project` → deployment `1c6cd898-f113-4110-a3fb-cb715feb92d4`. ✅
+10. Confirmed `is_published=true`, published source `latest_commit_sha = 27ba521c`. ✅
+11. Production regression: backend v4 live; `ready_to_test`/`watchlist` arrays intact; adjacent contracts healthy
+    (`get_own_product_acquisitions`, `fn_product_explorer`). No re-score, no decision change, no grants widened; no new
+    paid calls. ✅
+
+**Expected results — all confirmed:** Premium Showcase 0 eligible; Research Candidates 8; two evidence-qualified PREMIUM
+first; unsupported demand/freshness claims removed; reference videos research-only; no marketplace thumbnail rendered as
+an authorised product image (link only). Remaining: live signed-in + phone-width device acceptance (container egress 403).
+Rollback: backend → restore mig_334 body; frontend → re-publish `d6452bd`.
