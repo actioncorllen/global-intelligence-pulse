@@ -49,3 +49,22 @@ On the founder's **explicit approval of the limits + a yes to all four** (or a c
 short-expiry, approval-gated `provider_call_budget` rows at exactly those caps + enable `research_budget_config`
 (`authorized_market='DE'`, cap $1), run the DE discovery wave, dedup against the 79 canonical identities, score via the
 existing engine, and report the fresh candidates — all strictly within caps, no purchases/orders/ads/billing/signup.
+
+## Read-only balance retrieval attempt (2026-11-08) — not possible in-platform
+Checked whether the connected accounts expose read-only balance/allowance **without a chargeable call**. **They do not,
+via any existing in-platform path:**
+- The only provider edge functions are `kalodata-discovery`, `fastmoss-discovery`, `fastmoss-product-detail` — all make
+  **paid, budget-gated** rank/detail calls (they are fail-closed with no active budget); **none is a free balance/account
+  check.** CJ has **no edge function** (it runs via n8n). There is **no `*-balance` / `*-account` function** of any kind.
+- Provider API **credentials are edge-function secrets** — not accessible here, and must not be exposed. I therefore
+  cannot call any provider's own free balance endpoint (e.g. DataForSEO `/v3/appendix/user_data`) from this environment,
+  and building a balance-check function would be new architecture (out of scope).
+- **No provider call was made** (invoking a discovery function would be a chargeable, budget-gated call — not done).
+
+**Conclusion: all four balances require founder dashboard confirmation** (read-only, no secret shared):
+| Provider | Where the founder reads it | Needed |
+|---|---|---|
+| Kalodata | Kalodata account → **Credits / Billing** | credits ≥ 1 |
+| FastMoss | FastMoss account → **Plan / API usage** | ≥ 5 New-Listed calls allowed |
+| DataForSEO | DataForSEO dashboard → **Balance** (or the free `appendix/user_data` if they check it themselves) | balance ≥ $1 |
+| CJ Dropshipping | CJ → **Developer / API** (app key active, not expired) | API access active |
