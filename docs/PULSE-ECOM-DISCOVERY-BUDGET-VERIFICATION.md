@@ -32,3 +32,20 @@ capped `provider_call_budget` rows (Kalodata ≤2 credits-worth of calls, FastMo
 research cap (≤$3, market=DE), then run the DE wave strictly within them — no orders, ads, billing or AliExpress. I did **not**
 create any budget row or spend, per the no-chargeable-requests rule. Canonical 79-product exclusion set preserved; no
 substitution of prior products.
+
+## Minimum founder-side confirmations for the proposed DE gate (2026-11-08)
+Proposed limits (NOT yet authorisation): Kalodata ≤1 credit · FastMoss ≤5 calls · DataForSEO ≤$1 · CJ ≤10 calls · DE only · ≤20
+new candidates. The **only remaining blocker is account-level vendor confirmation** (all read from each vendor's own
+dashboard — **no API secret is needed or should be shared**):
+
+| Provider | Minimum fact the founder confirms | Where to read it | Needed for |
+|---|---|---|---|
+| **Kalodata** | Remaining credit balance **≥ 1 credit** (+ DE/TikTok-Shop region active) | Kalodata account → Credits/Billing | ~1 credit ≈ 100 products of product-rank |
+| **FastMoss** | Active plan allows **≥ 5** New-Listed rank calls (DE) | FastMoss account → Plan/Quota | 5 new-listed pages |
+| **DataForSEO** | Prepaid account **balance ≥ $1.00** | DataForSEO dashboard → Balance | demand + local-price validation |
+| **CJ Dropshipping** | **API access active** (app key valid/not expired), product query + detail endpoints available, within rate limits — no credit purchase (catalogue reads are order-billed, not per-call) | CJ → Developer/API settings | exact-SKU match + media/stock/freight |
+
+On the founder's **explicit approval of the limits + a yes to all four** (or a corrected number), I will: create the DE-only,
+short-expiry, approval-gated `provider_call_budget` rows at exactly those caps + enable `research_budget_config`
+(`authorized_market='DE'`, cap $1), run the DE discovery wave, dedup against the 79 canonical identities, score via the
+existing engine, and report the fresh candidates — all strictly within caps, no purchases/orders/ads/billing/signup.
