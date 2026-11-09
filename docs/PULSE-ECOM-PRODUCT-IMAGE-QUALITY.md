@@ -95,13 +95,19 @@ surface authorised images automatically once they exist.
   pre-existing fast-refresh warnings); **preview build** OK. Responsive/phone-width visual acceptance is a
   founder-device step (egress 403).
 
-## Release control
+## Release control — DEPLOYED 2026-11-09 (founder-approved)
 
-- Backend `mig_340` + `mig_340_ROLLBACK.sql` committed (`44d5afa`), **NOT deployed**. Frontend Lovable preview
-  commit **`db027f5`**, **NOT published**. Deploy order (on approval): apply `mig_340` (Explorer v4), then publish
-  the frontend preview. Frontend fails closed without the new fields (compact cards still render; references just
-  don't appear until v4 is live), so order is low-risk. Rollback: `mig_340_ROLLBACK.sql` restores v3; re-publish
-  the prior frontend commit (`312fce3`).
+- **Backend:** `mig_340` applied to production → `fn_product_explorer` = `pulse_product_explorer_v4` (SECURITY
+  DEFINER, `search_path=''` preserved). Live acceptance: DE total 29 = **9 DISPLAY + 3 REFERENCE + 17 NONE**; 0
+  marketplace images as covers; 3 reference links (eBay listing, `image_copied:false`, no cover); tenant isolation
+  (other tenant DE = 0); country isolation (0 DE ids in GB); pagination 24 + 5; PAL (`reference_only_media:true`,
+  `image_commercial_never_asserted:true`, 0 display items claim commercial); growth 20 Kalodata VERIFIED / 0
+  FastMoss numeric; 20 NEWLY_DISCOVERED / 0 NEWLY_LISTED. Recommendations/showcase untouched (mig_340 changes only
+  `fn_product_explorer`).
+- **Frontend:** Lovable preview `db027f5` published → deployment **`e9e893ff-573a-4341-82d0-fd2370540b9a`**,
+  `is_published=true`. Pre-publish: 549 tests pass, typecheck/lint/build clean.
+- **Rollback:** `mig_340_ROLLBACK.sql` restores v3; re-publish prior frontend commit `312fce3`.
+- No paid provider calls; no discovery wave; no supplier-budget / advertising / billing / signup changes.
 - No paid provider calls; no discovery wave; no supplier-budget / advertising / billing / signup changes.
 
 ## Remaining source-permission blockers
