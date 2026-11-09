@@ -9,7 +9,7 @@ not assumed. Nothing deployed or published. Baseline unchanged: Explorer v4 (mig
   realistic 9 image / 3 reference / 17 no-image grid showed compact cards **stretched with ~170–310px empty
   interiors at 1280px (235–360px at 1440px)**, and tall photos overflowing the 4:3 box (image cards 60–110px
   taller). The founder's concern was correct.
-- **Correction (preview `55c8230`):** every card shares one 4:3 top region — a strictly-4:3 image
+- **Correction (preview `0c9532c`):** every card shares one 4:3 top region — a strictly-4:3 image
   (`overflow-hidden` + absolute img) for DISPLAY, and a **styled research panel** (flask icon + "Research view —
   no image yet", soft tint — not an image, not a blank box) for NONE/REFERENCE; titles reserve two lines; the
   reference link sits inside the panel. **Result: uniform rows (404px @1280, 434px @1440), no empty interiors,
@@ -28,7 +28,7 @@ not assumed. Nothing deployed or published. Baseline unchanged: Explorer v4 (mig
   unchanged.
 
 ## 3. Final preview commit
-- **`55c8230`** (A desktop grid balance + growth-label wrap, on top of 334d843's D/E/F), preview only,
+- **`0c9532c`** (A desktop grid balance + growth-label wrap, on top of 334d843's D/E/F), preview only,
   **NOT published**. Production remains `db027f5`.
 
 ## 4. Tests
@@ -51,7 +51,7 @@ not assumed. Nothing deployed or published. Baseline unchanged: Explorer v4 (mig
   market (real provider spend). None invented; all gate activation.
 
 ## 7. Controlled release steps — visual fixes (independent, low-risk)
-1. Publish Lovable `55c8230` to production (A/D/E/F). No backend dependency. Rollback: re-publish `db027f5`.
+1. Publish Lovable `0c9532c` to production (A/D/E/F). No backend dependency. Rollback: re-publish `db027f5`.
 2. Founder-device visual acceptance: desktop grid at 1280/1440 (balanced, no gaps/empty interiors); mobile
    workspace at 320/360/375/390/430 (header stacks, paragraph wrap, full-width buttons, no overflow).
 
