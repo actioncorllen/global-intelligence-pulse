@@ -15,8 +15,24 @@ backend identifiers are unchanged. No paid calls, billing, signup, or Product As
 - **n8n** — webhooks use Header Auth at the n8n instance URL and call Supabase/providers; **no public-web-domain
   references**, nothing to change (infra callbacks preserved).
 
-## Done (internally controllable) — Lovable preview `20a4d3c` (NOT published)
-Final branding preview SHA = **`20a4d3c`** (= `cca9344` company/canonical rebrand + the Pulse→Strateloq pass).
+## Done (internally controllable) — Lovable preview `c56e6e0` (NOT published)
+Final unified branding preview SHA = **`c56e6e0`** (= `cca9344` company/canonical rebrand → `20a4d3c`
+Pulse→Strateloq → `c56e6e0` incorporation-wording + homepage-visual alignment). Brand architecture now:
+PRODUCT = **Strateloq** (logo, homepage, workspace, marketing); COMPANY = **Strateloq Technologies** (footer +
+legal). Specific corrections in `c56e6e0`:
+- **#4 (not yet incorporated):** Terms §1 "operated by Strateloq Technologies **(Ireland)**" → "operated by
+  Strateloq Technologies, **based in Ireland**" (location, NOT an incorporation/registration claim). No
+  "registered/incorporated/Ltd/company number/registered office" exists anywhere; governing-law Ireland clause
+  kept; the only address is Ireland's data-protection regulator (unchanged). **Final legal wording flagged for
+  founder legal review.**
+- **#1 (homepage = Strateloq):** the "Global Intelligence Pulse™" animated world-graphic label + aria-label and
+  the demo-modal header → **"Strateloq"** (plain, no ™ — trademark status unverified).
+- MCP connector names in `src/lib/mcp` left as "Pulse Intelligence" (per #6 — renaming could break external
+  connector recognition); listed for a later decision.
+- Optional marketing-copy decision (NOT a brand-name removal, so not changed): the homepage positioning tagline
+  "Global Intelligence Platform" / "Global Intelligence for What's Next" uses "Global Intelligence" as a
+  descriptive phrase (distinct from the removed company name "Global Intelligence Actions"). Change only if the
+  founder wants new positioning copy — that's a creative decision, not a mechanical rebrand.
 - Company name: "Global Intelligence Actions" → **"Strateloq Technologies"** (legal pages + site footer).
 - Platform name: "Pulse Intelligence"/"Pulse" → **"Strateloq"** across the site-wide default `<title>` +
   description, the error screen, legal pages, Content Studio, Launch page, the OAuth consent screen, and the
