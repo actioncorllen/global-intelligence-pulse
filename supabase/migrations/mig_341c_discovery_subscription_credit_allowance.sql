@@ -77,4 +77,44 @@ END; $fn$;
 
 GRANT EXECUTE ON FUNCTION public.fn_discovery_grant_subscription_credits() TO authenticated;
 
+-- ---------- sweep (SERVICE-ROLE server-side grant process; schedule each period) ----------
+-- There is no DB subscription-lifecycle write hook to attach to (account_entitlement is written externally by
+-- billing/manual paths), so the server-side grant process is this sweep: for EVERY tenant with an active
+-- subscription it grants the configured allowance for that tenant's CURRENT period, exactly once (same
+-- (tenant, plan, period) idempotency key + the GRANT unique index as the on-demand path, so a sweep and an
+-- on-demand call can never double-grant, and concurrent sweeps can't either). Renewals: a new period end yields
+-- a new key, so the next sweep grants the new period. Inactive/expired/unauthorised subscriptions are excluded
+-- by fn_entitlement_active; plans with no configured allowance are skipped (fail-closed). SERVICE-ROLE ONLY
+-- (not callable by customers) — a scheduled job invokes it (see mig_341b). INERT while the allowance is empty.
+CREATE OR REPLACE FUNCTION public.fn_discovery_grant_subscription_credits_sweep()
+ RETURNS jsonb LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path TO '' AS $fn$
+DECLARE
+  r record; v_credits int; v_period text; v_idem text; v_rc int;
+  v_tenants int := 0; v_granted int := 0; v_skipped_no_allowance int := 0;
+BEGIN
+  FOR r IN
+    SELECT DISTINCT ON (e.auth_user_id)
+           e.auth_user_id AS uid, e.plan_code, e.current_period_end, e.id
+    FROM public.account_entitlement e
+    WHERE public.fn_entitlement_active(e.status, e.current_period_end)
+    ORDER BY e.auth_user_id, e.current_period_end DESC NULLS LAST, e.updated_at DESC
+  LOOP
+    v_tenants := v_tenants + 1;
+    SELECT credits_per_period INTO v_credits FROM public.discovery_credit_allowance
+     WHERE active AND (plan_code = r.plan_code OR plan_code IS NULL)
+     ORDER BY (plan_code = r.plan_code) DESC LIMIT 1;
+    IF v_credits IS NULL THEN v_skipped_no_allowance := v_skipped_no_allowance + 1; CONTINUE; END IF;
+    v_period := coalesce(to_char(r.current_period_end,'YYYYMMDD"T"HH24MISS'), 'perpetual:'||r.id::text);
+    v_idem := 'subscription:'||coalesce(r.plan_code,'_')||':'||v_period;
+    INSERT INTO public.discovery_credit_ledger(tenant_id,entry_type,credits,idempotency_key,reason)
+      VALUES (r.uid,'GRANT',v_credits,v_idem,'subscription_allowance_sweep '||coalesce(r.plan_code,'_')||' '||v_period)
+    ON CONFLICT (tenant_id, idempotency_key) WHERE (entry_type='GRANT' AND idempotency_key IS NOT NULL) DO NOTHING;
+    GET DIAGNOSTICS v_rc = ROW_COUNT;   -- 1 = newly granted this period, 0 = already granted (idempotent)
+    IF v_rc > 0 THEN v_granted := v_granted + 1; END IF;
+  END LOOP;
+  RETURN jsonb_build_object('status','ok','active_tenants',v_tenants,'granted',v_granted,
+    'skipped_no_allowance',v_skipped_no_allowance,'contract','pulse_discovery_credit_grant_sweep_v1');
+END; $fn$;
+-- sweep is service-role only (no grant to authenticated): a scheduled job invokes it (mig_341b).
+
 -- Rollback: see mig_341c_ROLLBACK.sql

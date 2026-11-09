@@ -25,4 +25,14 @@ SELECT cron.schedule(
   $$SELECT public.fn_discovery_refresh_reconcile(30)$$
 );
 
--- Rollback: SELECT cron.unschedule(jobid) FROM cron.job WHERE jobname='discovery-refresh-reconcile';
+-- Subscription-credit allowance sweep (mig_341c): grants each active subscriber its configured allowance once
+-- per period, idempotent. Hourly is ample (it no-ops within a period and while the allowance is empty). Apply
+-- only AFTER mig_341c. INERT until the founder configures discovery_credit_allowance (D2).
+SELECT cron.unschedule(jobid) FROM cron.job WHERE jobname = 'discovery-subscription-credit-sweep';
+SELECT cron.schedule(
+  'discovery-subscription-credit-sweep',
+  '7 * * * *',
+  $$SELECT public.fn_discovery_grant_subscription_credits_sweep()$$
+);
+
+-- Rollback: SELECT cron.unschedule(jobid) FROM cron.job WHERE jobname IN ('discovery-refresh-reconcile','discovery-subscription-credit-sweep');
