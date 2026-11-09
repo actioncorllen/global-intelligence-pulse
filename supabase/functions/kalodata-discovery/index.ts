@@ -185,9 +185,15 @@ Deno.serve(async (req) => {
   const products = extractProducts(providerBody);
   const usage = extractUsage(providerBody);
 
-  // 3) ingest -> existing eligibility + auto_fresh_discovery research bridge.
+  // 3) ingest. Candidate ingestion / identity resolution / de-duplication / storage / registry run normally.
+  //    p_suppress_auto_research=true for a CUSTOMER Refresh Discovery run (refresh_request_id present): the
+  //    per-candidate deep-research bridge (fn_auto_dispatch_candidate_research) is NOT crossed, so one refresh
+  //    click cannot auto-initiate a paid FastMoss/DataForSEO/CJ research cascade. Deep research stays available
+  //    only through its existing separately-authorized, budget-gated workflow. A normal discovery wave (no
+  //    refresh_request_id) passes false and keeps the pre-existing auto-dispatch behaviour unchanged.
   const ingest = await rpc("fn_kalodata_ingest_candidates", {
     p_user_id: userId, p_market: market, p_run_id: null, p_candidate_limit: candidateLimit, p_products: products, p_dry_run: false,
+    p_suppress_auto_research: refreshRequestId !== null,
   });
   const ib: any = ingest.body;
   if (!ingest.ok || !ib) {
@@ -201,9 +207,36 @@ Deno.serve(async (req) => {
     await recordOutcome(userId, market, String(ib.status), { scanned: ib.scanned ?? 0, raw_candidate_count: products.length });
   }
 
-  if (usage && ib.run_id) {
+  // Provider-usage instrumentation (P2): record a usage/telemetry row for EVERY paid Kalodata call, not only
+  // when the provider volunteers a cost field. The rank endpoint returns no per-call cost, so the old
+  // `if (usage && ib.run_id)` guard never fired historically (0/68 runs recorded provider_usage). We now record
+  // verifiable evidence only — provider, tenant, country, endpoint/operation, HTTP + lane status, call_count=1,
+  // timestamp, relationship to the customer refresh — plus the provider's OWN credit fields when present, and
+  // NEVER a fabricated monetary amount. `provider_credit` is the PROVIDER's metering (distinct from Strateloq
+  // customer credits); the secret is never included.
+  if (ib.run_id) {
     try {
-      await rpc("fn_kalodata_record_usage", { p_run_id: ib.run_id, p_usage: usage, p_endpoint: endpoint });
+      await rpc("fn_kalodata_record_usage", {
+        p_run_id: ib.run_id,
+        p_usage: {
+          provider: "KALODATA",
+          operation: "tiktok/product/rank",
+          tenant_id: userId,
+          country: market,
+          page_number: pageNumber,
+          call_count: 1,
+          http_status: provider.status,
+          response_status: ib.status ?? null,
+          cost_field_present: usage !== null,
+          provider_credit: usage,            // provider-side metering if the response carried it, else null
+          monetary_amount: null,             // unknown: never inferred from an API-call count
+          relationship: refreshRequestId ? "customer_refresh" : "discovery_wave",
+          refresh_request_id: refreshRequestId,
+          recorded_by: "kalodata-discovery-edge",
+          recorded_at: new Date().toISOString(),
+        },
+        p_endpoint: endpoint,
+      });
     } catch (_e) { /* usage telemetry is best-effort; never fail discovery on it */ }
   }
 
