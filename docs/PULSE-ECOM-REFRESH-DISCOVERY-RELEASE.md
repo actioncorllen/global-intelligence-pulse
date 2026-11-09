@@ -1,201 +1,160 @@
-# Refresh Discovery — P0 Final Release Package (2026-11-09)
+# Refresh Discovery — P0 Release & Activation Gate (2026-11-09)
 
-Consolidated, deploy-ready package for the customer-credit **Refresh Discovery** feature plus the
-already-prepared **image gate**. Nothing in this package is deployed, published, or activated. No paid
-provider call was made; no provider budget, billing, or pricing was activated or invented. Production
-baseline is unchanged: Explorer v4 (mig_340 live), production frontend `db027f5`.
+Deploy-ready package for the customer-credit **Refresh Discovery** feature + the prepared **image gate**.
+**Nothing is deployed, published, or activated.** No paid provider call was made; no provider budget, billing,
+or pricing was activated or invented. Production baseline unchanged: Explorer v4 (mig_340 live), frontend
+`db027f5`. The feature **reuses the existing `kalodata-discovery` edge** — no new discovery engine.
 
-The feature **reuses the existing `kalodata-discovery` edge path** for execution — no new discovery engine was
-built. The full server lifecycle is implemented, transactionally tested, and **inert / fail-closed**: with no
-price and no provider budget configured, every entry point denies cleanly and never charges or dispatches.
-
----
-
-## A. Final PASS / PARTIAL / BLOCKED verdict
-
-| # | Dimension | Verdict | Basis |
-|---|-----------|---------|-------|
-| A | Frontend complete | **PASS** | Refresh button opens a server-driven quote modal; confirm → reserve → authorize → poll status; three separate counts + settlement from real terminal state; fail-closed; fits 320–430px. 576 tests pass. Commits `e965df9` + `7d0869c` (preview only). |
-| B | Backend execution complete | **PASS** | QUOTE → RESERVE → AUTHORIZE → DISPATCH → COMPLETE → SETTLE + STATUS, all on the existing Kalodata edge; transactionally tested. |
-| C | Credit accounting complete | **PASS** | Append-only ledger; atomic advisory-locked reserve; idempotent; balance = ledger sum; reserve −cost / refund +cost / settle 0; all verified. |
-| D | Provider authorization complete | **PASS (inert)** | AUTHORIZE consumes the founder-authorised provider budget fail-closed and auto-refunds when none. Activation needs a founder budget (D4) — external. |
-| E | Recovery / reconciliation complete | **PASS** | Idempotent dispatch/complete; service-role reconcile refunds stuck RESERVED/EXECUTING without ever re-firing the provider; duplicate callbacks never double-settle. |
-| F | End-to-end tested with fixtures | **PARTIAL** | Client flow + every SQL RPC are fixture/transactionally tested. The single **live paid Kalodata EXECUTE** and its **edge→`fn_discovery_refresh_complete` callback** cannot be exercised without spending money (forbidden here) and are completed at activation. |
-| G | Ready for safe production deployment | **PARTIAL — BLOCKED on founder config** | Code is deploy-ready and safe-while-inert. Activation is gated on founder commercial decisions D1–D4, the edge-execution wiring done under that authorisation, and signed-in device visual acceptance — the only genuine external blockers. |
-
-**Net:** everything internally controllable without spending money or inventing pricing is **built and tested**.
-The outstanding items are all genuine external/commercial dependencies (D1–D4, a paid provider run, device
-acceptance).
+Final commits: backend `07b427c` (branch `claude/nifty-bardeen-f9nddu`); Lovable preview `7d0869c` (not
+published). Prepared, not deployed: `mig_341`, `mig_342`, edge `kalodata-discovery/index.ts`.
 
 ---
 
-## B. Backend lifecycle (mig_341 — customer-credit Refresh Discovery)
+## 1. Edge-to-completion callback — exact status
 
-Status: **prepared, transactionally tested, INERT (fail-closed). NOT deployed.**
+**Was ABSENT. Now PREPARED + fixture-tested (not deployed).**
 
-Tables (all empty / no production rows):
-- `discovery_credit_ledger` — append-only; RLS read-own; unique RESERVE index on `(tenant_id, idempotency_key)`.
-  Balance = `sum(credits)`: RESERVE writes `−cost`, REFUND writes `+cost`, SETTLE writes `0`.
-- `discovery_refresh_request` — one row per `(tenant_id, idempotency_key)`; status
-  `RESERVED → EXECUTING → SETTLED | REFUNDED`; carries `page_number`, `new_products`, `new_image_pending`,
-  `duplicates`, `dispatched_at`, `completed_at`. RLS read-own.
-- `discovery_credit_price` — **EMPTY** (founder config D1). No price = `PRICING_NOT_CONFIGURED`, fail-closed.
+- The live edge **v12** accepted `{market, user_id, candidate_limit, page_number}` only — **no
+  `refresh_request_id`** — and **never** called a settlement function. A *successful* paid refresh would never
+  settle; only the reconcile sweep's refund would eventually fire, i.e. a free successful refresh (Strateloq
+  absorbs the cost). This was the real correctness gap.
+- A second, latent mismatch: the edge runs as **`service_role`** (`auth.uid()` is NULL), but
+  `fn_discovery_refresh_complete`/`settle` scope by `auth.uid()` → the edge would get `REQUEST_NOT_FOUND`. The
+  completion credential was wrong for a service-role caller.
 
-Functions (all `SECURITY DEFINER`, `SET search_path TO ''`, `auth.uid()`-scoped; `authenticated` grants except
-`reconcile`, which is service-role only):
+**Correction (smallest necessary; all prepared, none deployed, no paid call):**
+- `fn_discovery_refresh_complete_from_edge(request_id, new_product_ids[], duplicates, outcome)` — **SERVICE-ROLE**
+  completion the edge calls. Derives the owning **tenant + market from the request row** (never trusted from the
+  edge payload); recomputes `new_image_pending` with the **exact Explorer gate predicate** (so the customer's
+  "visible" count equals what the Explorer shows); idempotent; `GRANT … TO service_role` only (a customer can
+  never forge a completion).
+- `fn_discovery_refresh_fire(request_id, anon_key)` — dispatch bridge: under the tenant advisory lock it
+  **claims** the EXECUTING request (`dispatched_at`) **before** invoking the existing edge with
+  `refresh_request_id` threaded in. A lost acknowledgement can **never** cause a second provider call (a second
+  fire sees `dispatched_at` and no-ops). Consumes **no** budget (authorize already consumed exactly one unit).
+- `fn_discovery_refresh_is_refund(outcome)` — one IMMUTABLE refund-policy source used by the customer path, the
+  edge callback, and reconcile, so policy can never drift.
+- Edge `kalodata-discovery/index.ts` (prepared): optional `refresh_request_id`; after the single paid call +
+  ingest, calls the completion with the right outcome at **every** exit — pre-charge (`PROVIDER_FAILED_PRE_CHARGE`
+  for secret-missing / request-builder / UNSUPPORTED_MARKET), post-charge (`PROVIDER_FAILED_POST_CHARGE` for a
+  network error after the request, a provider HTTP error, or an ingest failure), and `SUCCESS` (incl. zero-new).
+  With no `refresh_request_id` the behaviour is **byte-for-byte the original v12** (normal discovery wave).
 
-1. `fn_discovery_credit_balance()` → tenant ledger sum.
-2. `fn_discovery_refresh_quote(market)` → server-authoritative cost + fail-closed reason
-   (`PRICING_NOT_CONFIGURED` / `NO_ACTIVE_SUBSCRIPTION` / `INSUFFICIENT_CREDITS` / `PROVIDER_NOT_AUTHORIZED` /
-   null). Pure read.
-3. `fn_discovery_refresh_reserve(market, idempotency_key)` → atomic (advisory lock), idempotent (double-click
-   safe: a repeat key returns the existing request unchanged, no double charge), re-evaluates the quote inside
-   the lock, advances the Kalodata page cursor via `fn_kalodata_next_page` (no page-1 re-buy), writes the
-   `−cost` RESERVE ledger row. **Does not fire the provider call.**
-4. `fn_discovery_refresh_authorize(request_id)` → consumes the founder-authorised provider budget
-   (`fn_provider_budget_try_consume`) **fail-closed**; no budget ⇒ auto-refund (`PROVIDER_FAILED_PRE_CHARGE`)
-   and deny; on success the request moves to `EXECUTING`. Idempotent on non-RESERVED state.
-5. `fn_discovery_refresh_dispatch(request_id)` → requires `EXECUTING`; idempotent via `dispatched_at` (never
-   re-fires an expensive provider call just because an acknowledgement is missing); returns `(market,
-   page_number)` for the **existing** `kalodata-discovery` edge. Does **not** execute the paid call from SQL.
-6. `fn_discovery_refresh_complete(request_id, new_total, new_image_pending, duplicates, outcome)` → records the
-   per-outcome counts and settles; idempotent on a duplicate completion callback (no double settle/refund).
-7. `fn_discovery_refresh_settle(request_id, new_products, outcome)` — **refund policy v2**, driven by whether a
-   chargeable provider call occurred, **not** by the new-product count:
-   - `SUCCESS` (incl. **zero-new**, and new-but-image-pending) → **SETTLE** (credits consumed).
-   - `PROVIDER_FAILED_PRE_CHARGE` / `CANCELLED_PRE_CHARGE` → **REFUND** (no cost incurred).
-   - `PROVIDER_FAILED_POST_CHARGE` → **REFUND** by default (founder D3: founding-member beta — customer gets
-     credits back, Strateloq absorbs provider cost). One flag flips this.
-   - `TIMEOUT` / unknown → safe **REFUND**. Idempotent on already-SETTLED/REFUNDED.
-8. `fn_discovery_refresh_status(request_id)` — **pure read** (the async result surface). Tenant-scoped; returns
-   `state / terminal / charged / new_visible (= new − image_pending) / new_image_pending / duplicates /
-   new_total / settlement / balance`. Counts are **null until terminal** (UI shows "Searching…" mid-flight).
-   Never charges, dispatches, or mutates.
-9. `fn_discovery_refresh_reconcile(ttl_minutes=30)` — service-role sweep; `FOR UPDATE SKIP LOCKED`. Stuck
-   `RESERVED` past TTL → refund `cancelled_pre_charge`; stuck `EXECUTING` + dispatched past TTL with no
-   completion → refund `timeout`. **Never re-dispatches the provider.**
-
-Rollback: `mig_341_ROLLBACK.sql` (drops all functions then tables; safe while inert — no production rows).
-
-### Transactional test evidence (fixtures only; `BEGIN … ROLLBACK`; production untouched)
-- Reserve 5→4 credits; **idempotent replay** of the same key does not double-charge.
-- **Authorize with no budget** → `no_budget_fail_closed` → auto-refund → balance restored, state `REFUNDED`.
-- **Dispatch** of an EXECUTING request → `{dispatched:true, page_number:2}`; **replay** → `idempotent_replay,
-  already_dispatched` (no second provider call).
-- **Complete** success → records `new_total:5 / new_image_pending:3 / duplicates:2`, settles (refunded:false);
-  **duplicate callback** → `idempotent_replay, state:SETTLED` (no double settle).
-- **Status** read: `EXECUTING` → counts null (mid-flight); `SETTLED` → `new_visible:2 / image_pending:3 /
-  duplicates:2 / "5 credits used"`; `REFUNDED` → `"refunded — no credits charged"`; unknown id and another
-  tenant's request both → `REQUEST_NOT_FOUND` (cross-tenant isolation holds).
-- **Zero-new SUCCESS** settles (not refund); pre-charge failure and cancellation refund; post-charge failure
-  refunds per D3.
-- **Reconcile** → stuck RESERVED refunded (`cancelled_pre_charge`), stuck EXECUTING refunded (`timeout`),
-  without re-dispatch; `{reconciled_reserved:1, reconciled_executing:1}`.
-- Ledger integrity across {GRANT, RESERVE, SETTLE, REFUND}; final balances reconcile exactly.
+**Connected chain (prepared):** quote → reserve → authorize (consume budget, fail-closed) → **fire** (claim +
+invoke edge with request id) → edge (one paid call → ingest) → **complete_from_edge** (counts + settle/refund) →
+status (customer polls terminal result). Only the **live paid Kalodata call** in the middle cannot be exercised
+here without spending money; everything around it is fixture/transactionally tested.
 
 ---
 
-## C. Image gate (mig_342 — Product Explorer v5)
+## 2. Credit-recovery safety (P2)
 
-Status: **prepared, tested. NOT deployed.** Builds on live mig_340 (v4).
-
-- Customer-facing projection returns **only** products with a verified `http(s)` **display** image
-  (`has_display_image` EXISTS check); REFERENCE/NONE are excluded from items/total/facets/search/filters/
-  pagination via the `prefiltered` gate, **preserved in the DB**, and counted in top-level
-  `hidden_pending_image`. Invariant `image_gated_display_only:true`; contract `pulse_product_explorer_v5`.
-- Germany verification: customer-facing Explorer = **9** products (all verified display images); **20 hidden**
-  (3 REFERENCE + 17 NONE) preserved internally, recoverable. Tenant/market scoping + Product Asset Lock
-  unchanged.
-- Enforced **server-side** (v5 gate) **and client-side** (decode filter, defense-in-depth).
-- Rollback: `mig_342_ROLLBACK.sql` → v4.
-
----
-
-## D. Frontend (Lovable preview — Refresh Discovery flow)
-
-Status: **preview only, NOT published. Production remains `db027f5`.** Commits `e965df9` (modal) → `7d0869c`
-(async status polling).
-
-Files: `src/lib/business-discovery/refresh-discovery-contract.ts` (fail-closed decoders for quote / reserve /
-authorize / status + `buildIdempotencyKey` + `quoteUnavailableMessage`), `src/hooks/use-refresh-discovery.ts`,
-`src/components/business-discovery/refresh-discovery-modal.tsx` (+ its test), and the button wiring in
-`src/routes/workspace.tsx` (the previously-inert "Refresh discovery" button now renders
-`<RefreshDiscoveryControl market={…}>`).
-
-Behaviour (10 required controls):
-1. The button is a genuine clickable control and opens the modal **even when the refresh is unavailable**.
-2. On open it calls `fn_discovery_refresh_quote` and shows the **country**, **required credits**, **your
-   balance**, and a one-line operation description.
-3. When `can_refresh=false` it shows a plain per-reason message (pricing not set up / no active subscription /
-   not enough credits / provider access not enabled) and **Confirm is disabled**. A nonsensical or
-   wrong-country reply also counts as "can't refresh" (fail-closed).
-4. Confirm is enabled only when `can_refresh=true`.
-5. Confirm generates **one** idempotency key held in state; a rapid second click does **not** send a second
-   reserve. Progress reads "Reserving credits…", "Authorizing…", "Searching {country}…".
-6. After authorize (`EXECUTING`) it **polls `fn_discovery_refresh_status`** every ~2.5s, ≤10 attempts (~25s).
-7. On `SETTLED` it renders **three separate counts** — new visible / already known (duplicate) / waiting-for-
-   image — plus the settlement line ("{n} credits used"). Counts never appear until the server reports
-   terminal, even if an unfinished reply contains numbers.
-8. Settlement is accurate: refunded/failed → "This refresh couldn't run. No credits were charged." + restored
-   balance; the wording is rebuilt from the server-reported cost (never raw server text).
-9. Errors are recoverable: a **Retry reuses the same idempotency key**, so the server only reports on the
-   existing refresh — it never starts or authorises a second one; a failure is never shown as a success.
-10. The dialog scrolls and fits mobile at **320 / 360 / 375 / 390 / 430 px** (verified in a harness at the
-    "pricing not set up" state; no horizontal overflow, buttons reachable).
-
-Preserved from `b1a7ab6`: the image gate (client-side decode filter, defense-in-depth), balanced 4:3 grid,
-mobile workspace header stack, mobile hero scaling, provider-neutral copy, growth-label wrap. Recommendations
-and billing config untouched.
-
-Behaviour change to note for the founder: the "Refresh discovery" button previously re-ran the website
-analysis; it now opens this paid-refresh modal instead (website re-analysis remains available via "Analyse
-another business").
-
-### Frontend test evidence (fixtures only; `supabase.rpc` mocked; NO real calls)
-- **576 passed / 0 failed** across 77 files; typecheck clean (`bunx tsgo --noEmit`); lint on changed files
-  0 errors / 0 warnings; preview build OK.
-- Covers: click-to-open; each unavailable reason + Confirm disabled; one reserve per confirm with a stable key
-  (double-click safe); EXECUTING→SETTLED renders the three counts + settlement; EXECUTING→REFUNDED renders
-  "no credits charged" + restored balance; poll-cap → "Still processing — your credits are safe" (not a
-  success); Retry reuses the same key; terminal counts hidden while non-terminal; decoder fail-closed on junk.
+- **Uncertain post-dispatch outcome is NOT classified as pre-charge.** A stuck `EXECUTING` request (authorized,
+  budget consumed, may have fired) is reconciled to an **auditable** `provider_outcome = UNRESOLVED_POST_DISPATCH`
+  and the customer is refunded (founding-member beta). A stuck `RESERVED` (never authorized) is a clean
+  `CANCELLED_PRE_CHARGE` refund. Distinct, auditable states.
+- **No second paid call on recovery.** Reconcile never re-dispatches; `fire`/`dispatch` are idempotent via
+  `dispatched_at`; the provider budget `consumed_calls` only ever increments (an approved N can never become
+  N+1), so it is a permanent audit record.
+- **No contradiction under retries.** The ledger writes RESERVE −cost once (unique index), then exactly one
+  SETTLE(0)/REFUND(+cost) (terminal-status guard). A late edge callback arriving after reconcile already
+  refunded is an idempotent no-op (verified). Customer balance, provider usage, and request status stay
+  mutually consistent.
 
 ---
 
-## E. Deployment sequence (when founder approves)
+## 3. Final-release compatibility (P3) — verified
 
-Two independent lanes:
+- **RPC names/fields:** frontend `7d0869c` calls `fn_discovery_refresh_quote / _reserve / _authorize / _status`
+  — all present, fields match; the new `provider_outcome` on status is additive (the fail-closed decoder ignores
+  unknown fields). Full `mig_341` applies cleanly (ordering + cross-refs + grants validated in a rollback txn).
+- **Migration ordering:** `mig_342` (Explorer v5) builds on live `mig_340`; `mig_341` is independent. Both apply
+  cleanly; rollbacks present.
+- **RLS / tenant isolation:** ledger + request are RLS read-own; mutating functions are `auth.uid()`-scoped
+  (customer) or service-role (edge/reconcile). Cross-tenant access returns `REQUEST_NOT_FOUND` (tested).
+- **Country scoping + image-only visibility + counts:** `complete_from_edge` computes `new_visible` with the
+  same gate predicate and the request's own market, so the customer count equals the Explorer count by
+  construction. DE fixture: Explorer = 9 visible, 20 hidden.
+- **Quote / insufficient-credit states, modal polling, mobile 320–430px:** all green in the frontend suite
+  (576 tests). **Recommendations and Product Asset Lock untouched** (edge/migrations don't reference them; the
+  frontend diffs are scoped to the refresh module + the button wiring).
 
-**Lane 1 — Image gate + visual corrections (low-risk, no commercial dependency):**
-1. Apply `mig_342` (Explorer v5) → publish the Lovable preview.
-   Order: backend first (the frontend fails closed without the gated response). Rollback: `mig_342_ROLLBACK.sql`
-   → v4; re-publish `db027f5`.
-2. Founder-device visual acceptance (desktop grid 1280/1440; mobile workspace + credit modal
-   320/360/375/390/430).
+---
 
-**Lane 2 — Credit-based Refresh Discovery (separate, gated on founder config):**
+## 4. Two release stages
+
+### STAGE A — safe interface release (no paid path)
+Ship independently; nothing here can spend money or charge a customer.
+1. Apply `mig_342` (Explorer v5 image gate). Rollback: `mig_342_ROLLBACK.sql` → v4.
+2. Publish Lovable `7d0869c` (balanced grid, mobile header/hero, copy, and the Refresh modal which, with no
+   pricing/budget configured, opens and shows a clear **"pricing not set up"** unavailable state — Confirm
+   disabled). Rollback: re-publish `db027f5`.
+3. Founder-device visual acceptance: desktop grid 1280/1440; mobile workspace + credit modal 320/360/375/390/430.
+
+`mig_341` is **not** required for Stage A and must **not** be applied as part of it.
+
+### STAGE B — customer refresh activation (gated; prepared, not done)
+Do **not** enable the credit-spending path merely because `mig_341` is installed.
 1. Founder sets **D1–D4** (below).
-2. Apply `mig_341` (full lifecycle + status + reconcile).
-3. Complete the **edge-execution wiring** under founder authorisation: after `authorize`, invoke the existing
-   `kalodata-discovery` edge for the reserved `(market, page_number)`, then have it call
-   `fn_discovery_refresh_complete` with the run counts. (This is the one leg that can only be validated with a
-   real provider run — see F.)
-4. Schedule the `fn_discovery_refresh_reconcile` sweep (service-role).
-5. Publish the gated Refresh Discovery frontend.
-6. Authorise provider budgets (D4) — the button then enables; until then it opens and shows a clear
-   unavailable state. Rollback: `mig_341_ROLLBACK.sql` (safe while inert).
+2. Apply `mig_341` (full lifecycle + `fire` + `complete_from_edge` + status + reconcile). Rollback:
+   `mig_341_ROLLBACK.sql` (safe while inert).
+3. Deploy the prepared edge `kalodata-discovery` (adds the `refresh_request_id` callback; backward-compatible).
+4. Add the **one remaining frontend wire**: after `authorize` returns EXECUTING, call
+   `fn_discovery_refresh_fire(request_id, anonKey)` before polling status (the modal already polls status). This
+   is the only frontend change left and is inert until a budget exists.
+5. Schedule the `fn_discovery_refresh_reconcile` service-role sweep.
+6. Authorise a **small, bounded** provider budget (D4) and run **one** live integration test (a single real
+   refresh) → confirm settle + counts + status. Only after that passes, grant customer credits (D2) and open
+   the path to customers.
 
 ---
 
-## F. Genuine external blockers (nothing else internally controllable remains)
+## 5. Rollback order
+
+- **Stage A:** re-publish `db027f5`, then apply `mig_342_ROLLBACK.sql` (→ Explorer v4). Order: frontend first
+  (so the client stops expecting the gated shape), then backend.
+- **Stage B:** disable customer credit grants (stop writing GRANT rows) → set provider budgets inactive (halts
+  any new paid call immediately; fail-closed) → `mig_341_ROLLBACK.sql` → redeploy the prior edge (v12) if the
+  callback is to be removed. Any in-flight EXECUTING request is refunded by the reconcile sweep
+  (UNRESOLVED_POST_DISPATCH), never re-charged.
+
+---
+
+## 6. Remaining founder commercial approvals (the only external blockers)
 
 - **D1** — credits per refresh, per market (`discovery_credit_price` is empty by design).
-- **D2** — how customers receive credits (subscription allowance vs purchased packs; billing integration).
-- **D3** — confirm post-charge-failure refund default (current: refund customer; Strateloq absorbs provider
-  cost — founding-member beta).
-- **D4** — authorise provider budgets per market (real provider spend).
-- **Live paid EXECUTE + edge→complete callback** — the single real Kalodata call cannot be exercised here
-  without spending money; the path around it is fully fixture/transactionally tested, and the edge→complete
-  wiring is completed and validated at activation with a real run under founder authorisation.
-- **Signed-in device visual acceptance** — container egress to the authenticated live app is auth-gated.
+- **D2** — how customers receive credits (subscription allowance vs purchased packs; billing).
+- **D3** — confirm post-charge-failure refund default (current: refund customer; Strateloq absorbs — beta).
+- **D4** — authorise provider budgets per market (real provider spend) + the one bounded live integration test.
 
-None of these are technical defects; all gate activation only.
+None are technical defects; all gate Stage B activation only. Stage A is independent of all of them.
+
+---
+
+## 7. Test evidence (fixtures / transactional only; no paid calls)
+
+- **Service-role completion:** SUCCESS → SETTLED with `new_visible`/`image_pending`/`duplicates` from the gate
+  predicate (p1 owned display → visible; p2 none + p3 marketplace/tenant-NULL → pending); POST_CHARGE → REFUNDED;
+  idempotent on duplicate **and** on a late callback after reconcile already refunded (no double settle/charge).
+  Persisted balances: charged tenant 5, refunded tenants 10 / 20 — exact.
+- **Fire guards:** reserved / already-dispatched / other-tenant / no-key all return **before** any
+  `net.http_post` (no provider call); the one-fire `dispatched_at` claim holds.
+- **Reconcile:** stuck RESERVED → CANCELLED_PRE_CHARGE, stuck EXECUTING → UNRESOLVED_POST_DISPATCH; both
+  refunded, no re-dispatch.
+- **Full `mig_341`** applies cleanly in a rollback transaction (ordering + cross-refs + grants, incl.
+  `service_role`). **Image gate (mig_342):** DE = 9 visible / 20 hidden. **Frontend `7d0869c`:** 576 tests pass,
+  typecheck/lint/build clean, modal 320–430px.
+
+---
+
+## 8. Verdict per release question
+
+| # | Dimension | Verdict |
+|---|-----------|---------|
+| A | Frontend complete | **PASS** (Stage A); one small Stage-B wire (`fire` call) remains, inert |
+| B | Backend execution complete | **PASS** (full chain wired + edge callback prepared) |
+| C | Credit accounting complete | **PASS** |
+| D | Provider authorization complete | **PASS (inert)** — needs founder budget (D4) |
+| E | Recovery / reconciliation complete | **PASS** (auditable unresolved state; no re-charge) |
+| F | End-to-end tested with fixtures | **PASS for every leg except the single live paid Kalodata call** (not exercisable without spend) |
+| G | Ready for safe deployment | **Stage A: READY.** Stage B: PREPARED, blocked on D1–D4 + edge deploy + the one `fire` wire + one bounded live test |
