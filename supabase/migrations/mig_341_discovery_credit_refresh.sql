@@ -170,10 +170,23 @@ BEGIN
     'contract','pulse_discovery_refresh_reserve_v1');
 END; $fn$;
 
--- ---------- settle / refund (idempotent; explicit policy) ----------
--- Policy (founder decision D3): SUCCESS with >=1 NEW product => SETTLE (credits consumed).
---   Provider failure OR zero NEW products => full REFUND. Partial handling is a founder decision; default is
---   settle on any NEW>0 (a refresh that returns some new products delivered value).
+-- ---------- settle / refund (idempotent; explicit per-outcome policy) ----------
+-- Refund is driven by WHETHER A CHARGEABLE PROVIDER CALL OCCURRED, not by the new-product count.
+-- p_outcome is one of:
+--   'SUCCESS'                    -> provider returned a valid response -> SETTLE (credits consumed),
+--                                   INCLUDING zero NEW products: "nothing new in this market" is a real,
+--                                   provider-charged answer and is NOT auto-refunded. new_products recorded.
+--   'PROVIDER_FAILED_PRE_CHARGE' -> failed before any chargeable call (no budget, auth/builder error,
+--                                   UNSUPPORTED_MARKET) -> REFUND (no cost incurred).
+--   'CANCELLED_PRE_CHARGE'       -> customer cancelled before the chargeable call -> REFUND.
+--   'PROVIDER_FAILED_POST_CHARGE'-> a chargeable call was made then the provider errored/returned nothing
+--                                   usable -> FOUNDER POLICY (D3): default REFUND (customer gets their credits
+--                                   back; Strateloq absorbs the provider cost) because the customer received
+--                                   no result. Flip v_goodwill_refund_post_charge to false to make the
+--                                   customer bear it instead.
+--   'TIMEOUT'                    -> outcome unknown within the window; safe default REFUND, and a
+--                                   reconciliation sweep may later correct to SETTLE if the run did deliver.
+-- A SETTLE marker row (credits=0) records consumption; a REFUND row (+credits_cost) releases the reservation.
 CREATE OR REPLACE FUNCTION public.fn_discovery_refresh_settle(p_request_id uuid, p_new_products integer, p_outcome text)
  RETURNS jsonb LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path TO '' AS $fn$
 DECLARE
@@ -181,26 +194,33 @@ DECLARE
   v_req public.discovery_refresh_request;
   v_outcome text := upper(coalesce(p_outcome,'SUCCESS'));
   v_new int := greatest(coalesce(p_new_products,0),0);
+  v_goodwill_refund_post_charge boolean := true;   -- founder decision D3 (default: refund on post-charge failure)
   v_refund boolean;
 BEGIN
   SELECT * INTO v_req FROM public.discovery_refresh_request WHERE id=p_request_id AND tenant_id=v_uid;
-  IF NOT FOUND THEN RETURN jsonb_build_object('status','error','reason','REQUEST_NOT_FOUND','contract','pulse_discovery_refresh_settle_v1'); END IF;
+  IF NOT FOUND THEN RETURN jsonb_build_object('status','error','reason','REQUEST_NOT_FOUND','contract','pulse_discovery_refresh_settle_v2'); END IF;
   IF v_req.status IN ('SETTLED','REFUNDED') THEN
-    RETURN jsonb_build_object('status','ok','idempotent_replay',true,'state',v_req.status,'contract','pulse_discovery_refresh_settle_v1');
+    RETURN jsonb_build_object('status','ok','idempotent_replay',true,'state',v_req.status,'contract','pulse_discovery_refresh_settle_v2');
   END IF;
   PERFORM pg_advisory_xact_lock(hashtextextended(v_uid::text,42));
-  v_refund := (v_outcome <> 'SUCCESS') OR (v_new = 0);
+  v_refund := CASE
+    WHEN v_outcome = 'SUCCESS'                                          THEN false   -- settle, even zero-new
+    WHEN v_outcome IN ('PROVIDER_FAILED_PRE_CHARGE','CANCELLED_PRE_CHARGE') THEN true -- no cost incurred
+    WHEN v_outcome = 'PROVIDER_FAILED_POST_CHARGE'                      THEN v_goodwill_refund_post_charge
+    WHEN v_outcome = 'TIMEOUT'                                          THEN true     -- safe default
+    ELSE true                                                                          -- unknown -> safe refund
+  END;
   IF v_refund THEN
     INSERT INTO public.discovery_credit_ledger(tenant_id,entry_type,credits,refresh_request_id,reason)
       VALUES (v_uid,'REFUND',v_req.credits_cost,v_req.id,'refund:'||lower(v_outcome)||' new='||v_new);
     UPDATE public.discovery_refresh_request SET status='REFUNDED', new_products=v_new, updated_at=now() WHERE id=v_req.id;
   ELSE
     INSERT INTO public.discovery_credit_ledger(tenant_id,entry_type,credits,refresh_request_id,reason)
-      VALUES (v_uid,'SETTLE',0,v_req.id,'settle new='||v_new);
+      VALUES (v_uid,'SETTLE',0,v_req.id,'settle:'||lower(v_outcome)||' new='||v_new);
     UPDATE public.discovery_refresh_request SET status='SETTLED', new_products=v_new, updated_at=now() WHERE id=v_req.id;
   END IF;
-  RETURN jsonb_build_object('status','ok','settled',NOT v_refund,'refunded',v_refund,'new_products',v_new,
-    'balance_after',public.fn_discovery_credit_balance(),'contract','pulse_discovery_refresh_settle_v1');
+  RETURN jsonb_build_object('status','ok','outcome',v_outcome,'settled',NOT v_refund,'refunded',v_refund,'new_products',v_new,
+    'balance_after',public.fn_discovery_credit_balance(),'contract','pulse_discovery_refresh_settle_v2');
 END; $fn$;
 
 GRANT EXECUTE ON FUNCTION public.fn_discovery_credit_balance() TO authenticated;
