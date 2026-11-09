@@ -48,8 +48,12 @@ CREATE TABLE IF NOT EXISTS public.discovery_refresh_request (
   credits_cost    integer NOT NULL,
   page_number     integer,
   candidates_requested integer,
-  new_products    integer,
+  new_products    integer,          -- total NEW canonical products the run returned (incl. image-pending)
+  new_image_pending integer,        -- of new_products, how many are hidden pending a display image
+  duplicates      integer,          -- already-known canonical products the run returned
   run_id          uuid,
+  dispatched_at   timestamptz,
+  completed_at    timestamptz,
   created_at      timestamptz NOT NULL DEFAULT now(),
   updated_at      timestamptz NOT NULL DEFAULT now()
 );
@@ -257,8 +261,85 @@ BEGIN
     'contract','pulse_discovery_refresh_authorize_v1');
 END; $fn$;
 
+-- ---------- dispatch (mark EXECUTING request as dispatched; return params for the existing edge) ----------
+-- Does NOT fire the paid call from SQL: the existing kalodata-discovery edge runs it with the reserved page
+-- (reuses fn_kalodata_next_page's cursor). One authorised provider call per request: only a request already
+-- EXECUTING (post-authorize) can be dispatched, and dispatched_at makes it idempotent (no duplicate execution).
+CREATE OR REPLACE FUNCTION public.fn_discovery_refresh_dispatch(p_request_id uuid)
+ RETURNS jsonb LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path TO '' AS $fn$
+DECLARE v_uid uuid := auth.uid(); v_req public.discovery_refresh_request;
+BEGIN
+  SELECT * INTO v_req FROM public.discovery_refresh_request WHERE id=p_request_id AND tenant_id=v_uid;
+  IF NOT FOUND THEN RETURN jsonb_build_object('status','error','reason','REQUEST_NOT_FOUND','contract','pulse_discovery_refresh_dispatch_v1'); END IF;
+  PERFORM pg_advisory_xact_lock(hashtextextended(v_uid::text,42));
+  IF v_req.status <> 'EXECUTING' THEN
+    RETURN jsonb_build_object('status','error','reason','NOT_AUTHORIZED_OR_TERMINAL','state',v_req.status,'contract','pulse_discovery_refresh_dispatch_v1');
+  END IF;
+  IF v_req.dispatched_at IS NOT NULL THEN  -- already dispatched: never re-fire an expensive provider call
+    RETURN jsonb_build_object('status','ok','idempotent_replay',true,'already_dispatched',true,'request_id',v_req.id,
+      'market',v_req.market,'page_number',v_req.page_number,'contract','pulse_discovery_refresh_dispatch_v1');
+  END IF;
+  UPDATE public.discovery_refresh_request SET dispatched_at=now(), updated_at=now() WHERE id=v_req.id;
+  RETURN jsonb_build_object('status','ok','dispatched',true,'request_id',v_req.id,'provider',v_req.provider,
+    'market',v_req.market,'page_number',v_req.page_number,
+    'note','run the kalodata-discovery edge for (market,page_number); then call fn_discovery_refresh_complete',
+    'contract','pulse_discovery_refresh_dispatch_v1');
+END; $fn$;
+
+-- ---------- complete (record run counts + settle; idempotent) ----------
+-- Called with the run outcome. new_total = all NEW canonical products (incl. image-pending); image_pending =
+-- of those, how many are hidden pending a display image; duplicates = already-known. Settles per the policy
+-- in fn_discovery_refresh_settle (SUCCESS incl. zero-new settles; failures refund per D3; beta refunds
+-- post-charge technical failures). A SUCCESS with new-but-image-pending products still settles (value delivered).
+CREATE OR REPLACE FUNCTION public.fn_discovery_refresh_complete(p_request_id uuid, p_new_total integer, p_new_image_pending integer, p_duplicates integer, p_outcome text)
+ RETURNS jsonb LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path TO '' AS $fn$
+DECLARE v_uid uuid := auth.uid(); v_req public.discovery_refresh_request; v_settle jsonb;
+BEGIN
+  SELECT * INTO v_req FROM public.discovery_refresh_request WHERE id=p_request_id AND tenant_id=v_uid;
+  IF NOT FOUND THEN RETURN jsonb_build_object('status','error','reason','REQUEST_NOT_FOUND','contract','pulse_discovery_refresh_complete_v1'); END IF;
+  IF v_req.status IN ('SETTLED','REFUNDED') THEN  -- duplicate completion callback: no double settle/refund
+    RETURN jsonb_build_object('status','ok','idempotent_replay',true,'state',v_req.status,'contract','pulse_discovery_refresh_complete_v1');
+  END IF;
+  UPDATE public.discovery_refresh_request
+     SET new_image_pending=greatest(coalesce(p_new_image_pending,0),0),
+         duplicates=greatest(coalesce(p_duplicates,0),0), completed_at=now(), updated_at=now()
+   WHERE id=v_req.id;
+  v_settle := public.fn_discovery_refresh_settle(v_req.id, p_new_total, p_outcome);
+  RETURN jsonb_build_object('status','ok','request_id',v_req.id,
+    'new_total',greatest(coalesce(p_new_total,0),0),
+    'new_image_pending',greatest(coalesce(p_new_image_pending,0),0),
+    'duplicates',greatest(coalesce(p_duplicates,0),0),
+    'settlement',v_settle,'contract','pulse_discovery_refresh_complete_v1');
+END; $fn$;
+
+-- ---------- reconcile (recover stuck reservations; safe refund; never re-dispatch) ----------
+-- Service-role sweep (not customer-callable). RESERVED past TTL (never authorised: browser closed / network
+-- interruption before dispatch) -> refund (CANCELLED_PRE_CHARGE). EXECUTING + dispatched past TTL with no
+-- completion (missing/lost callback, dispatch timeout) -> refund (TIMEOUT); it never re-fires the provider.
+CREATE OR REPLACE FUNCTION public.fn_discovery_refresh_reconcile(p_ttl_minutes integer DEFAULT 30)
+ RETURNS jsonb LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path TO '' AS $fn$
+DECLARE v_cut timestamptz := now() - make_interval(mins => greatest(coalesce(p_ttl_minutes,30),1));
+        r record; v_reserved int := 0; v_executing int := 0;
+BEGIN
+  FOR r IN SELECT id, tenant_id, status FROM public.discovery_refresh_request
+           WHERE status IN ('RESERVED','EXECUTING') AND updated_at < v_cut FOR UPDATE SKIP LOCKED LOOP
+    -- settle refunds using the owning tenant's balance; impersonate via settle which reads auth.uid()?  No:
+    -- reconcile runs as service-role, so write the ledger rows directly, scoped to r.tenant_id.
+    INSERT INTO public.discovery_credit_ledger(tenant_id,entry_type,credits,refresh_request_id,reason)
+      SELECT r.tenant_id,'REFUND',rq.credits_cost,r.id,
+             CASE WHEN r.status='RESERVED' THEN 'reconcile:cancelled_pre_charge' ELSE 'reconcile:timeout' END
+      FROM public.discovery_refresh_request rq WHERE rq.id=r.id;
+    UPDATE public.discovery_refresh_request SET status='REFUNDED', completed_at=now(), updated_at=now() WHERE id=r.id;
+    IF r.status='RESERVED' THEN v_reserved := v_reserved+1; ELSE v_executing := v_executing+1; END IF;
+  END LOOP;
+  RETURN jsonb_build_object('status','ok','reconciled_reserved',v_reserved,'reconciled_executing',v_executing,
+    'ttl_minutes',greatest(coalesce(p_ttl_minutes,30),1),'contract','pulse_discovery_refresh_reconcile_v1');
+END; $fn$;
+
 GRANT EXECUTE ON FUNCTION public.fn_discovery_credit_balance() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_discovery_refresh_quote(text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_discovery_refresh_reserve(text,text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_discovery_refresh_authorize(uuid) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.fn_discovery_refresh_settle(uuid,integer,text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_discovery_refresh_dispatch(uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_discovery_refresh_complete(uuid,integer,integer,integer,text) TO authenticated;
+-- reconcile is service-role only (no grant to authenticated): a scheduled sweep invokes it.
