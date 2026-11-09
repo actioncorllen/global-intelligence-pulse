@@ -55,22 +55,32 @@ page-control concern — see §2.
   `revenue_growth_rate`; min = −96.13 (valid %); `image_status` NONE for the 10; total still 29.
 - Rollback `mig_339_ROLLBACK.sql` restores v2. Committed `e169774`.
 
-### Frontend — Lovable preview (preview only; production publish gated on approval)
-Instructed the Product Explorer card/detail to:
-1. Display growth from `growth_pct` (fallback: FastMoss `sales_growth_rate/100`, Kalodata
-   `revenue_growth_rate`); format `< 1000%` as "+X.X%", `≥ 1000%` as a multiplier ("527×"); never K%/m%;
-   hide when null.
-2. Keep the honest "No image" placeholder when `image_status='NONE'`/`cover` null — no fabrication.
-3. Render `NEWLY_DISCOVERED` → "Newly discovered", `NEWLY_LISTED` → "Newly listed" strictly from
-   `opportunity_class`; show "Research pending" + no score when `research_status` is pending.
-4. Open each product's canonical Product Detail by `product_id`, preserving the selected country.
-5. Page through all 29 (24 + 5) with controls when `total_pages > 1`.
-_(Preview build status + verification recorded at the end of this doc.)_
+### Frontend — Lovable preview (preview commit `e2d3383`, NOT published; production publish gated on approval)
+Implemented in `src/lib/business-discovery/product-explorer-contract.ts` + `product-explorer.tsx`:
+1. Growth: decoder reads `growth_pct`/`growth_basis`/`revenue_growth_rate`/`image_status`/`research_status`.
+   `explorerGrowthPct()` prefers `growth_pct`, else FastMoss `sales_growth_rate/100`, else Kalodata
+   `revenue_growth_rate` (never the raw rate). `formatGrowthPct()` → "+48.3%" / "−39.1%" below 1000%, a
+   multiplier ("527×") at ≥1000%, **never K%/m%**, and null (hidden — no "0%") for unknown or impossible
+   (`< −100%`) values. Card + table + sort all use it.
+2. Images: `explorerDisplayCover()` returns null when `image_status='NONE'` — honest "No image" placeholder,
+   **no fallback substitute** (card, table, and drawer). No fabrication; PAL preserved.
+3. Labels: `opportunityClassLabel()` strict from `opportunity_class` (`NEWLY_DISCOVERED`→"Newly discovered",
+   `NEWLY_LISTED`→"Newly listed"); the marketplace `NEW_LISTED` lane chip is hidden so listing status comes
+   only from `opportunity_class`; "Research pending" chip + suppressed score when `research_status` pending.
+4. Navigation: card/row/placeholder → `onOpen({ productId, market })` opens that product's own canonical
+   detail, preserving the selected country.
+5. Pagination: `totalPages = max(server_total_pages, ceil(total/pagesize))` so all 29 stay reachable (24+5)
+   even if the server undercounts; page controls shown when `total_pages > 1`.
+Two test files added: `product-explorer-growth.test.ts` (unit) + `product-explorer-corrections.test.tsx`
+(component). AGENTS.md / roadmap.md updated. Build finished clean (no error); **preview only, not published**.
 
 ## 3. Verification results
 - Backend diagnosis: all six priorities traced on live data (queries above).
 - `mig_339`: 7/7 transactional PASS (production untouched — rolled back).
-- Frontend preview: pending (verified at the scheduled check-in; see §6).
+- Frontend preview (`e2d3383`): implemented per spec with unit + component tests asserting "527×" (no K%/m%),
+  "No image" for `image_status=NONE` (no `<img>`), "Newly discovered" (not "Newly listed"), "Research pending"
+  with no score, click-opens-own-detail (card + placeholder), and 29 products → page 1 of 24 + page 2 of 5
+  with controls. Lovable build completed with no error.
 
 ## 4. Preview commit / prepared migration
 - Prepared backend migration: `supabase/migrations/mig_339_product_explorer_growth_normalization.sql`
