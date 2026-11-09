@@ -138,10 +138,13 @@ since mig_341 is prepared-but-not-applied; mig_344 does not modify the credit mo
 The prepared modal (`refresh-discovery-modal.tsx`) already shows, before confirmation, the **required credits +
 balance** and a clean **"not activated"** state; after execution it shows **newly-visible / already-known /
 waiting-for-image** tiles and the **credit settlement (or "no credits charged")** line. Two P3 items were added as
-an **unpublished** preview change (branding/naming untouched): a before-confirmation note that *a successful
-search may return no new products (charged for the search, not the results)*, and an explicit **"New candidates"**
-total tile alongside the visible/pending split — mapping the modal 1:1 to the backend status contract. The
-customer-facing Product Explorer stays **image-only**; Product Asset Lock is not weakened.
+an **unpublished** preview change (Lovable commit `c1a6afa`, one file only, nothing published; branding/naming
+untouched): a before-confirmation note that *a successful search may return no new products (charged for the
+search, not the results)*, and an explicit **"New candidates"** total tile alongside the visible/pending split —
+mapping the modal 1:1 to the backend status contract (new candidates discovered / newly customer-visible /
+already known / pending permitted imagery / credits consumed-or-refunded). All 583 frontend tests pass (incl. 31
+refresh-window tests), typecheck + lint clean. The customer-facing Product Explorer stays **image-only**; Product
+Asset Lock is not weakened.
 
 ---
 
