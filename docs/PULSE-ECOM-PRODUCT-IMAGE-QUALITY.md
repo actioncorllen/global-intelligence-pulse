@@ -82,17 +82,26 @@ surface authorised images automatically once they exist.
   `display_cleared:true`/`commercial_cleared:false`; reference items carry `image_copied:false` + an eBay
   listing URL + no cover; no NONE item has a cover; no marketplace image is ever a cover; tenant + country
   isolation and PAL unchanged (same scoping as v3).
-- **Frontend (preview):** _to be completed after the preview build — exact-product image identity, display vs
-  reference vs none rendering, no wrong-product substitution, no marketplace image as `<img>`, responsive
-  cards, correct product-detail navigation, Product Asset Lock, and existing Explorer compatibility; plus
-  typecheck / lint / build._
+- **Frontend (preview commit `db027f5`):** **549 tests passed, 0 failed** across 76 files (+9 new in
+  `product-explorer-images.test.ts` unit + `product-explorer-images.test.tsx` component). Verified: exact-product
+  image identity (cover keyed to the item's own product, `data-product-id` preserved); DISPLAY renders the
+  authorised cover as the only `<img>`, REFERENCE renders a link-only `<a>` (no `<img>`), NONE renders a compact
+  card with neither; **no wrong-product substitution** (a card's DOM never contains another item's image, exactly
+  one `<img>` for the three-card fixture, no `<img src>` matches a marketplace URL); correct product-detail
+  navigation (card body opens that product; the reference link opens the marketplace listing in a new tab and
+  does **not** open the card); Product Asset Lock (marketplace image never an `<img>`, drawer treats REFERENCE
+  like NONE, `commercial_cleared` never claimed); existing Explorer compatibility (growth 527×/Unverified,
+  labels, 24+5 pagination all still pass). **Typecheck** (`bunx tsgo --noEmit`) clean; **lint** 0 errors (6
+  pre-existing fast-refresh warnings); **preview build** OK. Responsive/phone-width visual acceptance is a
+  founder-device step (egress 403).
 
 ## Release control
 
-- Backend `mig_340` + `mig_340_ROLLBACK.sql` committed, **NOT deployed**. Deploy order (on approval): apply
-  `mig_340` (Explorer v4), then publish the frontend preview. Frontend fails closed without the new fields
-  (compact cards still render), so order is low-risk. Rollback: `mig_340_ROLLBACK.sql` restores v3; re-publish
-  the prior frontend commit.
+- Backend `mig_340` + `mig_340_ROLLBACK.sql` committed (`44d5afa`), **NOT deployed**. Frontend Lovable preview
+  commit **`db027f5`**, **NOT published**. Deploy order (on approval): apply `mig_340` (Explorer v4), then publish
+  the frontend preview. Frontend fails closed without the new fields (compact cards still render; references just
+  don't appear until v4 is live), so order is low-risk. Rollback: `mig_340_ROLLBACK.sql` restores v3; re-publish
+  the prior frontend commit (`312fce3`).
 - No paid provider calls; no discovery wave; no supplier-budget / advertising / billing / signup changes.
 
 ## Remaining source-permission blockers
