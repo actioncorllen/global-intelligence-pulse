@@ -24,9 +24,19 @@ Deploy-ready package for the customer-credit **Refresh Discovery** feature + the
 No paid provider call was made; no provider budget, billing, or pricing was activated or invented. The feature
 **reuses the existing `kalodata-discovery` edge** — no new discovery engine.
 
-Commits: backend through `a560d01` (branch `claude/nifty-bardeen-f9nddu`); Lovable production `4d029c0`.
-Prepared, not deployed (Stage B): `mig_341` (+ `mig_341b` reconcile schedule), edge `kalodata-discovery/
-index.ts` refresh-awareness.
+Commits: backend through `a560d01` (branch `claude/nifty-bardeen-f9nddu`); Lovable **production** `4d029c0`
+(Stage A). Prepared, NOT deployed/published (Stage B): `mig_341` (+ `mig_341b` reconcile schedule), edge
+`kalodata-discovery/index.ts` refresh-awareness, and Lovable **preview** `d1ac526` (adds the inert
+authorize→`fn_discovery_refresh_fire` dispatch wiring; 583 tests pass; publish only at Stage B activation).
+
+**Stage B engineering is complete and fixture-tested (all inert):** (1) authorize→fire wired (`d1ac526`);
+(2) one-fire idempotency (server `dispatched_at` guard + one fire per authorize→EXECUTING, both tested);
+(3) service-role edge completion callback + `service_role`-only grant; (4) credits settle on the real provider
+outcome (SUCCESS settles incl. zero-new, failures refund per D3); (5) scheduled reconciliation prepared
+(`mig_341b`); (6) reconcile never re-dispatches a chargeable call; (7) interrupted requests stay auditable
+(`provider_outcome` = `UNRESOLVED_POST_DISPATCH`); (8) end-to-end fixture/transactional tests green;
+(9) credit modal verified 320–430px. The ONLY remaining Stage-B steps are the founder's commercial activation
+(D1–D4), applying the prepared migrations + edge, publishing `d1ac526`, and ONE bounded live integration test.
 
 ---
 
