@@ -15,20 +15,29 @@ backend identifiers are unchanged. No paid calls, billing, signup, or Product As
 - **n8n** — webhooks use Header Auth at the n8n instance URL and call Supabase/providers; **no public-web-domain
   references**, nothing to change (infra callbacks preserved).
 
-## Done (internally controllable) — Lovable preview `cca9344` (NOT published)
-- Legal pages (terms, privacy, cookies, security, data-deletion) + site footer: "Global Intelligence Actions"
-  → **"Strateloq Technologies"**.
-- `__root.tsx`: added `og:site_name = Strateloq Technologies` (site-wide).
-- Homepage + legal pages: `<link rel="canonical">` and `og:url` → **https://strateloq.com/…** (path preserved).
-- Storefront-URL unit test updated to the new domain. 583 tests pass; typecheck/lint/build clean.
-- Preview only. Will be published at the domain cutover (so the canonical domain is advertised only once it
-  resolves; also avoids publishing the inert Stage B authorize→fire wiring prematurely).
+## Done (internally controllable) — Lovable preview `20a4d3c` (NOT published)
+Final branding preview SHA = **`20a4d3c`** (= `cca9344` company/canonical rebrand + the Pulse→Strateloq pass).
+- Company name: "Global Intelligence Actions" → **"Strateloq Technologies"** (legal pages + site footer).
+- Platform name: "Pulse Intelligence"/"Pulse" → **"Strateloq"** across the site-wide default `<title>` +
+  description, the error screen, legal pages, Content Studio, Launch page, the OAuth consent screen, and the
+  downloadable beta invitation. ("Pulse AI Assistant" → "Strateloq Assistant", deliberately avoiding the banned
+  "Strateloq AI".)
+- `og:site_name = Strateloq Technologies` site-wide; homepage + legal pages carry `<link rel="canonical">` and
+  `og:url` on **https://strateloq.com/…** (paths preserved).
+- No remaining customer-facing "Global Intelligence Actions", "Strateloq AI", or `globalintelligenceactions.com`.
+- 583 tests pass; typecheck/lint/build clean. **Preview only**, to be published at the domain cutover.
 
 ## Left for a founder decision (surfaced, not presumed)
-- **"Pulse Intelligence" / "Pulse"** in the default `<title>` and some page descriptions/legal text — not in the
-  three rebrand strings; "Pulse" is the long-standing product name. Change to Strateloq only on confirmation.
-- **`.env VITE_APP_URL = https://globalintelligenceactions.com`** — currently unused by the app (nothing reads
-  it), but stale. Update it to `https://strateloq.com` (or remove) in the Lovable project env when convenient.
+- **"Global Intelligence Pulse™"** — the trademarked homepage world-graphic label and the demo-modal title
+  (`global-pulse-visual.tsx`, `experience-pulse-modal.tsx`). A trademarked feature name → brand decision.
+- **MCP server name/descriptions** ("Pulse Intelligence" in `src/lib/mcp/`) shown to EXTERNAL AI clients (not the
+  website) — rename only if the connector brand should change too.
+- **Legal-entity / jurisdiction clauses (flagged, NOT altered; founder legal review):** "operated by Strateloq
+  Technologies (Ireland)" (terms/privacy), "governed by the laws of Ireland / Irish courts", footer "© 2026
+  Strateloq Technologies · Ireland". No company number or registered address appears; the only address (Privacy
+  policy) is Ireland's data-protection regulator (correct, unchanged).
+- **`.env VITE_APP_URL = https://globalintelligenceactions.com`** — currently unused by the app, but stale.
+  Update to `https://strateloq.com` (or remove) in the Lovable project env when convenient.
 
 ## Founder-only steps to make strateloq.com canonical (external access required)
 1. **Lovable custom domain** (Lovable dashboard → this project → Settings → Domains → Add domain →
