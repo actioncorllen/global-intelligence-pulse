@@ -312,6 +312,53 @@ BEGIN
     'settlement',v_settle,'contract','pulse_discovery_refresh_complete_v1');
 END; $fn$;
 
+-- ---------- status (pure read: a tenant reads their OWN request's state for the async result UI) ----------
+-- The async result surface. After AUTHORIZE moves a request to EXECUTING and the existing kalodata-discovery
+-- edge runs + fn_discovery_refresh_complete settles it, the frontend polls this to render the terminal result:
+-- three SEPARATE counts (new customer-visible / image-pending / duplicates) and the credit settlement line.
+-- Tenant-scoped, STABLE: never charges, dispatches, or mutates. Counts are null until the request is terminal
+-- (so the UI shows "Searching…" mid-flight and only shows numbers once they are real).
+CREATE OR REPLACE FUNCTION public.fn_discovery_refresh_status(p_request_id uuid)
+ RETURNS jsonb LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path TO '' AS $fn$
+DECLARE
+  v_uid uuid := auth.uid();
+  v_req public.discovery_refresh_request;
+  v_new int; v_imgp int; v_dup int; v_visible int;
+  v_terminal boolean;
+BEGIN
+  IF v_uid IS NULL THEN
+    RETURN jsonb_build_object('status','error','reason','UNAUTHENTICATED','contract','pulse_discovery_refresh_status_v1');
+  END IF;
+  SELECT * INTO v_req FROM public.discovery_refresh_request WHERE id=p_request_id AND tenant_id=v_uid;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('status','error','reason','REQUEST_NOT_FOUND','contract','pulse_discovery_refresh_status_v1');
+  END IF;
+  v_new     := greatest(coalesce(v_req.new_products,0),0);
+  v_imgp    := greatest(coalesce(v_req.new_image_pending,0),0);
+  v_dup     := greatest(coalesce(v_req.duplicates,0),0);
+  v_visible := greatest(v_new - v_imgp, 0);                    -- NEW products already customer-visible (display image)
+  v_terminal := v_req.status IN ('SETTLED','REFUNDED','FAILED');
+  RETURN jsonb_build_object(
+    'status','ok',
+    'request_id', v_req.id,
+    'state', v_req.status,
+    'terminal', v_terminal,
+    'market', v_req.market,
+    'page_number', v_req.page_number,
+    'credits_cost', v_req.credits_cost,
+    'charged', (v_req.status = 'SETTLED'),                      -- true only when SETTLED (refunded => restored)
+    'new_visible',       CASE WHEN v_terminal THEN v_visible ELSE null END,
+    'new_image_pending', CASE WHEN v_terminal THEN v_imgp    ELSE null END,
+    'duplicates',        CASE WHEN v_terminal THEN v_dup      ELSE null END,
+    'new_total',         CASE WHEN v_terminal THEN v_new      ELSE null END,
+    'settlement', CASE
+        WHEN v_req.status='SETTLED'  THEN v_req.credits_cost || ' credits used'
+        WHEN v_req.status='REFUNDED' THEN 'refunded — no credits charged'
+        ELSE null END,
+    'balance', public.fn_discovery_credit_balance(),
+    'contract','pulse_discovery_refresh_status_v1');
+END; $fn$;
+
 -- ---------- reconcile (recover stuck reservations; safe refund; never re-dispatch) ----------
 -- Service-role sweep (not customer-callable). RESERVED past TTL (never authorised: browser closed / network
 -- interruption before dispatch) -> refund (CANCELLED_PRE_CHARGE). EXECUTING + dispatched past TTL with no
@@ -342,4 +389,5 @@ GRANT EXECUTE ON FUNCTION public.fn_discovery_refresh_reserve(text,text) TO auth
 GRANT EXECUTE ON FUNCTION public.fn_discovery_refresh_authorize(uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_discovery_refresh_dispatch(uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_discovery_refresh_complete(uuid,integer,integer,integer,text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_discovery_refresh_status(uuid) TO authenticated;
 -- reconcile is service-role only (no grant to authenticated): a scheduled sweep invokes it.

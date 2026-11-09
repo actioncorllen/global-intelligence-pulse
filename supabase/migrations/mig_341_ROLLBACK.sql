@@ -1,5 +1,6 @@
 -- mig_341 ROLLBACK — removes the customer-credit Refresh Discovery scaffold.
 -- Safe while inert (no production rows written). Drops functions then tables.
+DROP FUNCTION IF EXISTS public.fn_discovery_refresh_status(uuid);
 DROP FUNCTION IF EXISTS public.fn_discovery_refresh_reconcile(integer);
 DROP FUNCTION IF EXISTS public.fn_discovery_refresh_complete(uuid,integer,integer,integer,text);
 DROP FUNCTION IF EXISTS public.fn_discovery_refresh_dispatch(uuid);
