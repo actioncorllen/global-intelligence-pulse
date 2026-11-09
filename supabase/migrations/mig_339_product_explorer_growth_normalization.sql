@@ -1,23 +1,32 @@
--- mig_339 — Product Explorer v3: verified growth-unit normalization + honest image status (PREPARED; NOT deployed)
+-- mig_339 — Product Explorer v3: source-aware growth presentation + honest image status (PREPARED; NOT deployed)
 -- 2026-11-09
 --
--- P2 fix (growth metrics). Root causes verified against live data:
---   * Kalodata growth lives in `revenue_growth_rate` (a genuine percentage, range -96..+746), but the
---     card read `sales_growth_rate` (null for Kalodata) => "missing growth".
---   * FastMoss `sales_growth_rate` is the provider's `units_sold_growth_rate`, stored RAW. That raw value
---     is a PERCENTAGE x 100: dividing by 100 turns the full live distribution into valid percentages
---     (-3906 -> -39.06% — impossible as a raw %, valid as /100; 1021 -> 10.21%; 5260000 -> 52600%).
---     Rendering the raw value as a percentage produced the "571.17K% / 5.26m%" anomalies.
+-- P2 growth metrics. Provider-unit verification (release gate):
+--   * Kalodata growth = `revenue_growth_rate`, a GENUINE percentage (live range -96..+746, nothing below
+--     -100%). VERIFIED. Surfaced as growth_pct with basis 'revenue_7d_pct'. The card previously read
+--     `sales_growth_rate` (null for Kalodata) => "missing growth"; now fixed.
+--   * FastMoss `sales_growth_rate` = provider `units_sold_growth_rate`, stored RAW (no adapter transform).
+--     Its unit CANNOT be established authoritatively:
+--       - FastMoss official docs (developers.fastmoss.com/.../product/v1/fullyManaged) list the field as
+--         "Sales volume growth rate" with NO unit and a large-integer sample (59335);
+--       - the live data is internally inconsistent with any single percentage scale: negatives like
+--         -3906 rule out a raw % (a decline cannot exceed -100%), while the vendor overview's
+--         "growth_rate 212 -> +212%" rules out a /100 %.
+--     Therefore it is NOT converted (no speculative /100) and is surfaced as UNVERIFIED
+--     (growth_pct NULL, growth_status 'UNVERIFIED'). The raw value is kept only for transparency and is
+--     NEVER displayed as a percentage. (Kalodata and FastMoss growth are different metrics — revenue vs
+--     units-sold — and are never treated as interchangeable.)
 --
--- This exposes a single, source-aware, VERIFIED growth field so no consumer has to guess the unit:
---   growth_pct   numeric  — Kalodata: revenue_growth_rate; FastMoss: round(units_sold_growth_rate/100,2); else null
---   growth_basis text     — 'revenue_7d_pct' | 'units_sold_7d_pct' | null
---   image_status text     — 'DISPLAY' when a rights-cleared cover exists, else 'NONE' (honest "No image")
--- Raw sales_growth_rate / revenue_growth_rate are kept for transparency. HIGH_GROWTH facet + growth
--- filter now use the normalized growth_pct (so Kalodata growth is filterable and FastMoss uses the
--- real %-scale). No engine/tier/label/identity change; tenant+market scoping and PAL unchanged.
--- Note: image_status=NONE is correct for Kalodata — the only images present are eBay
--- MARKETPLACE_PUBLIC_LISTING (rights not established for display, tenant-null); PAL keeps them hidden.
+-- Fields added to each item (source-aware, never fabricated):
+--   growth_pct    numeric — Kalodata revenue_growth_rate only; NULL for FastMoss (unverified unit)
+--   growth_basis  text    — 'revenue_7d_pct' | 'units_sold_growth_rate_unverified' | null
+--   growth_status text    — 'VERIFIED' | 'UNVERIFIED' | null
+--   image_status  text    — 'DISPLAY' when a rights-cleared cover exists, else 'NONE' (honest "No image")
+-- Raw sales_growth_rate / revenue_growth_rate kept for transparency. HIGH_GROWTH facet uses the growth
+-- SIGN (reliable even for an unknown-scale unit); the numeric growth_min/max filter uses only the
+-- VERIFIED growth_pct. No engine/tier/label/identity change; tenant+market scoping and PAL unchanged.
+-- image_status=NONE is correct for Kalodata — the only images present are eBay MARKETPLACE_PUBLIC_LISTING
+-- (rights not established, tenant-null); PAL keeps them hidden.
 
 CREATE OR REPLACE FUNCTION public.fn_product_explorer(p_market text, p_filter text DEFAULT 'ALL'::text, p_search text DEFAULT NULL::text, p_sort text DEFAULT 'NEWEST'::text, p_page integer DEFAULT 1, p_pagesize integer DEFAULT 24, p_category text DEFAULT NULL::text, p_price_min numeric DEFAULT NULL::numeric, p_price_max numeric DEFAULT NULL::numeric, p_revenue_min numeric DEFAULT NULL::numeric, p_revenue_max numeric DEFAULT NULL::numeric, p_sales_min numeric DEFAULT NULL::numeric, p_sales_max numeric DEFAULT NULL::numeric, p_growth_min numeric DEFAULT NULL::numeric, p_growth_max numeric DEFAULT NULL::numeric)
  RETURNS jsonb
@@ -87,13 +96,20 @@ BEGIN
            ELSE 'COMMERCE' END AS source_label,
       CASE WHEN d.decision IS NULL AND d.opportunity_band IS NULL
            THEN 'NEWLY_DISCOVERED_RESEARCH_PENDING' ELSE 'EVALUATED' END AS research_status,
-      -- verified, source-aware normalized growth percentage (null when unknown — never fabricated)
-      CASE WHEN b.has_fastmoss AND b.sales_growth_rate   IS NOT NULL THEN round(b.sales_growth_rate/100.0, 2)
-           WHEN b.has_kalodata AND b.revenue_growth_rate IS NOT NULL THEN b.revenue_growth_rate
-           ELSE NULL END AS growth_pct,
-      CASE WHEN b.has_fastmoss AND b.sales_growth_rate   IS NOT NULL THEN 'units_sold_7d_pct'
-           WHEN b.has_kalodata AND b.revenue_growth_rate IS NOT NULL THEN 'revenue_7d_pct'
+      -- VERIFIED growth % ONLY: Kalodata revenue_growth_rate is a genuine percentage. FastMoss
+      -- units_sold_growth_rate has no authoritative unit (see header) and is NOT converted.
+      CASE WHEN b.has_kalodata AND NOT b.has_fastmoss AND b.revenue_growth_rate IS NOT NULL
+             THEN b.revenue_growth_rate ELSE NULL END AS growth_pct,
+      CASE WHEN b.has_kalodata AND NOT b.has_fastmoss AND b.revenue_growth_rate IS NOT NULL THEN 'revenue_7d_pct'
+           WHEN b.has_fastmoss AND b.sales_growth_rate IS NOT NULL THEN 'units_sold_growth_rate_unverified'
            ELSE NULL END AS growth_basis,
+      CASE WHEN b.has_kalodata AND NOT b.has_fastmoss AND b.revenue_growth_rate IS NOT NULL THEN 'VERIFIED'
+           WHEN b.has_fastmoss AND b.sales_growth_rate IS NOT NULL THEN 'UNVERIFIED'
+           ELSE NULL END AS growth_status,
+      -- reliable growth SIGN (direction) regardless of the FastMoss unit scale, for the HIGH_GROWTH facet
+      coalesce(
+        CASE WHEN b.has_kalodata AND NOT b.has_fastmoss THEN b.revenue_growth_rate END,
+        CASE WHEN b.has_fastmoss THEN b.sales_growth_rate END) AS growth_sign_src,
       (('NEW_LISTED'=ANY(b.lanes)) AND NOT ('TOP_SELLING'=ANY(b.lanes))) AS is_early
     FROM base b
     LEFT JOIN LATERAL (
@@ -115,6 +131,7 @@ BEGIN
       AND (v_revenue_max IS NULL OR (e.revenue        IS NOT NULL AND e.revenue        <= v_revenue_max))
       AND (v_sales_min   IS NULL OR (e.sales_units    IS NOT NULL AND e.sales_units    >= v_sales_min))
       AND (v_sales_max   IS NULL OR (e.sales_units    IS NOT NULL AND e.sales_units    <= v_sales_max))
+      -- numeric growth range applies only to VERIFIED growth_pct (never the unverified FastMoss unit)
       AND (v_growth_min  IS NULL OR (e.growth_pct     IS NOT NULL AND e.growth_pct     >= v_growth_min))
       AND (v_growth_max  IS NULL OR (e.growth_pct     IS NOT NULL AND e.growth_pct     <= v_growth_max))
   ),
@@ -123,7 +140,7 @@ BEGIN
       'ALL', count(*),
       'NEWLY_LISTED',        count(*) FILTER (WHERE 'NEW_LISTED'=ANY(lanes)),
       'BEST_SELLERS',        count(*) FILTER (WHERE 'TOP_SELLING'=ANY(lanes)),
-      'HIGH_GROWTH',         count(*) FILTER (WHERE growth_pct IS NOT NULL AND growth_pct > 0),
+      'HIGH_GROWTH',         count(*) FILTER (WHERE growth_sign_src IS NOT NULL AND growth_sign_src > 0),
       'MOST_PROMOTED',       count(*) FILTER (WHERE 'MOST_PROMOTED'=ANY(lanes)),
       'EARLY_OPPORTUNITIES', count(*) FILTER (WHERE is_early OR lifecycle_state IN ('EMERGING','RESEARCH_PRIORITY') OR opportunity_band='EMERGING'),
       'NEWLY_DISCOVERED',    count(*) FILTER (WHERE research_status='NEWLY_DISCOVERED_RESEARCH_PENDING')
@@ -134,7 +151,7 @@ BEGIN
       WHEN 'ALL' THEN true
       WHEN 'NEWLY_LISTED' THEN 'NEW_LISTED'=ANY(e.lanes)
       WHEN 'BEST_SELLERS' THEN 'TOP_SELLING'=ANY(e.lanes)
-      WHEN 'HIGH_GROWTH' THEN e.growth_pct IS NOT NULL AND e.growth_pct > 0
+      WHEN 'HIGH_GROWTH' THEN e.growth_sign_src IS NOT NULL AND e.growth_sign_src > 0
       WHEN 'MOST_PROMOTED' THEN 'MOST_PROMOTED'=ANY(e.lanes)
       WHEN 'EARLY_OPPORTUNITIES' THEN e.is_early OR e.lifecycle_state IN ('EMERGING','RESEARCH_PRIORITY') OR e.opportunity_band='EMERGING'
       WHEN 'NEWLY_DISCOVERED' THEN e.research_status='NEWLY_DISCOVERED_RESEARCH_PENDING'
@@ -166,7 +183,7 @@ BEGIN
       'image_status', CASE WHEN p.cover_url IS NOT NULL THEN 'DISPLAY' ELSE 'NONE' END,
       'price', p.observed_price, 'currency', p.price_currency,
       'sales_units', p.sales_units, 'revenue', p.revenue,
-      'growth_pct', p.growth_pct, 'growth_basis', p.growth_basis,
+      'growth_pct', p.growth_pct, 'growth_basis', p.growth_basis, 'growth_status', p.growth_status,
       'sales_growth_rate', p.sales_growth_rate, 'revenue_growth_rate', p.revenue_growth_rate,
       'promotions', p.promotions,
       'seller_count', p.seller_count, 'advertiser_count', p.advertiser_count, 'video_count', p.video_count,
@@ -190,8 +207,10 @@ BEGIN
       'no_decision_dependency',true,'dedup_by_product_identity',true,'unknown_not_zero',true,
       'reference_only_media',true,'legacy_discovery_hidden_excluded',true,'ranges_exclude_unknown',true,
       'kalodata_native_included',true,'unevaluated_scores_null',true,
-      'growth_verified_unit',true,'growth_never_fabricated',true),
-    'growth_units', jsonb_build_object('revenue_7d_pct','percentage','units_sold_7d_pct','percentage (FastMoss units_sold_growth_rate normalized /100)'),
+      'growth_never_fabricated',true,'fastmoss_growth_unverified',true),
+    'growth_units', jsonb_build_object(
+      'revenue_7d_pct','VERIFIED percentage (Kalodata revenue growth, 7-day window)',
+      'units_sold_growth_rate_unverified','UNVERIFIED — FastMoss units_sold_growth_rate has no authoritative unit; not shown as a percentage'),
     'contract','pulse_product_explorer_v3')
   INTO v_result;
   RETURN v_result;
