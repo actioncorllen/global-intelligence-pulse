@@ -1,12 +1,32 @@
 # Refresh Discovery — P0 Release & Activation Gate (2026-11-09)
 
-Deploy-ready package for the customer-credit **Refresh Discovery** feature + the prepared **image gate**.
-**Nothing is deployed, published, or activated.** No paid provider call was made; no provider budget, billing,
-or pricing was activated or invented. Production baseline unchanged: Explorer v4 (mig_340 live), frontend
-`db027f5`. The feature **reuses the existing `kalodata-discovery` edge** — no new discovery engine.
+## STAGE A — DEPLOYED to production ✅ (2026-11-09)
 
-Final commits: backend `07b427c` (branch `claude/nifty-bardeen-f9nddu`); Lovable preview `7d0869c` (not
-published). Prepared, not deployed: `mig_341`, `mig_342`, edge `kalodata-discovery/index.ts`.
+The safe interface release is **live**. The customer credit-spending path is **NOT** activated (no pricing, no
+provider budget, no customer credits) — the Refresh modal opens and shows a clear "not activated yet" state.
+
+- **Image gate `mig_342` (Explorer v5)** applied to production (migration `image_gate_product_explorer_v5_
+  image_only`). Verified live as the founder tenant: contract `pulse_product_explorer_v5`, Germany **9 visible
+  / 20 hidden**, gate on, server-filters preserved; **0 non-DISPLAY items, 0 commercial-asserted (PAL intact),
+  0 covers not owned by that exact product+tenant** (no unrelated image); tenant isolation (other uid → 0),
+  country isolation (GB independently gated → 28); Recommendations RPC intact.
+- **Frontend published**: Lovable commit **`4d029c0`** — deployment ID **`5d5707f2-6242-4ff0-8b38-
+  e2dd2aa1e290`**; `https://www.globalintelligenceactions.com` serving **HTTP 200**. (= approved `7d0869c` plus
+  the directive-mandated "not activated" quote-state correction; 579 frontend tests pass.)
+- **Rollback (Stage A):** re-publish `db027f5`, then restore Explorer v4 via `mig_342_ROLLBACK.sql`.
+- **Outstanding for Stage A:** founder-device signed-in visual acceptance (container egress is auth-gated).
+
+Stage B (credit activation) remains prepared and gated — see §4. The rest of this document is the full package.
+
+---
+
+Deploy-ready package for the customer-credit **Refresh Discovery** feature + the **image gate** (now live).
+No paid provider call was made; no provider budget, billing, or pricing was activated or invented. The feature
+**reuses the existing `kalodata-discovery` edge** — no new discovery engine.
+
+Commits: backend through `a560d01` (branch `claude/nifty-bardeen-f9nddu`); Lovable production `4d029c0`.
+Prepared, not deployed (Stage B): `mig_341` (+ `mig_341b` reconcile schedule), edge `kalodata-discovery/
+index.ts` refresh-awareness.
 
 ---
 
