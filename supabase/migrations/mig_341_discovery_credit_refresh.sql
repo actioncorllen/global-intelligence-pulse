@@ -54,6 +54,8 @@ CREATE TABLE IF NOT EXISTS public.discovery_refresh_request (
   run_id          uuid,
   dispatched_at   timestamptz,
   completed_at    timestamptz,
+  provider_outcome text,          -- auditable terminal reason (distinguishes a clean refund from an
+                                  -- unresolved-after-dispatch refund where a paid call may have occurred)
   created_at      timestamptz NOT NULL DEFAULT now(),
   updated_at      timestamptz NOT NULL DEFAULT now()
 );
@@ -191,6 +193,22 @@ END; $fn$;
 --   'TIMEOUT'                    -> outcome unknown within the window; safe default REFUND, and a
 --                                   reconciliation sweep may later correct to SETTLE if the run did deliver.
 -- A SETTLE marker row (credits=0) records consumption; a REFUND row (+credits_cost) releases the reservation.
+-- Shared refund-policy base (IMMUTABLE) so every settle path — customer-initiated, service-role edge callback,
+-- and the reconcile sweep — decides refund-vs-settle identically and can never drift. POST_CHARGE's founder
+-- flag (D3) is applied by the caller on top of this base (default here = refund).
+CREATE OR REPLACE FUNCTION public.fn_discovery_refresh_is_refund(p_outcome text)
+ RETURNS boolean LANGUAGE sql IMMUTABLE SET search_path TO '' AS $fn$
+  SELECT CASE upper(coalesce(p_outcome,'SUCCESS'))
+    WHEN 'SUCCESS'                     THEN false   -- provider-charged answer (incl. zero-new) -> settle
+    WHEN 'PROVIDER_FAILED_PRE_CHARGE'  THEN true    -- no cost incurred -> refund
+    WHEN 'CANCELLED_PRE_CHARGE'        THEN true    -- cancelled before any chargeable call -> refund
+    WHEN 'PROVIDER_FAILED_POST_CHARGE' THEN true    -- D3 beta default: refund customer, Strateloq absorbs cost
+    WHEN 'TIMEOUT'                     THEN true    -- unknown within window -> safe refund
+    WHEN 'UNRESOLVED_POST_DISPATCH'    THEN true    -- paid call may have occurred -> beta refund, audited
+    ELSE true                                       -- unknown -> safe refund
+  END;
+$fn$;
+
 CREATE OR REPLACE FUNCTION public.fn_discovery_refresh_settle(p_request_id uuid, p_new_products integer, p_outcome text)
  RETURNS jsonb LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path TO '' AS $fn$
 DECLARE
@@ -207,21 +225,16 @@ BEGIN
     RETURN jsonb_build_object('status','ok','idempotent_replay',true,'state',v_req.status,'contract','pulse_discovery_refresh_settle_v2');
   END IF;
   PERFORM pg_advisory_xact_lock(hashtextextended(v_uid::text,42));
-  v_refund := CASE
-    WHEN v_outcome = 'SUCCESS'                                          THEN false   -- settle, even zero-new
-    WHEN v_outcome IN ('PROVIDER_FAILED_PRE_CHARGE','CANCELLED_PRE_CHARGE') THEN true -- no cost incurred
-    WHEN v_outcome = 'PROVIDER_FAILED_POST_CHARGE'                      THEN v_goodwill_refund_post_charge
-    WHEN v_outcome = 'TIMEOUT'                                          THEN true     -- safe default
-    ELSE true                                                                          -- unknown -> safe refund
-  END;
+  v_refund := public.fn_discovery_refresh_is_refund(v_outcome);
+  IF v_outcome = 'PROVIDER_FAILED_POST_CHARGE' THEN v_refund := v_goodwill_refund_post_charge; END IF;  -- D3 override
   IF v_refund THEN
     INSERT INTO public.discovery_credit_ledger(tenant_id,entry_type,credits,refresh_request_id,reason)
       VALUES (v_uid,'REFUND',v_req.credits_cost,v_req.id,'refund:'||lower(v_outcome)||' new='||v_new);
-    UPDATE public.discovery_refresh_request SET status='REFUNDED', new_products=v_new, updated_at=now() WHERE id=v_req.id;
+    UPDATE public.discovery_refresh_request SET status='REFUNDED', new_products=v_new, provider_outcome=v_outcome, updated_at=now() WHERE id=v_req.id;
   ELSE
     INSERT INTO public.discovery_credit_ledger(tenant_id,entry_type,credits,refresh_request_id,reason)
       VALUES (v_uid,'SETTLE',0,v_req.id,'settle:'||lower(v_outcome)||' new='||v_new);
-    UPDATE public.discovery_refresh_request SET status='SETTLED', new_products=v_new, updated_at=now() WHERE id=v_req.id;
+    UPDATE public.discovery_refresh_request SET status='SETTLED', new_products=v_new, provider_outcome=v_outcome, updated_at=now() WHERE id=v_req.id;
   END IF;
   RETURN jsonb_build_object('status','ok','outcome',v_outcome,'settled',NOT v_refund,'refunded',v_refund,'new_products',v_new,
     'balance_after',public.fn_discovery_credit_balance(),'contract','pulse_discovery_refresh_settle_v2');
@@ -286,6 +299,46 @@ BEGIN
     'contract','pulse_discovery_refresh_dispatch_v1');
 END; $fn$;
 
+-- ---------- fire (Stage B dispatch: claim the EXECUTING request + invoke the existing edge, idempotent) ----------
+-- Bridges AUTHORIZE -> the existing kalodata-discovery edge. Claims the request (dispatched_at) under the tenant
+-- advisory lock BEFORE firing, so a lost acknowledgement can NEVER cause a second provider call; a second fire
+-- sees dispatched_at and no-ops. Consumes NO budget (authorize already consumed exactly one unit -> no double
+-- charge). Threads refresh_request_id into the edge payload so the edge's service-role callback
+-- (fn_discovery_refresh_complete_from_edge) settles THIS request. net.http_post is async; the customer polls
+-- fn_discovery_refresh_status for the terminal result. FIRES A REAL PAID CALL once a provider budget exists, so
+-- it is INERT today (no budget => authorize never reaches EXECUTING => fire has nothing to dispatch). Stage B.
+CREATE OR REPLACE FUNCTION public.fn_discovery_refresh_fire(p_request_id uuid, p_anon_key text)
+ RETURNS jsonb LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path TO '' AS $fn$
+DECLARE
+  v_uid uuid := auth.uid();
+  v_req public.discovery_refresh_request;
+  v_token text := replace(gen_random_uuid()::text,'-','')||replace(gen_random_uuid()::text,'-','');
+  v_url text := 'https://nxaunmyihhjixxxljcqt.supabase.co/functions/v1/kalodata-discovery';
+  v_net bigint;
+BEGIN
+  IF v_uid IS NULL OR coalesce(btrim(p_anon_key),'')='' THEN
+    RETURN jsonb_build_object('status','error','reason','UNAUTHENTICATED_OR_NO_KEY','contract','pulse_discovery_refresh_fire_v1'); END IF;
+  SELECT * INTO v_req FROM public.discovery_refresh_request WHERE id=p_request_id AND tenant_id=v_uid;
+  IF NOT FOUND THEN RETURN jsonb_build_object('status','error','reason','REQUEST_NOT_FOUND','contract','pulse_discovery_refresh_fire_v1'); END IF;
+  PERFORM pg_advisory_xact_lock(hashtextextended(v_uid::text,42));
+  IF v_req.status <> 'EXECUTING' THEN   -- only an authorised (budget-consumed) request may dispatch
+    RETURN jsonb_build_object('status','error','reason','NOT_AUTHORIZED_OR_TERMINAL','state',v_req.status,'contract','pulse_discovery_refresh_fire_v1'); END IF;
+  IF v_req.dispatched_at IS NOT NULL THEN   -- already fired: never re-fire an expensive provider call
+    RETURN jsonb_build_object('status','ok','idempotent_replay',true,'already_dispatched',true,'request_id',v_req.id,'contract','pulse_discovery_refresh_fire_v1'); END IF;
+  UPDATE public.discovery_refresh_request SET dispatched_at=now(), updated_at=now() WHERE id=v_req.id;   -- claim first
+  INSERT INTO public.kalodata_invoke_nonce(token,user_id,market) VALUES (v_token,v_uid,v_req.market);
+  SELECT net.http_post(
+    url := v_url,
+    body := jsonb_build_object('market',v_req.market,'user_id',v_uid,'candidate_limit',10,
+                               'page_number',v_req.page_number,'refresh_request_id',v_req.id),
+    headers := jsonb_build_object('Content-Type','application/json','apikey',p_anon_key,
+                                  'Authorization','Bearer '||p_anon_key,'x-pulse-nonce',v_token),
+    timeout_milliseconds := 30000
+  ) INTO v_net;
+  RETURN jsonb_build_object('status','ok','fired',true,'request_id',v_req.id,'market',v_req.market,
+    'page_number',v_req.page_number,'net_request_id',v_net,'contract','pulse_discovery_refresh_fire_v1');
+END; $fn$;
+
 -- ---------- complete (record run counts + settle; idempotent) ----------
 -- Called with the run outcome. new_total = all NEW canonical products (incl. image-pending); image_pending =
 -- of those, how many are hidden pending a display image; duplicates = already-known. Settles per the policy
@@ -310,6 +363,62 @@ BEGIN
     'new_image_pending',greatest(coalesce(p_new_image_pending,0),0),
     'duplicates',greatest(coalesce(p_duplicates,0),0),
     'settlement',v_settle,'contract','pulse_discovery_refresh_complete_v1');
+END; $fn$;
+
+-- ---------- complete-from-edge (SERVICE-ROLE completion callback invoked by the kalodata-discovery edge) ----------
+-- The edge runs as service_role, so auth.uid() is NULL there; it cannot use the auth.uid()-scoped
+-- fn_discovery_refresh_complete. This is the completion credential the edge uses: it reads the request by id,
+-- derives the owning tenant + market FROM THE REQUEST ROW (never trusted from the edge payload), computes
+-- new_image_pending with the SAME predicate as the Explorer image gate (mig_342 v5) so the "visible" count the
+-- customer is told matches what the Explorer will actually show, then settles (reconcile-style ledger write
+-- scoped to the request's tenant — no auth.uid()). Idempotent: a duplicate completion callback is a no-op.
+-- The edge passes the NEW canonical product ids (ingest promoted[] with dedup_status='new') and the duplicate
+-- count (dedup_status='deduplicated'); it never supplies the image-pending number, so a wrong provider payload
+-- cannot inflate the visible count. SERVICE-ROLE ONLY (no grant to authenticated).
+CREATE OR REPLACE FUNCTION public.fn_discovery_refresh_complete_from_edge(
+    p_request_id uuid, p_new_product_ids uuid[], p_duplicates integer, p_outcome text)
+ RETURNS jsonb LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path TO '' AS $fn$
+DECLARE
+  v_req public.discovery_refresh_request;
+  v_outcome text := upper(coalesce(p_outcome,'SUCCESS'));
+  v_new_total int := coalesce(array_length(p_new_product_ids,1),0);
+  v_dup int := greatest(coalesce(p_duplicates,0),0);
+  v_img_pending int;
+  v_refund boolean;
+BEGIN
+  SELECT * INTO v_req FROM public.discovery_refresh_request WHERE id=p_request_id;
+  IF NOT FOUND THEN RETURN jsonb_build_object('status','error','reason','REQUEST_NOT_FOUND','contract','pulse_discovery_refresh_complete_from_edge_v1'); END IF;
+  IF v_req.status IN ('SETTLED','REFUNDED') THEN   -- duplicate/late callback: never settle or refund twice
+    RETURN jsonb_build_object('status','ok','idempotent_replay',true,'state',v_req.status,'contract','pulse_discovery_refresh_complete_from_edge_v1');
+  END IF;
+  PERFORM pg_advisory_xact_lock(hashtextextended(v_req.tenant_id::text,42));
+  -- recompute image-pending among the NEW products using the EXACT Explorer gate predicate (mig_342)
+  SELECT count(*) INTO v_img_pending
+  FROM unnest(coalesce(p_new_product_ids,'{}'::uuid[])) AS pid
+  WHERE NOT EXISTS (
+    SELECT 1 FROM public.product_image_assets i
+     WHERE i.product_id=pid AND i.tenant_id=v_req.tenant_id AND (i.market IS NULL OR i.market=v_req.market)
+       AND i.rights_state IN ('SUPPLIER_PROVIDED','PROVIDER_DISCOVERY_REFERENCE')
+       AND coalesce(upper(i.availability),'AVAILABLE') <> 'UNAVAILABLE'
+       AND i.image_url ILIKE 'http%');
+  v_refund := public.fn_discovery_refresh_is_refund(v_outcome);
+  IF v_refund THEN
+    INSERT INTO public.discovery_credit_ledger(tenant_id,entry_type,credits,refresh_request_id,reason)
+      VALUES (v_req.tenant_id,'REFUND',v_req.credits_cost,v_req.id,'refund:'||lower(v_outcome)||' new='||v_new_total);
+    UPDATE public.discovery_refresh_request
+       SET status='REFUNDED', new_products=v_new_total, new_image_pending=v_img_pending, duplicates=v_dup,
+           provider_outcome=v_outcome, completed_at=now(), updated_at=now() WHERE id=v_req.id;
+  ELSE
+    INSERT INTO public.discovery_credit_ledger(tenant_id,entry_type,credits,refresh_request_id,reason)
+      VALUES (v_req.tenant_id,'SETTLE',0,v_req.id,'settle:'||lower(v_outcome)||' new='||v_new_total);
+    UPDATE public.discovery_refresh_request
+       SET status='SETTLED', new_products=v_new_total, new_image_pending=v_img_pending, duplicates=v_dup,
+           provider_outcome=v_outcome, completed_at=now(), updated_at=now() WHERE id=v_req.id;
+  END IF;
+  RETURN jsonb_build_object('status','ok','request_id',v_req.id,'state',(CASE WHEN v_refund THEN 'REFUNDED' ELSE 'SETTLED' END),
+    'outcome',v_outcome,'settled',NOT v_refund,'refunded',v_refund,
+    'new_total',v_new_total,'new_image_pending',v_img_pending,'new_visible',greatest(v_new_total-v_img_pending,0),
+    'duplicates',v_dup,'contract','pulse_discovery_refresh_complete_from_edge_v1');
 END; $fn$;
 
 -- ---------- status (pure read: a tenant reads their OWN request's state for the async result UI) ----------
@@ -346,6 +455,7 @@ BEGIN
     'market', v_req.market,
     'page_number', v_req.page_number,
     'credits_cost', v_req.credits_cost,
+    'provider_outcome', v_req.provider_outcome,                 -- auditable terminal reason (null until terminal)
     'charged', (v_req.status = 'SETTLED'),                      -- true only when SETTLED (refunded => restored)
     'new_visible',       CASE WHEN v_terminal THEN v_visible ELSE null END,
     'new_image_pending', CASE WHEN v_terminal THEN v_imgp    ELSE null END,
@@ -372,11 +482,19 @@ BEGIN
            WHERE status IN ('RESERVED','EXECUTING') AND updated_at < v_cut FOR UPDATE SKIP LOCKED LOOP
     -- settle refunds using the owning tenant's balance; impersonate via settle which reads auth.uid()?  No:
     -- reconcile runs as service-role, so write the ledger rows directly, scoped to r.tenant_id.
+    -- RESERVED past TTL never reached a chargeable call -> clean pre-charge refund.
+    -- EXECUTING past TTL was authorised (budget consumed) and may have fired the paid call: DO NOT classify it
+    -- as a pre-charge failure. Preserve an auditable UNRESOLVED_POST_DISPATCH outcome and apply the beta
+    -- customer refund; the provider budget stays consumed (never un-consumed) so the records can't contradict.
     INSERT INTO public.discovery_credit_ledger(tenant_id,entry_type,credits,refresh_request_id,reason)
       SELECT r.tenant_id,'REFUND',rq.credits_cost,r.id,
-             CASE WHEN r.status='RESERVED' THEN 'reconcile:cancelled_pre_charge' ELSE 'reconcile:timeout' END
+             CASE WHEN r.status='RESERVED' THEN 'reconcile:cancelled_pre_charge' ELSE 'reconcile:unresolved_post_dispatch' END
       FROM public.discovery_refresh_request rq WHERE rq.id=r.id;
-    UPDATE public.discovery_refresh_request SET status='REFUNDED', completed_at=now(), updated_at=now() WHERE id=r.id;
+    UPDATE public.discovery_refresh_request
+       SET status='REFUNDED',
+           provider_outcome = CASE WHEN r.status='RESERVED' THEN 'CANCELLED_PRE_CHARGE' ELSE 'UNRESOLVED_POST_DISPATCH' END,
+           completed_at=now(), updated_at=now()
+     WHERE id=r.id;
     IF r.status='RESERVED' THEN v_reserved := v_reserved+1; ELSE v_executing := v_executing+1; END IF;
   END LOOP;
   RETURN jsonb_build_object('status','ok','reconciled_reserved',v_reserved,'reconciled_executing',v_executing,
@@ -388,6 +506,10 @@ GRANT EXECUTE ON FUNCTION public.fn_discovery_refresh_quote(text) TO authenticat
 GRANT EXECUTE ON FUNCTION public.fn_discovery_refresh_reserve(text,text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_discovery_refresh_authorize(uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_discovery_refresh_dispatch(uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_discovery_refresh_fire(uuid,text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_discovery_refresh_complete(uuid,integer,integer,integer,text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_discovery_refresh_status(uuid) TO authenticated;
+-- complete-from-edge is the edge's SERVICE-ROLE completion callback: granted to service_role only, NEVER to
+-- authenticated (a customer must not be able to forge a run completion / settlement).
+GRANT EXECUTE ON FUNCTION public.fn_discovery_refresh_complete_from_edge(uuid,uuid[],integer,text) TO service_role;
 -- reconcile is service-role only (no grant to authenticated): a scheduled sweep invokes it.

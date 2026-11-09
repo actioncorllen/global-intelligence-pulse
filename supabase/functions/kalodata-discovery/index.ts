@@ -1,10 +1,20 @@
 // STRATELOQ-KALODATA-SECURE-DISCOVERY-BROKER (Stage 1 COMMERCE lane)
 //
-// PREPARED CHANGE (mig_336) — NOT deployed without founder approval.
-// Delta vs the live v11 function: accepts an optional `page_number` in the request payload
-// (default 1, clamped >= 1) and threads it to fn_kalodata_discovery_request(p_market, p_page_number)
-// so approved runs can advance pages instead of re-buying page 1. Everything else is unchanged:
-// trusted-server/nonce gate, secret read only from Edge env, budget/caps enforced upstream in the DB.
+// PREPARED CHANGE — NOT deployed without founder approval (Refresh Discovery Stage B).
+// Delta vs the live v12 function: OPTIONAL `refresh_request_id` in the payload. When present (a customer
+// Refresh Discovery run that already RESERVED credits + AUTHORIZED one provider budget call in the DB), the
+// edge threads it through and, after the single paid call + ingest, invokes the SERVICE-ROLE completion
+// callback fn_discovery_refresh_complete_from_edge(request_id, new_product_ids, duplicates, outcome) so the
+// request settles (SUCCESS, incl. zero-new) or refunds (any failure; beta policy). The completion reads the
+// owning tenant FROM THE REQUEST ROW (never from this payload) and recomputes image-pending with the Explorer
+// gate predicate, so a wrong payload can neither charge the wrong tenant nor inflate the visible count.
+// When `refresh_request_id` is absent the behaviour is byte-for-byte the original v12 (normal discovery wave).
+//
+// IDEMPOTENCY / NO DUPLICATE PAID CALLS: one paid call per request is guaranteed upstream — authorize consumes
+// exactly one provider budget unit (atomic; an approved N can never become N+1) and dispatch sets dispatched_at
+// once. If this completion callback is lost, the request stays EXECUTING and the reconcile sweep refunds it as
+// UNRESOLVED_POST_DISPATCH WITHOUT re-dispatching. The edge never retries the provider on its own.
+// Everything else is unchanged: trusted-server/nonce gate, secret read only from Edge env, budget/caps upstream.
 
 const DEFAULT_ENDPOINT = "https://www.kalodata.com/openapi/v1/tiktok/product/rank";
 const SECRET_ENV = "KALODATA_SECRET_KEY";
@@ -73,6 +83,26 @@ async function recordOutcome(userId: string, market: string, laneStatus: string,
   try { await rpc("fn_kalodata_record_lane_outcome", { p_user_id: userId, p_market: market, p_lane_status: laneStatus, p_detail: detail }); } catch (_e) { /* telemetry best-effort */ }
 }
 
+// Refresh Discovery completion callback (only when refresh_request_id is present). Best-effort: if it fails,
+// the request stays EXECUTING and the reconcile sweep refunds it later (UNRESOLVED_POST_DISPATCH), never a
+// duplicate provider call. The DB function derives tenant from the request row and recomputes image-pending.
+function newProductIds(ib: any): string[] {
+  const promoted: any[] = Array.isArray(ib?.promoted) ? ib.promoted : [];
+  return promoted.filter((p) => p && p.dedup_status === "new" && p.product_id).map((p) => String(p.product_id));
+}
+function duplicateCount(ib: any): number {
+  const promoted: any[] = Array.isArray(ib?.promoted) ? ib.promoted : [];
+  return promoted.filter((p) => p && p.dedup_status === "deduplicated").length;
+}
+async function completeRefresh(refreshRequestId: string | null, newIds: string[], duplicates: number, outcome: string): Promise<void> {
+  if (!refreshRequestId) return;
+  try {
+    await rpc("fn_discovery_refresh_complete_from_edge", {
+      p_request_id: refreshRequestId, p_new_product_ids: newIds, p_duplicates: duplicates, p_outcome: outcome,
+    });
+  } catch (_e) { /* reconcile sweep is the safety net; never fail the response on the callback */ }
+}
+
 Deno.serve(async (req) => {
   if (req.method !== "POST") return jsonResponse(405, { ok: false, error: "method_not_allowed" });
   let trusted = isTrustedServer(req);
@@ -98,11 +128,16 @@ Deno.serve(async (req) => {
   const candidateLimit = Math.max(1, Math.min(Number(payload.candidate_limit ?? 10) || 10, 25));
   // mig_336: explicit page number (default 1, clamp >= 1) so runs can advance pages, not re-buy page 1.
   const pageNumber = Math.max(1, Number(payload.page_number ?? 1) || 1);
+  // Refresh Discovery Stage B: optional request id this run settles against. Absent => normal discovery wave.
+  const refreshRequestId: string | null = (typeof payload.refresh_request_id === "string" && payload.refresh_request_id.trim().length > 0)
+    ? payload.refresh_request_id.trim() : null;
   if (!market) return jsonResponse(400, { ok: false, error: "missing_market" });
   if (!userId) return jsonResponse(400, { ok: false, error: "missing_user_id" });
 
   if (!secret) {
     await recordOutcome(userId, market, "AUTH_FAILED", { reason: "server_secret_unavailable" });
+    // no chargeable call was made -> refund (pre-charge)
+    await completeRefresh(refreshRequestId, [], 0, "PROVIDER_FAILED_PRE_CHARGE");
     return jsonResponse(424, { ok: false, lane: "COMMERCE", provider: "KALODATA", market, lane_status: "AUTH_FAILED", error: "server_secret_unavailable", note: "Set the KALODATA_SECRET_KEY Edge Function secret for project nxaunmyihhjixxxljcqt." });
   }
 
@@ -113,12 +148,14 @@ Deno.serve(async (req) => {
     const reason = rb?.reason ?? "request_builder_failed";
     const laneStatus = reason === "UNSUPPORTED_MARKET" ? "UNSUPPORTED_MARKET" : "PROVIDER_UNAVAILABLE";
     await recordOutcome(userId, market, laneStatus, { reason });
+    // failed before any chargeable call -> refund (pre-charge)
+    await completeRefresh(refreshRequestId, [], 0, "PROVIDER_FAILED_PRE_CHARGE");
     return jsonResponse(reason === "UNSUPPORTED_MARKET" ? 200 : 502, { ok: reason === "UNSUPPORTED_MARKET", lane: "COMMERCE", provider: "KALODATA", market, lane_status: laneStatus });
   }
   const endpoint = (Deno.env.get(BASE_URL_ENV) || DEFAULT_ENDPOINT).trim();
   const secretHeader = (Deno.env.get(SECRET_HEADER_ENV) || "secret-key").trim();
 
-  // 2) provider call with the secret-key header (env only).
+  // 2) provider call with the secret-key header (env only). This is the single chargeable call.
   let provider: Response;
   let providerBody: any = {};
   try {
@@ -130,6 +167,8 @@ Deno.serve(async (req) => {
     providerBody = await provider.json().catch(() => ({}));
   } catch (e) {
     await recordOutcome(userId, market, "PROVIDER_UNAVAILABLE", { reason: "network_error" });
+    // the paid call was initiated and its outcome is unknown -> post-charge (beta refund), audited
+    await completeRefresh(refreshRequestId, [], 0, "PROVIDER_FAILED_POST_CHARGE");
     return jsonResponse(502, { ok: false, lane: "COMMERCE", provider: "KALODATA", market, lane_status: "PROVIDER_UNAVAILABLE", error: redact((e as Error).message) });
   }
   if (!provider.ok) {
@@ -138,6 +177,8 @@ Deno.serve(async (req) => {
       : provider.status === 429 ? "RATE_LIMITED"
       : provider.status >= 500 ? "PROVIDER_UNAVAILABLE" : "FAILED";
     await recordOutcome(userId, market, laneStatus, { http_status: provider.status });
+    // the provider responded with an error: a call occurred -> post-charge (beta refund), audited
+    await completeRefresh(refreshRequestId, [], 0, "PROVIDER_FAILED_POST_CHARGE");
     return jsonResponse(provider.status === 402 ? 402 : 502, { ok: false, lane: "COMMERCE", provider: "KALODATA", market, lane_status: laneStatus, http_status: provider.status, error: redact(providerBody?.message ?? providerBody?.error ?? "provider_error") });
   }
 
@@ -151,6 +192,8 @@ Deno.serve(async (req) => {
   const ib: any = ingest.body;
   if (!ingest.ok || !ib) {
     await recordOutcome(userId, market, "FAILED", { reason: "ingest_failed" });
+    // the paid call succeeded but ingestion failed -> post-charge (beta refund), audited
+    await completeRefresh(refreshRequestId, [], 0, "PROVIDER_FAILED_POST_CHARGE");
     return jsonResponse(502, { ok: false, lane: "COMMERCE", provider: "KALODATA", market, lane_status: "FAILED", error: redact(ib ?? "ingest_failed") });
   }
 
@@ -164,6 +207,10 @@ Deno.serve(async (req) => {
     } catch (_e) { /* usage telemetry is best-effort; never fail discovery on it */ }
   }
 
+  // Refresh Discovery: a valid provider answer (including zero new) is a chargeable SUCCESS -> settle. The
+  // customer-visible vs image-pending split is recomputed server-side from the NEW product ids (gate predicate).
+  await completeRefresh(refreshRequestId, newProductIds(ib), duplicateCount(ib), "SUCCESS");
+
   return jsonResponse(200, {
     ok: true, lane: "COMMERCE", provider: "KALODATA", market, page_number: pageNumber,
     lane_status: ib.status ?? "FAILED",
@@ -171,5 +218,6 @@ Deno.serve(async (req) => {
     scanned: ib.scanned ?? null, qualified: ib.qualified ?? null, promoted_count: ib.promoted_count ?? 0,
     run_id: ib.run_id ?? null, promoted: ib.promoted ?? [], skipped: ib.skipped ?? [],
     provider_usage: usage,
+    refresh_request_id: refreshRequestId,
   });
 });
