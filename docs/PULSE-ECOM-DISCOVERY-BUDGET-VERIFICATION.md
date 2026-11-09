@@ -68,3 +68,27 @@ via any existing in-platform path:**
 | FastMoss | FastMoss account → **Plan / API usage** | ≥ 5 New-Listed calls allowed |
 | DataForSEO | DataForSEO dashboard → **Balance** (or the free `appendix/user_data` if they check it themselves) | balance ≥ $1 |
 | CJ Dropshipping | CJ → **Developer / API** (app key active, not expired) | API access active |
+
+---
+
+## Re-verification (2026-11-09) — GO/BLOCKED after DE Wave 01
+Read-only; no chargeable request. Live production `nxaunmyihhjixxxljcqt`.
+
+**Verdict: BLOCKED (permission), not necessarily money.** All in-system spending controls are inactive/expired again — the system holds **zero active authorisation** (fail-closed), so nothing runs without re-activating a budget.
+
+| Control | Live state | Meaning |
+|---|---|---|
+| `provider_call_budget` | 3 rows, all inactive/expired/consumed: **KALODATA/DE 1/2 (expired 2026-11-08 22:58)**, FASTMOSS/GB 3/3, TESTPROV/GB 2/2 | No active allowance for any provider |
+| Kalodata | rule 0.1 credit/10 products; balance vendor-side (not in DB) | **Proven ≥0.1 credit on 2026-11-08** (DE Wave 01 succeeded); current balance unknown from DB |
+| FastMoss | no active budget; allowance vendor-side | Fail-closed |
+| DataForSEO | `research_budget_config` enabled=false, caps=0, market=null | Disabled; balance vendor-side |
+| CJ | `CJDROPSHIPPING` enabled/AVAILABLE, but needs an active budget (none) | Calls refused (fail-closed) |
+| `provider_call_ledger` | empty | Kalodata usage tracked via `budget.consumed_calls` |
+
+**Check 6 (additional payment?):** Not determinable from in-system data (no vendor balances in DB). A repeat **Kalodata-only** DE wave needs **new permission, not new money** if the vendor credit present yesterday remains. FastMoss/DataForSEO/CJ need both budget activation and founder dashboard balance confirmation.
+
+**Next executable action:**
+1. Kalodata: re-authorise a capped `provider_call_budget` KALODATA/DE (no new money if credit remains). Caveat: request builder fixed to `page_number=1` → a new wave needs a different page/window to avoid re-fetching the same 10 products.
+2. FastMoss/DataForSEO/CJ: founder confirms each vendor balance (read-only, no secret) + activate budgets (`provider_call_budget` rows + enable `research_budget_config` market=DE).
+
+79-product canonical exclusion preserved; no substitution.
