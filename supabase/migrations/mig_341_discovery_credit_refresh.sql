@@ -223,7 +223,42 @@ BEGIN
     'balance_after',public.fn_discovery_credit_balance(),'contract','pulse_discovery_refresh_settle_v2');
 END; $fn$;
 
+-- ---------- authorize (consume provider budget; fail-closed; auto-refund if unauthorised) ----------
+-- Bridges RESERVE -> EXECUTE. Consumes the founder-authorised provider budget atomically; if none is
+-- authorised, the reservation is auto-refunded (PROVIDER_FAILED_PRE_CHARGE) and dispatch is denied. On
+-- success the request moves to EXECUTING; the existing kalodata-discovery edge then runs the paid call for
+-- the reserved page (reusing fn_kalodata_next_page's cursor), and fn_discovery_refresh_settle records the
+-- outcome (SUCCESS incl. zero-new => settle; PROVIDER_FAILED_POST_CHARGE => refund per D3). INERT until a
+-- provider budget is authorised (D4): with no budget, every authorize fails closed and refunds.
+CREATE OR REPLACE FUNCTION public.fn_discovery_refresh_authorize(p_request_id uuid)
+ RETURNS jsonb LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path TO '' AS $fn$
+DECLARE
+  v_uid uuid := auth.uid();
+  v_req public.discovery_refresh_request;
+  v_consume jsonb;
+BEGIN
+  SELECT * INTO v_req FROM public.discovery_refresh_request WHERE id=p_request_id AND tenant_id=v_uid;
+  IF NOT FOUND THEN RETURN jsonb_build_object('status','error','reason','REQUEST_NOT_FOUND','contract','pulse_discovery_refresh_authorize_v1'); END IF;
+  IF v_req.status <> 'RESERVED' THEN
+    RETURN jsonb_build_object('status','ok','idempotent_replay',true,'state',v_req.status,'contract','pulse_discovery_refresh_authorize_v1');
+  END IF;
+  PERFORM pg_advisory_xact_lock(hashtextextended(v_uid::text,42));
+  -- AUTHORIZE: consume founder-authorised provider budget (fail-closed if none)
+  v_consume := public.fn_provider_budget_try_consume(v_req.provider, v_uid, v_req.market);
+  IF coalesce((v_consume->>'allowed')::boolean, false) <> true THEN
+    PERFORM public.fn_discovery_refresh_settle(v_req.id, 0, 'PROVIDER_FAILED_PRE_CHARGE');   -- no cost -> refund
+    RETURN jsonb_build_object('status','denied','reason',coalesce(v_consume->>'reason','PROVIDER_NOT_AUTHORIZED'),
+      'refunded',true,'balance_after',public.fn_discovery_credit_balance(),'contract','pulse_discovery_refresh_authorize_v1');
+  END IF;
+  UPDATE public.discovery_refresh_request SET status='EXECUTING', updated_at=now() WHERE id=v_req.id;
+  RETURN jsonb_build_object('status','ok','authorized',true,'state','EXECUTING','provider',v_req.provider,
+    'market',v_req.market,'page_number',v_req.page_number,
+    'note','EXECUTE via the kalodata-discovery edge for this page; then call fn_discovery_refresh_settle with the run outcome',
+    'contract','pulse_discovery_refresh_authorize_v1');
+END; $fn$;
+
 GRANT EXECUTE ON FUNCTION public.fn_discovery_credit_balance() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_discovery_refresh_quote(text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_discovery_refresh_reserve(text,text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_discovery_refresh_authorize(uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_discovery_refresh_settle(uuid,integer,text) TO authenticated;
