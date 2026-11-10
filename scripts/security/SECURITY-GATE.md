@@ -53,13 +53,39 @@ GitHub App token only has `metadata=read`). These steps must be done by a repo a
    postgresql://security_gate_ro.nlfkwrjmhxbubtlwepwx:<password>@aws-0-eu-central-1.pooler.supabase.com:6543/postgres?sslmode=require
    ```
    (Confirm the exact pooler host/port under Supabase → Project → Connect.)
-3. **Trigger a run** — the workflow runs on `workflow_dispatch`, on pushes/PRs that touch
-   `supabase/billing-staging/**`, `scripts/security/**`, or the workflow file. Until the
-   workflow is on the **default branch** (`claude/pulse-crash-recovery-b6ngey`),
-   `workflow_dispatch` is not selectable in the UI; merge it to the default branch (or run
-   on a push to a same-repo branch) to make it dispatchable.
-4. **Make it a required check** (optional, recommended): Settings → Branches → protect the
-   default branch → Require status checks → add `rls-catalog-gate`.
+3. **Trigger a run** — the workflow runs on `workflow_dispatch`, on every `push`, and on
+   every `pull_request` (see required-check design below). *(Status: the secret has been
+   configured and the gate runs green in CI — e.g. run #3/#4 show all 8 checks PASS.)*
+4. **Make it a required check** via the ruleset `Strateloq Billing Security Protection`
+   (id 26986770), which already lists context `rls-catalog-gate` with enforcement
+   **disabled**. Only enable enforcement **after** the required-check-safe workflow is on
+   the default branch (see prerequisite below).
 
 With the secret set, a passing gate is green; a failing security check or a missing secret
-makes the workflow **fail** (never a misleading green). Fork PRs are skipped (no secret access).
+makes the workflow **fail** (never a misleading green).
+
+## Required-check reliability (why the job always runs)
+
+A required status check must report a conclusion for **every** PR to the protected branch.
+If the workflow were filtered by `paths`, or the job skipped via a job-level `if`, a PR that
+didn't match would never produce the `rls-catalog-gate` status — leaving it "Expected —
+waiting" and **blocking every unrelated PR**. So the job has **no `paths` filter and no
+job-level skip**; it always runs and decides internally:
+
+| Situation | Outcome |
+|---|---|
+| No billing/security-relevant changes | **PASS** (not applicable) — unrelated PRs are never blocked |
+| Relevant change, same-repo, secret set | Run the Tier-1 read-only gate (8 checks) |
+| Relevant change, **fork** PR (no secret) | **FAIL** — a maintainer must run it (forks never get the secret) |
+| Relevant change, secret missing | **FAIL** — never a misleading green |
+
+Validated (2026-11-10): real Actions runs for *not-applicable → pass* (run `42913717752`)
+and *relevant → gate runs → pass* (run `42913689023`), plus `scripts/ci-tests/gate_logic_test.sh`
+(4/4) for the fork/no-secret failure branches, and the earlier missing-secret failure (run
+`42888923163`).
+
+### Prerequisite before enabling ruleset enforcement
+The required-check-safe workflow must be on the **default branch**. It currently lives on
+`claude/stoic-fermi-53ld5o`; merge it to `claude/pulse-crash-recovery-b6ngey` first. Enabling
+enforcement while the default branch still has the old `paths`-filtered workflow would block
+unrelated PRs. After merging, enabling enforcement is safe.
