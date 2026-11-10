@@ -115,3 +115,70 @@ product reason (fix first, re-activate later — the switch is cheap and repeata
   is exercised by §3c (founder) on activation day.
 - storefront / meta-capi-adapter stay public BY DESIGN (visitor paths); capi event
   forgery mitigations = per-tenant config + consent + dispatch ledger (pre-existing posture).
+
+---
+
+# ADDENDUM — Final Activation Preflight (executed 2026-11-10, enforcement untouched)
+
+## §A. Member states (masked; snapshot in ops log)
+
+Current (gates off) vs enforced landing (measured in a rolled-back transaction):
+**ALL FIVE members land at `BUSINESS_PROFILE_REQUIRED`** — one uniform entry point.
+
+| Member | ds rows | discovery (status/analysis) | app link | verified | entitlement | route to complete |
+|---|---|---|---|---|---|---|
+| cl***@gmail.com | 1 | not_started/ready | yes | yes | NONE | profile+billing OK; blocked at membership (needs founder grant — invitation-only by design) |
+| su***@gmail.com (pilot) | 1 | not_started/not_started | no → backfill RPC | yes | COMP ACTIVE | full route open |
+| su***@globalintelligenceactions.com | 1 | not_started/ready | yes | yes | COMP ACTIVE | full route open |
+| ac***@gmail.com | 1 | not_started/not_started | no → backfill RPC | yes | NONE | profile+billing OK; blocked at membership (needs grant) |
+| ac***@gmail.com | 1 | in_progress/ready | yes | yes | COMP ACTIVE | full route open |
+
+Route prerequisites verified for all 5: exactly one `discovery_state` row (the
+`save_business_profile` cardinality requirement), email verified, app-less members
+covered by `fn_ensure_member_business_profile` backfill (allowlisted).
+
+## §B. COMP money-safety (verified)
+All 3 entitlements are `COMP/COMP` (0 PROVIDER). `save_billing_profile` forces
+`billing_kind=COMP`, `amount_minor=0` for them and REJECTS any card-like key
+(`payment_credentials_not_accepted`) — HTTP-proven (local C4/C5). 0 billing rows
+with nonzero amount. Paid posture inert: 0 active `discovery_credit_price`,
+every `provider_call_budget` row `active=false`, `research_budget_config.enabled=false`
+(caps 0), `comp_refresh_allowance_approved=false`.
+
+## §C. Frontend/backend state parity (verified in live Lovable code)
+`src/lib/onboarding/onboarding-routing.ts` + `onboarding-guard.tsx`: the ONLY
+authority is `fn_workspace_access()`; the UI maps the server's exact state names
+(BUSINESS/BILLING/MEMBERSHIP_CONFIRMATION_REQUIRED, ENTITLEMENT_*,
+WORKSPACE_PREPARING, READY), is `onboardingEnforced`-aware (flag-off = current
+behaviour), never decides completion client-side, and maps `confirm_membership`
+blocked-reasons back to the right step.
+
+## §D. Edge health (post-deploy, live traffic)
+3h window after the guarded deploys: translate-text v8 served real authenticated
+members **4×200** (no-op preservation proven on hosted edge-runtime); probes
+401/403 as designed; **zero 5xx** on all five guarded functions.
+
+## §E. Pilot founder-device test script (Stage 2)
+1. Sign in as the pilot → app routes to /onboarding at **Business profile**.
+2. Business profile step (calls `fn_ensure_member_business_profile` backfill, then
+   `save_business_profile` complete) → advance to **Billing profile**.
+3. Billing profile: fields show NO card inputs; amount **€0** (COMP). Submitting any
+   card-like field name is rejected server-side. Complete → **Membership confirmation**.
+4. Confirm membership (requires active COMP entitlement — pilot has it) → state
+   becomes **WORKSPACE_PREPARING**.
+5. **Expected behaviour while discovery analysis is NOT ready** (pilot's
+   `analysis_status='not_started'`): the SERVER already counts onboarding complete
+   (`fn_onboarding_complete` accepts WORKSPACE_PREPARING → RPCs/tables/edges allowed),
+   but the UI keeps the member on the **“Preparing” screen** (step 4/5) and
+   `OnboardingGuard` holds /workspace/* until `analysis_status='ready'`.
+   → FOUNDER DECISION before/at the pilot test: run the pilot's business-discovery
+   analysis (its own authorised, budget-gated step) to flip `analysis_status`,
+   or accept the pilot parking at “Preparing”. NO direct DB edit of the member.
+6. Once READY: workspace loads; Product Discovery/Explorer verified per §3.
+
+## §F. Preserved paths re-confirmed
+Account recovery/status (`fn_workspace_access`, `fn_entitlement_status`, profile and
+notification RPCs) allowlisted (34/34 local HTTP); Supabase Auth untouched (separate
+service); invitation functions (`issue-*`, `accept-invitation`) unmodified this round
+and NOT onboarding-guarded; no notification/invitation sent; public signup
+configuration untouched (one-line founder dashboard glance recommended at GO).
