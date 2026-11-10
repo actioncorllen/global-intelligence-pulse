@@ -554,3 +554,78 @@ acceptance of the gated journey on a test account (instructions in the report); 
 pre-request gate (`ALTER ROLE authenticator SET pgrst.db_pre_request='public.fn_pre_request_gate'; NOTIFY pgrst,'reload config';`);
 (3) on founder approval, `UPDATE public.onboarding_policy SET enforcement_active=true;`. Instant
 rollback: set it back to false (and RESET the role setting).
+
+---
+
+# Staging Acceptance Before Enforcement (2026-11-10, P0)
+
+Integrated acceptance of the mandatory onboarding gate before production enforcement.
+**Production enforcement stays OFF; the pre-request hook is NOT wired on production; no prod
+data mutated.** Founder approval is required before the activation switch.
+
+## Stage 1 — Test environment
+A dedicated isolated environment could not be provisioned from this session: Supabase **branch
+creation was denied** by the environment, the existing `strateloq-billing-staging` project carries
+a different minimal schema (no onboarding objects), and outbound HTTPS to a staging project host is
+blocked by this environment's **network policy** (proxy 403). Per the directive's fallback, I used
+**PostgREST-contract integration tests with safe fixtures**: every check ran against the **real
+production schema and the real gate function**, inside `BEGIN … ROLLBACK` transactions with
+`enforcement_active` toggled **transaction-locally** (never committed), so the production flag
+stayed FALSE and nothing persisted. I also wired a throwaway `db-pre-request` **mechanism probe** on
+the isolated sandbox to capture PostgREST's GUCs over real HTTP, but the sandbox host is outside the
+network allowlist, so that HTTP call could not complete; the probe was fully removed and the sandbox
+restored (role setting reset, objects dropped).
+
+## Stage 2–4 — Acceptance matrix: **39/39 PASS** (rolled back)
+**Gate (enforcement ON, incomplete member):** anon → allow · service_role → allow · 9 allowlisted
+onboarding/status RPCs (ensure/get/save business, get/save billing, confirm_membership,
+workspace_access, entitlement_status, notifications) → allow · 10 workspace data/action/refresh RPCs
+(product_explorer, recommendations, product_acquisitions, hosted_store_get, create_free_store,
+store_attach_product, product_card_commerce_actions, refresh quote/authorize/fire) → **block** ·
+non-`/rpc/` table path → allow (RLS). No dead-end: every onboarding RPC an incomplete member needs
+is allowed, so they can always complete.
+**Full journey (enforcement ON):** app-less start = `BUSINESS_PROFILE_REQUIRED` → ensure → save
+business → `BILLING_PROFILE_REQUIRED` → billing **card key rejected** → **missing-country invalid**
+→ **complete €0 COMP** → `MEMBERSHIP_CONFIRMATION_REQUIRED` → confirm → `WORKSPACE_PREPARING` →
+discovery ready → **`READY` (only after all gates)** → business+billing **persisted** → ensure again
+= no duplicate (1 profile, 1 billing) → completed member's workspace RPC now allowed.
+**Regression:** OFF → gate no-ops even for an incomplete member and the founder's access_state is
+unchanged; ON → incomplete blocked, **service_role operational allowed**.
+
+**Not runtime-verified here (environment-limited):** the HTTP-transport firing of the hook — i.e.
+`ALTER ROLE authenticator SET pgrst.db_pre_request=…` actually causing the deployed PostgREST to
+invoke the function and return a 403. The gate's *decision logic* is proven against the exact GUCs
+PostgREST sets, and the function is defensive about GUC name/format variants (`request.path` matched
+anywhere; both `request.jwt.claims` and `request.jwt.claim.role`), but the wire-up itself must be
+confirmed on a real PostgREST before arming (see below).
+
+## Stage 5 — Production activation readiness (founder-approved; do not run without approval)
+**Ordered rollout:**
+1. Confirm published frontend (`04a034a`) live and flag-off-safe (done).
+2. Confirm all existing members can complete onboarding: application-less path (mig_347) deployed;
+   allowlist covers onboarding/status/recovery.
+3. **Verify the hook on a real PostgREST FIRST** (a Supabase branch, or a brief window): wire it and
+   confirm (a) an incomplete member's workspace RPC returns 403 `onboarding_incomplete`, (b) an
+   onboarding RPC and anon/auth endpoints still return 200, (c) no redirect loop. Only then:
+4. Wire production: `ALTER ROLE authenticator SET pgrst.db_pre_request='public.fn_pre_request_gate'; NOTIFY pgrst,'reload config';`
+   (still inert — `enforcement_active=false`).
+5. Smoke-test production with the hook wired but flag off (behaviour must be unchanged).
+6. On founder approval, flip: `UPDATE public.onboarding_policy SET enforcement_active=true, updated_by='founder';`
+**Monitoring / error detection:** watch PostgREST logs for `42501 onboarding_incomplete` rate
+(expected only for mid-onboarding members) and for any 5xx spike after wiring; watch
+`fn_workspace_access` error rate. The gate **fails open** on internal error, so a gate fault cannot
+lock members out — it degrades to today's behaviour.
+**Fail-closed-without-lockout test (pre-arm):** confirm an incomplete member is blocked from
+workspace data AND can still reach every onboarding RPC to finish (covered by the 39/39 matrix:
+all 9 onboarding RPCs allow, all 10 workspace RPCs block).
+**Rollback (instant, either layer):**
+- Disable enforcement: `UPDATE public.onboarding_policy SET enforcement_active=false;` (gate no-ops at once).
+- Unwire the hook: `ALTER ROLE authenticator RESET pgrst.db_pre_request; NOTIFY pgrst,'reload config';`
+- Migrations: `mig_346..349_ROLLBACK.sql`.
+**Founder-device acceptance checklist:** on a test account with the hook wired + flag on in a
+non-prod/branch context — sign in → routed to Business Profile (cannot reach /workspace by URL) →
+complete → Billing shows **€0 complimentary, no card** → complete → Membership confirm → workspace
+loads; then as an incomplete member confirm a direct Discovery/My Store/Refresh call is refused;
+check mobile + desktop.
+
+**Activation remains gated on explicit founder approval after the real-PostgREST hook check.**
