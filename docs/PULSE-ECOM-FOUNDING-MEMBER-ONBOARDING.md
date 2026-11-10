@@ -1053,3 +1053,31 @@ Rollback: `mig_352_ROLLBACK.sql` (redeploy pre-guard edges FIRST).
 impact (global switch, NO per-tenant bypass), probe matrices, monitoring thresholds,
 instant rollback, founder pilot verification, stop/go criteria. **Activation NOT executed;
 awaiting explicit founder authorisation.**
+
+---
+
+# SIMPLIFIED BUSINESS ONBOARDING — DEPLOYED (2026-11-10, founder-approved)
+
+With enforcement LIVE, the mandatory Business step was simplified end-to-end:
+- **Backend first (mig_353, applied to prod):** `save_business_profile` completion now
+  requires ONLY `business_name` + `industry`. Removed requirements: `target_audience`,
+  `primary_goal`, `business_summary`, and the three `businessDiscovery` minimum-entry
+  rules. Removed fields stay ACCEPTED + format-validated when sent (legacy clients fine)
+  and existing answers are PRESERVED (merge logic untouched; no data deleted). Strictly
+  loosens completion — deployed while the stricter UI was still live, so no gap.
+  Rollback: re-apply `supabase/tests/local-acceptance/04b_save_business_profile_prod.sql`.
+- **Rolled-back prod test suite 10/10:** name+industry-only completes → BILLING_PROFILE_REQUIRED
+  → billing saved (completed, amount 0) → confirmed → WORKSPACE_PREPARING → edge gate allows;
+  missing industry → invalid `["industry"]` only; legacy full payload saves; resave with only
+  name+industry preserves prior target_audience + businessDiscovery data; incomplete member
+  still denied by the gate. Zero synthetic residue; 5 members untouched; flag TRUE throughout.
+- **Frontend (Lovable commit `ebfb734`, PUBLISHED):** "Customers & goals" and
+  "Business discovery" sections deleted from `business-profile-step.tsx` (headings, inputs,
+  required markers, error wiring); the step shows only the six retained fields (name* /
+  industry* / website / country / business type / company size); client `validateCompletion`
+  relaxed to name+industry; payload shape unchanged (round-trip preserves saved data).
+  Lovable verification: 615 tests / 80 files pass, typecheck clean, preview build OK,
+  browser-checked at desktop + 390px (no overflow). Note: the shared completion validator
+  also serves the workspace discovery form, which now matches the server contract.
+- Billing (€0 COMP, card-free), membership confirmation, entitlement-pending behaviour,
+  guard/routing, budgets and invitation-only signup are all untouched.
