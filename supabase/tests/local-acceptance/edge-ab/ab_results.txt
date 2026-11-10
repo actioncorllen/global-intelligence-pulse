@@ -1,0 +1,28 @@
+# OFF-phase A/B diff: 18/20 byte-identical; 2 intended diffs (meta-insights-reader anon/noauth auth closure)
+# ON-phase (B patched) summaries:
+ON.B.commercial-image-generate.badproduct :: {"status":"INVALID_PRODUCT"} HTTP=400
+ON.B.commercial-image-generate.noauth :: {"status":"UNAUTHENTICATED"} HTTP=401
+ON.B.commercial-image-generate.u1_crosstenant :: {"status":"ONBOARDING_INCOMPLETE"} HTTP=403
+ON.B.commercial-image-generate.u3_own :: {"status":"PRODUCT_NOT_FOUND"} HTTP=404
+ON.B.meta-insights-reader.anonkey :: {"ok":false,"error":"unauthenticated"} HTTP=401
+ON.B.meta-insights-reader.noauth :: {"ok":false,"error":"unauthenticated"} HTTP=401
+ON.B.meta-insights-reader.service :: {"ok":false,"error":"server_token_unavailable"} HTTP=424
+ON.B.meta-insights-reader.u1 :: {"ok":false,"error":"onboarding_incomplete"} HTTP=403
+ON.B.meta-insights-reader.u3 :: {"ok":false,"error":"server_token_unavailable"} HTTP=424
+ON.B.prepare-product.badorigin :: {"ok":false,"code":"forbidden_origin"} HTTP=403
+ON.B.prepare-product.noauth :: {"ok":false,"code":"authentication_required"} HTTP=401
+ON.B.prepare-product.u1 :: {"ok":false,"code":"onboarding_incomplete"} HTTP=403
+ON.B.prepare-product.u3 :: {"ok":false,"code":"temporary_failure"} HTTP=503
+ON.B.product-image-import.noauth :: {"ok":false,"error":"missing_bearer"} HTTP=401
+ON.B.product-image-import.u1 :: {"ok":false,"error":"onboarding_incomplete"} HTTP=403
+ON.B.product-image-import.u3 :: {"ok":false,"error":"upload_failed","detail":"{\"message\":\"name resolution failed\"}"} HTTP=502
+ON.B.translate-text.anonkey :: {"status":"UNAUTHENTICATED"} HTTP=401
+ON.B.translate-text.noauth :: {"status":"UNAUTHENTICATED"} HTTP=401
+ON.B.translate-text.u1 :: {"status":"ONBOARDING_INCOMPLETE"} HTTP=403
+ON.B.translate-text.u3 :: {"status":"ok","target_lang":"de","translations":{},"budget":null,"stats":{"requested":1,"cache_hits":0,"translated":0,"truncated":true},"note":"pricing_unavailable"} HTTP=200
+# ON-phase (A original) old-bypass evidence:
+ON.A.meta-insights-reader.u1 :: {"ok":false,"error":"server_token_unavailable"} HTTP=424
+ON.A.prepare-product.u1 :: {"ok":false,"code":"temporary_failure"} HTTP=503
+ON.A.product-image-import.u1 :: {"ok":false,"error":"upload_failed","detail":"{\"message\":\"name resolution failed\"}"} HTTP=502
+ON.A.translate-text.u1 :: "target_lang":"de","translations":{},"budget":null,"stats":{"requested":1,"cache_hits":0,"translated":0,"truncated":true},"note":"pricing_unavailable"} HTTP=200
+ON.A.commercial-image-generate.u1_crosstenant :: {"status":"PRODUCT_NOT_FOUND"} HTTP=404

@@ -982,3 +982,74 @@ with one synthetic/pilot account before announcing, with the instant rollback
 ## Cleanup (Stage 4)
 Local stack stopped and volumes removed (`supabase stop --no-backup`); Docker daemon stopped.
 No unrelated local data touched; nothing billable was created; no provider calls made.
+
+---
+
+# EDGE FUNCTION ONBOARDING HARDENING — DEPLOYED (2026-11-10)
+
+Closed the remaining authenticated Edge Function onboarding gap. Production enforcement
+remains **OFF** (`enforcement_active=FALSE`); every change is a strict no-op today, proven
+before deploy.
+
+## Review (all 25 deployed functions classified)
+- **Guarded (user-JWT customer workspace ops whose DB work is service-role → neither RLS
+  nor the PostgREST hook covered them):** `prepare-product` v21, `translate-text` v8,
+  `product-image-import` v10, `commercial-image-generate` v14, `meta-insights-reader` v19.
+- **Already transitively enforced** (they call PostgREST with the CALLER's JWT, so
+  mig_351 gates them): `media-asset-url` (ownership RPC), `meta-facebook-oauth-begin`
+  (`fn_social_oauth_begin`), `meta-facebook-select-page` (`fn__own_tenant`). No change.
+- **Onboarding/recovery — deliberately NOT guarded:** `start-discovery` (it IS the
+  business-profile step; guarding it would deadlock new members), `accept-invitation`,
+  `meta-facebook-oauth-callback` (state-bound redirect), `meta-facebook-disconnect`
+  (revocation safety).
+- **Service/nonce-gated internal (verify_jwt=true confirmed):** `kalodata-discovery`,
+  `fastmoss-discovery`, `fastmoss-product-detail`, `tiktok-commercial-token`,
+  `creative-image-execute`. Customer Refresh Discovery is gated upstream at the
+  `fn_discovery_refresh_*` RPCs (PostgREST → mig_351).
+- **Public by design:** `storefront`, `meta-capi-adapter` (storefront visitor events;
+  per-tenant config + consent + dispatch ledger). **Admin:** `issue-invitation`,
+  `issue-open-invitation`, `list-issuable-applications`. **Disabled:** `admin-bootstrap-demo`,
+  `zz-test-mint-token`, `cttest`.
+
+## Genuine bypasses found + fixed
+1. **Five guarded functions had NO onboarding check** — with enforcement ON, an incomplete
+   member could run preparation, translation, image import/generation. Proven live in the
+   local A/B ON-phase (old code served the incomplete member; patched code returns 403).
+2. **`meta-insights-reader` had no auth in code at all** — the PUBLIC anon key passed the
+   platform verify_jwt gate, letting any anon-key holder read Meta ad insights for
+   arbitrary object ids. Now: service-role passes (jobs), otherwise signed-in user +
+   onboarding gate. 7-day logs showed ZERO traffic → nothing legitimate broke.
+   Verified live: anon-key probe now 401 (was 424/200 family).
+
+## Mechanism (mig_352, applied to prod)
+`public.fn_edge_onboarding_allowed(uuid)` — service_role-only, STABLE SECURITY DEFINER,
+single decision authority delegating to the existing `onboarding_policy` +
+`fn_onboarding_complete`: TRUE only on definite OFF or definite complete; FAILS CLOSED
+on NULL uid / unreadable policy / any error. Each guarded edge makes one RPC after
+resolving the caller's JWT; marker-delimited guard blocks keep the diff reversible.
+Rollback: `mig_352_ROLLBACK.sql` (redeploy pre-guard edges FIRST).
+
+## Tests
+- **SQL battery 13/13** (local) + **prod rolled-back battery**: OFF→allow all;
+  ON→deny null/random/incomplete, allow complete; **ON members_allowed=0/5** (every
+  existing prod member incomplete today — activation impact, see runbook §0).
+- **Local real-HTTP A/B** (actual function code under Deno against the rebuilt local
+  security stack, synthetic users): OFF phase **18/20 byte-identical** original-vs-patched
+  (the 2 diffs are the intended insights auth closure) → behaviour preservation proven
+  BEFORE deploy. ON phase: all 5 deny the incomplete member (403 onboarding_incomplete),
+  the complete member proceeds, service-role path unaffected, old code demonstrably
+  bypassed. Harness: `supabase/tests/local-acceptance/edge-ab/`.
+- **Live post-deploy probes** (n8n `ZZ Strateloq edge-guard post-deploy probes`,
+  TNhQYnfGygFdAFNA, zero cost): insights+anon **401 unauthenticated** (closure live);
+  translate+anon 401; prepare no-origin 403 `forbidden_origin` (verify_jwt=false intact —
+  one deploy initially flipped it to true; caught and redeployed v21=false, same sha);
+  cig no-auth 401; image-import+anon 401. All five handlers boot and serve.
+- **Not covered (documented, not claimed):** authenticated-member calls over hosted
+  edge-runtime (no member credentials are held, deliberately) — exercised by the founder
+  step in the activation runbook §3c. Local Deno ≠ hosted edge-runtime (same source).
+
+## Stage 4 — Activation runbook
+`docs/RUNBOOK-ONBOARDING-ACTIVATION.md`: preflight snapshot, the **0/5** existing-member
+impact (global switch, NO per-tenant bypass), probe matrices, monitoring thresholds,
+instant rollback, founder pilot verification, stop/go criteria. **Activation NOT executed;
+awaiting explicit founder authorisation.**

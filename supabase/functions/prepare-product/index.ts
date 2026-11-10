@@ -122,6 +122,23 @@ Deno.serve(async (request: Request): Promise<Response> => {
     return jsonResponse({ ok: false, code: "authentication_required" }, 401, cors);
   }
 
+  // ---- STRATELOQ mandatory-onboarding gate (edge) BEGIN ----------------------
+  // Protected customer workspace operation: onboarding is enforced SERVER-SIDE,
+  // never via frontend routing. fn_edge_onboarding_allowed (mig_352,
+  // service_role-only) returns TRUE only when enforcement is definitely OFF or
+  // this member's onboarding is definitely complete; any error or non-true
+  // result DENIES (fail closed). While onboarding_policy.enforcement_active is
+  // FALSE this always allows, so existing production behaviour is unchanged.
+  try {
+    const gate = await serviceClient.rpc("fn_edge_onboarding_allowed", { p_auth_user_id: uid });
+    if (gate.error || gate.data !== true) {
+      return jsonResponse({ ok: false, code: "onboarding_incomplete" }, 403, cors);
+    }
+  } catch {
+    return jsonResponse({ ok: false, code: "onboarding_incomplete" }, 403, cors);
+  }
+  // ---- STRATELOQ mandatory-onboarding gate (edge) END ------------------------
+
   let body: { acquisition_id?: unknown };
   try {
     body = (await request.json()) as { acquisition_id?: unknown };

@@ -166,6 +166,18 @@ Deno.serve(async (req: Request): Promise<Response> => {
   } catch { return json(401, { status: "UNAUTHENTICATED" }); }
   if (!userId) return json(401, { status: "UNAUTHENTICATED" });
 
+  // ---- STRATELOQ mandatory-onboarding gate (edge) BEGIN ----------------------
+  // Protected customer workspace operation (budgeted translation): onboarding is
+  // enforced SERVER-SIDE via fn_edge_onboarding_allowed (mig_352, service_role
+  // only) — TRUE only when enforcement is definitely OFF or this member's
+  // onboarding is definitely complete; any error DENIES (fail closed). While
+  // onboarding_policy.enforcement_active = FALSE this always allows (no-op).
+  try {
+    const allowed = await rpc("fn_edge_onboarding_allowed", { p_auth_user_id: userId });
+    if (allowed !== true) return json(403, { status: "ONBOARDING_INCOMPLETE" });
+  } catch { return json(403, { status: "ONBOARDING_INCOMPLETE" }); }
+  // ---- STRATELOQ mandatory-onboarding gate (edge) END ------------------------
+
   let body: Record<string, unknown>;
   try { body = (await req.json()) as Record<string, unknown>; } catch { return json(400, { status: "INVALID_JSON" }); }
 
