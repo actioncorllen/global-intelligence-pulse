@@ -1,0 +1,34 @@
+PASS | P0.1 | OFF: incomplete member reaches protected RPC (no-op gate) | expected=200 got=200
+PASS | P0.2 | OFF: incomplete member direct table read allowed (RLS only) | expected=200 got=200
+PASS | A1 | incomplete: protected workspace RPC denied | expected=403 got=403
+PASS | A2 | incomplete: direct workspace table denied (mig_351) | expected=403 got=403
+PASS | A3 | incomplete: direct table INSERT denied | expected=403 got=403
+PASS | A4 | incomplete: protected RPC via GET denied | expected=403 got=403
+PASS | A5 | incomplete: nonexistent relation -> 404 pre-transaction (no data; existing tables are gated per A2) | expected=404 got=404
+PASS | B1 | incomplete: fn_workspace_access reachable | expected=200 got=200
+PASS | B2 | incomplete: fn_entitlement_status reachable | expected=200 got=200
+PASS | B3 | incomplete: get_own_billing_profile reachable | expected=200 got=200
+PASS | B4 | incomplete: get_own_notifications reachable | expected=200 got=200
+PASS | B5 | incomplete: own-identity table (member) readable via allowlist+RLS | expected=200 got=200
+PASS | C1 | journey: business profile backfill RPC ok | expected=200 got=200
+PASS | C2 | journey: save_business_profile complete=true | expected=200 got=200
+PASS | C3 | journey: still denied after business profile only | expected=403 got=403
+PASS | C4 | journey: save_billing_profile complete=true (COMP, amount 0) | expected=200 got=200
+PASS | C5 | journey: card data REJECTED by billing RPC | expected=200 got=200
+PASS | C6 | journey: confirm_membership ok | expected=200 got=200
+PASS | C7 | journey: workspace RPC allowed after completing onboarding | expected=200 got=200
+PASS | C8 | journey: direct table read allowed after onboarding (RLS applies) | expected=200 got=200
+PASS | D1 | pre-completed member: workspace RPC allowed | expected=200 got=200
+PASS | D2 | cross-tenant: completed member CANNOT read other tenant's private row | expected=200 got=200
+PASS | D3 | owner: tenant B reads own private row | expected=200 got=200
+PASS | D4 | service_role: full table read (operational jobs unaffected) | expected=200 got=200
+PASS | D5 | service_role: service-only RPC callable | expected=200 got=200
+PASS | E1 | anon key only: table read returns NO rows (RLS)  | expected=200 got=200
+PASS | E2 | anon key only: protected RPC denied (no EXECUTE grant; PostgREST 401 for anon) | expected=401 got=401
+PASS | E3 | authenticated user CANNOT call service-only state RPC (no EXECUTE grant) | expected=403 got=403
+PASS | E4 | malformed JWT: rejected | expected=401 got=401
+PASS | E5 | valid-signature JWT with NO role claim: denied upstream (fail closed) | expected=401 got=401
+PASS | F1 | case-variant path = distinct nonexistent relation -> 404 (no data path) | expected=404 got=404
+PASS | F2 | query-string variation: denied | expected=403 got=403
+PASS | F3 | HEAD request: denied | expected=403 got=403
+PASS | F4 | path traversal attempt on rpc: not allowed | expected=403 got=403

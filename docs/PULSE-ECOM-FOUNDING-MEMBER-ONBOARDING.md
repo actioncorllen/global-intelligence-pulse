@@ -919,3 +919,66 @@ pre-creation cost check found a blocker and execution was halted per directive.
 **Awaiting explicit founder approval for the Pro upgrade (or an alternative).** Once a
 branch-capable environment exists, the turnkey setup + the 13-check real-HTTP enforcement matrix
 (documented above) run unchanged, followed by branch deletion and (optionally) plan downgrade.
+
+---
+
+# FREE LOCAL REAL-HTTP ENFORCEMENT ACCEPTANCE — 34/34 PASS (2026-11-10)
+
+The isolated real-HTTP acceptance that the free plan blocked on hosted branches was executed in a
+**local Supabase stack** (Supabase CLI 3.1.0 + Docker, in the cloud workstation) at **zero cost**.
+Production untouched throughout: `enforcement_active=FALSE`, hook wired, pilot COMP intact.
+
+## Environment (Stage 1–2)
+- Local stack on 127.0.0.1:54321/54322 with **db + GoTrue + PostgREST + Kong** only
+  (realtime/storage/studio/edge-runtime/analytics disabled; their images are blocked by the
+  workstation's egress proxy — the four needed images were obtainable via ECR Public/mirror.gcr.io).
+- **Security parity, proven**: all **17** security/onboarding functions (`fn_pre_request_gate`,
+  `fn_onboarding_complete`, `fn_member_onboarding_state`, `fn_workspace_access`,
+  `fn_workspace_entry_allowed`, `fn_entitlement_status/active`, `fn_global_intelligence_uid`,
+  `fn_ensure_member_business_profile`, business/billing profile RPCs, `confirm_membership`,
+  notification RPCs) verified **md5(pg_get_functiondef)-IDENTICAL to production** after load —
+  no simplified mocks. RLS policies + table/function grants mirror the production
+  `pg_policies`/ACL fetch of the same day. One clearly marked minimal *data-RPC stand-in*
+  (`fn_product_explorer`) represents protected workspace RPCs; it is not a security function.
+- Hook wired exactly as production: `ALTER ROLE authenticator SET pgrst.db_pre_request =
+  'public.fn_pre_request_gate'` (the local authenticator then carries the same settings set as
+  prod: supautils/safeupdate preload, 8s timeouts, the hook).
+- 3 **synthetic** users (`incomplete@`, `journey@`, `completeb@synthetic.test`) created via the
+  local GoTrue admin API; JWTs minted via real password-grant logins. No production customer data.
+
+## Real-HTTP matrix (Stage 3) — enforcement_active=TRUE locally — 34/34 PASS
+Harness + full results: `supabase/tests/local-acceptance/` (`run_matrix.sh`, `matrix_results.txt`).
+
+| Outcome | Result |
+|---|---|
+| Wired-but-OFF is a strict no-op (RPC + direct table reach pre-gate behaviour) | PASS (P0.1–P0.2) |
+| Incomplete member DENIED protected workspace RPC (403 `onboarding_incomplete`) | PASS (A1, A4 via GET) |
+| Incomplete member DENIED direct workspace tables — read AND insert (mig_351 fix) | PASS (A2, A3) |
+| Business-profile / billing-profile / confirmation / status / notifications RPCs reachable while incomplete | PASS (B1–B5, C1–C2, C4–C6) |
+| Full onboarding journey over HTTP flips access: denied mid-journey → allowed after confirm | PASS (C3 → C7–C8) |
+| Card data rejected by billing RPC (`payment_credentials_not_accepted`), COMP amount 0 | PASS (C4–C5) |
+| Completed member succeeds (RPC + tables, RLS still applied) | PASS (C7–C8, D1) |
+| Anonymous denied protected data (RLS empty set; no EXECUTE on workspace RPCs) | PASS (E1–E2) |
+| Cross-tenant isolation intact for completed members | PASS (D2–D3) |
+| service_role unaffected (tables + service-only RPCs) | PASS (D4–D5) |
+| Account-recovery/status path reachable while incomplete (`fn_workspace_access`, `fn_entitlement_status`) | PASS (B1–B2) |
+| No alternate-endpoint bypass (GET-RPC, query variants, HEAD, path traversal, case variants, unknown relations) | PASS (A4–A5, F1–F4) |
+| Missing/malformed/role-less JWT fails closed (401 upstream / 403 gate) | PASS (E3–E5) |
+| Edge Functions enforce onboarding | **ENV-LIMITED** — local edge-runtime image blocked by egress proxy; prod-side assessment stands (separate entry path, no critical bypass found; per-edge guard still recommended pre-broad-rollout) |
+
+**Defects found: none.** Five initially mismatched expectations were analysis errors in the test
+expectations (404 for nonexistent relations occurs before any transaction; 401 upstream for role-less
+JWTs), each re-verified as a denial — no case granted data.
+
+## Sufficiency & remaining production-specific verification
+This proves, over genuine HTTP transport with the hook mechanism engaged and enforcement ON, the
+exact production gate/function/RLS/grant code. It does NOT exercise: production's full table/RPC
+surface (only the allow-list + representative protected resources), production data volumes,
+Supabase-hosted Kong/PostgREST versions' config deltas, or Edge Functions. Recommended on
+activation day (flag ON in prod, founder-approved): re-run the same curl matrix against production
+with one synthetic/pilot account before announcing, with the instant rollback
+(`UPDATE public.onboarding_policy SET enforcement_active=false;`) standing by.
+
+## Cleanup (Stage 4)
+Local stack stopped and volumes removed (`supabase stop --no-backup`); Docker daemon stopped.
+No unrelated local data touched; nothing billable was created; no provider calls made.
