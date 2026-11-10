@@ -1,0 +1,6 @@
+-- mig_353_ROLLBACK.sql
+-- Restores the pre-mig_353 save_business_profile (full completion requirements:
+-- target_audience, primary_goal, business_summary + the three businessDiscovery
+-- minimum-entry rules). Exact prior definition preserved at
+-- supabase/tests/local-acceptance/04b_save_business_profile_prod.sql — apply that
+-- file verbatim to roll back. (Kept as a pointer to avoid a drifting duplicate.)
