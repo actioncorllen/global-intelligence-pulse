@@ -182,3 +182,33 @@ notification RPCs) allowlisted (34/34 local HTTP); Supabase Auth untouched (sepa
 service); invitation functions (`issue-*`, `accept-invitation`) unmodified this round
 and NOT onboarding-guarded; no notification/invitation sent; public signup
 configuration untouched (one-line founder dashboard glance recommended at GO).
+
+---
+
+# EXECUTION RECORD — ACTIVATED 2026-11-10 18:02:20 UTC (founder-authorised)
+
+- Pre-execution snapshot matched the accepted preflight on every item (policy flags,
+  hook, gate function hashes, 3×COMP/COMP, 2 pending members, 0 prices/budgets,
+  research disabled, 0 nonzero billing, clean 1h error baseline).
+- `UPDATE public.onboarding_policy SET enforcement_active=true, updated_at=now(),
+  updated_by='founder' WHERE id;` → **rows_updated=1**, singleton row verified
+  (`enforcement_active=true`, `updated_by='founder'`, 18:02:20.747 UTC).
+- Live hosted acceptance (immediately after):
+  * All five members: `fn_member_onboarding_state` → **BUSINESS_PROFILE_REQUIRED** (live).
+  * Edge gate live: `fn_edge_onboarding_allowed` → false for NULL/random/all 5 (0/5).
+  * Data API (n8n, anon key): table read → 200 `[]` (RLS empty); table INSERT →
+    401 `42501` RLS violation (probe row verified NOT inserted); allowlisted RPC
+    `get_own_billing_profile` → 200 `{"status":"unauthenticated"}` (alive through the
+    armed gate); protected RPC with anon → denied (PGRST202/no anon EXECUTE).
+  * Edge functions (n8n): insights 401 / translate 401 / prepare 403 forbidden_origin /
+    cig 401 / image-import 401 — all handlers serving under enforcement.
+  * Auth: `/auth/v1/health` 200 (GoTrue v2.197.0); `/auth/v1/recover` 200 (no enumeration).
+  * Post-activation integrity: entitlements 3×COMP/COMP unchanged, 0 confirmed members,
+    prices/budgets/research still inert, 0 nonzero billing.
+  * 20-min log window: zero 5xx; only probe traffic + normal 200s; no lockout loops.
+- Limitation (accepted): authenticated incomplete-member HTTP denials over hosted
+  infra are evidenced at SQL level + local 34/34; the live member-credential proof is
+  the founder pilot journey (§E) — no member credentials are held and none were
+  fabricated or impersonated.
+- Monitoring: first self check-in armed ~50 min post-activation; rollback
+  (`enforcement_active=false`) standing by per §5.
