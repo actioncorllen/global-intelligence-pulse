@@ -706,3 +706,46 @@ enforcement:**
   `current_setting('request.path')` for one request (as prepared and torn down in the sandbox test).
 
 **Production ALTER ROLE and `enforcement_active=true` remain gated on explicit founder approval.**
+
+---
+
+# PostgREST Hook — Wire-Only Step EXECUTED (2026-11-10, founder-authorised)
+
+Founder-authorised **wire-only** activation on production `nxaunmyihhjixxxljcqt`. The onboarding
+hook is now connected to PostgREST; **mandatory enforcement remains OFF** (`enforcement_active=false`).
+No enforcement enabled, no billing/entitlement/invitation/signup/provider-budget/RLS/PAL change.
+
+**Baseline (pre):** project `postgres`/`nxaunmyihhjixxxljcqt`; `enforcement_active=false`; fail-closed
+`fn_pre_request_gate` deployed (definite-disarmed + definite-complete checks, no fail-open marker);
+authenticator settings = `session_preload_libraries`, `statement_timeout=8s`, `lock_timeout=8s`; no
+prior `pgrst.db_pre_request`; gate EXECUTE granted to anon/authenticated/service_role/postgres.
+
+**Executed (exactly, nothing else):**
+`ALTER ROLE authenticator SET pgrst.db_pre_request = 'public.fn_pre_request_gate'; NOTIFY pgrst, 'reload config';`
+
+**Verified (post):** authenticator now carries the three prior settings **plus**
+`pgrst.db_pre_request=public.fn_pre_request_gate` (prior settings preserved);
+`enforcement_active` still FALSE; pilot `surpyjabu` COMP entitlement unchanged (`ecommerce_monthly`/
+COMP/COMP); 3 entitlements total (none modified); 0 active prices/allowances/provider budgets.
+
+**Server-side evidence (PostgREST + Postgres logs):**
+- `postgrest_logs 14:02:59` "Received a config reload message on the \"pgrst\" channel"
+- `postgrest_logs 14:03:00` **"Config reloaded"** — clean, **no error entries afterward** (PostgREST
+  accepted the `db_pre_request` function; if it could not resolve/load it, it would have errored here).
+- `postgres_logs` last 15 min: no ERROR/FATAL/PANIC and no gate-related request errors (only the
+  ALTER/NOTIFY statement itself).
+
+**HTTP transport acceptance: UNVERIFIED.** Actual end-to-end HTTP requests through the deployed
+PostgREST could not be exercised from this environment (outbound to the API host is blocked by the
+cloud network policy; no API-gateway traffic occurred in the observation window). Per directive,
+this is explicitly marked UNVERIFIED — the clean config reload proves PostgREST **loaded** the hook,
+not that a request executed it end-to-end. A simulated SQL invocation was **not** used as HTTP proof.
+
+**Rollback:** NOT required (no verified regression; positive clean-reload evidence). Ready if needed:
+`ALTER ROLE authenticator RESET pgrst.db_pre_request; NOTIFY pgrst, 'reload config';`
+
+**Remaining before enforcement-ON approval:** (1) a real HTTP smoke test from a network-capable
+client — load the app / sign in, confirm normal operation with the hook wired + flag OFF (expected:
+unchanged); (2) recommended edge-function defense-in-depth onboarding guard; (3) a separate,
+explicitly-authorised controlled enforcement-ON test (branch or window) to confirm incomplete-member
+denial; then (4) separate founder authorisation to set `enforcement_active=true`.
