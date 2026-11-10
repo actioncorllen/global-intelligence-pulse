@@ -455,3 +455,80 @@ Reuses Stage B controls; **no unlimited spend, no paid call activated**:
   for the complimentary pilot.
 - Standing gates unchanged: Kalodata image-rights reply; competitive + legal. Paid Refresh
   Discovery stays inactive.
+
+---
+
+# Mandatory Onboarding — Completion of the Gaps (2026-11-10, P0)
+
+Finishes mig_346's gaps using the established architecture. **enforcement_active stays FALSE**
+until the integrated deployment + acceptance is verified and the founder approves the switch.
+No charge, no signup, no paid provider call; RLS / tenant / country isolation / PAL preserved.
+
+## Stage 1 — Application-less business profiles (mig_347) — **10/10 PASS**
+`fn_ensure_member_business_profile()` (authenticated, idempotent): for a member with
+`application_ref=NULL` (open/direct invite, e.g. the pilot) it lazily creates a clearly-marked
+backfill `founding_application` (status `accepted`, source `direct_invite_backfill`, never in the
+issuable `new` queue) + an owned `business_profiles` row and links the member — so the **unchanged**
+`save_business_profile` / `get_own_business_profile` then work. No-op for application-linked
+members. Verified rolled-back on the **real pilot account**: backfill → owned profile → get ready →
+save complete → `business_profile_complete=true`; idempotent; tenant-scoped; queue count
+unchanged. The frontend calls it once on entering the BUSINESS PROFILE step.
+
+## Stage 3 — Server-side workspace API gate (mig_348) — **9/9 PASS**
+555 functions are callable by `authenticated`; editing each is infeasible/unsafe. Enforcement is
+centralised in a **single PostgREST `db-pre-request` function** `fn_pre_request_gate()` + predicate
+`fn_onboarding_complete(uid)` (`access_state ∈ {WORKSPACE_PREPARING, READY}`):
+- No-op while `enforcement_active=false`; not wired to PostgREST by the migration.
+- When armed: an authenticated member with incomplete onboarding may call only an **allowlist**
+  (workspace_access, entitlement_status, ensure/get/save business profile, get/save billing
+  profile, confirm_membership, notifications read/mark, identity) — **every other `/rpc/` call is
+  refused** at the API edge (`42501 onboarding_incomplete`). Covers Product Discovery,
+  Recommendations, Saved products, My Store, store/product actions, My Campaigns, Refresh
+  Discovery — all of them, via the one chokepoint.
+- `anon` and `service_role` are never gated (operational jobs + auth/recovery unaffected);
+  non-`/rpc/` (table) access is left to RLS. **Fails OPEN on any error** → can never cause an API
+  outage; tenant isolation/PAL hold independently.
+Verified rolled-back (9/9): disarmed allows; armed blocks incomplete workspace RPC; allows
+onboarding/status RPCs; allows service_role/anon/non-rpc; allows completed members.
+**Wiring (arming step, not done yet):**
+`ALTER ROLE authenticator SET pgrst.db_pre_request = 'public.fn_pre_request_gate'; NOTIFY pgrst, 'reload config';`
+
+## Stage 5 — Complimentary refresh research (mig_349) — not activated
+Per founder: the 10-refresh/month default is **provisional, not approved**. Added
+`onboarding_policy.comp_refresh_allowance_approved boolean DEFAULT false` to encode non-approval so
+no activation logic treats the cap as approved. **No periodic credits granted, no provider
+activated.** Existing fail-closed controls intact: **0 active prices / allowances / provider
+budgets**; `discovery_credit_price` inactive ⇒ no paid Refresh Discovery call can fire. Activation
+(allowance + budget rows) stays a separate founder-approved step, gated behind both this approval
+flag and the commercial-price + Kalodata image-licensing decisions.
+
+## Stage 4 — Safe rollout & acceptance
+**Backend acceptance (rolled-back) covering the 12 scenarios:**
+1. New invited COMP member — full journey 17/17 (mig_346). 2. Existing direct-invite COMP member —
+Stage 1 10/10 on the real pilot account. 3. Fully onboarded member — parity + READY. 4. Incomplete
+business profile — `BUSINESS_PROFILE_REQUIRED` + gate blocks. 5. Incomplete billing —
+`BILLING_PROFILE_REQUIRED` + gate blocks. 6. Missing confirmation — `MEMBERSHIP_CONFIRMATION_REQUIRED`
++ gate blocks. 7. Direct workspace URL bypass — API gate blocks data; frontend route-guard (Lovable)
+redirects the page. 8. Direct data/action RPC bypass — gate 9/9 blocks. 9. Cross-tenant — profile
+tenant-scoped + RLS. 10. Duplicate profile/confirmation — idempotent ensure/confirm/grant.
+11. No card for COMP — billing rejects card keys, €0. 12. Account recovery + service-role — allowlist
++ service_role never gated.
+
+**Production activation procedure (founder-approved; keep enforcement OFF until all green):**
+1. Ship the frontend onboarding journey (Lovable — in progress) + route-guard.
+2. Staging/founder-device acceptance with enforcement armed on a test account.
+3. Wire the pre-request gate (command above) — still inert (flag off).
+4. Flip the flag: `UPDATE public.onboarding_policy SET enforcement_active=true, updated_by='founder';`
+
+**Rollback controls (instant):**
+- Disable enforcement: `UPDATE public.onboarding_policy SET enforcement_active=false;` (gate no-ops immediately).
+- Unwire the gate: `ALTER ROLE authenticator RESET pgrst.db_pre_request; NOTIFY pgrst, 'reload config';`
+- Migration rollbacks: `mig_346..349_ROLLBACK.sql`.
+
+**No member stranded:** application-less members can complete the business profile (Stage 1); the
+gate allowlists onboarding/status/recovery RPCs; enforcement is reversible in one statement.
+
+## Pilot account status
+COMP entitlement active (`ecommerce_monthly`/COMP/COMP). With enforcement OFF it follows today's
+gate (`WORKSPACE_PREPARING` until discovery runs). When armed it will complete BUSINESS → BILLING →
+CONFIRMATION (Stage 1 lets it) before the workspace. No other customer's entitlement changed.
