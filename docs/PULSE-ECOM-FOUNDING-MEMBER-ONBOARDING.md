@@ -834,3 +834,65 @@ Enabling `enforcement_active=true` (globally, or a canary variant) is the next p
 change and needs **separate explicit founder authorisation**, after the controlled enforcement-ON
 test passes. The wire-only hook stays in place (flag OFF); the direct-table bypass is now closed in
 the deployed (inert) gate.
+
+---
+
+# Isolated Enforcement Acceptance — Environment & Branch Plan (2026-11-10)
+
+Goal: prove mandatory onboarding enforcement over real authenticated HTTP in a genuinely isolated,
+production-compatible environment. **Blocked at an external (billable) dependency** — see below.
+No production enforcement enabled; no role settings changed; no billable infra created.
+
+## 1. Environment check — no suitable isolated environment available
+| Project | State | Suitable? |
+|---|---|---|
+| `nxaunmyihhjixxxljcqt` (production) | ACTIVE | No — cannot enable enforcement here (would affect real members; forbidden) |
+| `nlfkwrjmhxbubtlwepwx` (billing-staging) | ACTIVE | No — minimal billing schema only (member/account_entitlement/billing_plan/billing_event); **no onboarding migrations, gate, RLS policies or Edge Functions**; directive excludes reusing it |
+| `zdeedmuocbbkuwuovlbz` (dr-restore) | **INACTIVE (paused)** | No — can't serve HTTP without a billable restore, and holds a DR copy of production data (sensitive; wrong for a test) |
+| Supabase branch | none exist | create_branch is billable and was denied to this session's auto-mode |
+
+**Conclusion:** the real-HTTP enforcement-ON proof requires a fresh isolated branch, which is a
+billable action needing founder approval. **Stopping at that external dependency.**
+
+## Smallest viable branch setup (founder-approved; transparent cost + permissions)
+- **Cost:** a Supabase preview branch runs a small isolated instance at roughly **$0.01–0.02/hour**
+  (a few cents for a 1–2h test), auto-pauses when idle; delete after the test. No provider/paid-API
+  cost (the test uses no Kalodata/paid research).
+- **Permissions:** Supabase org owner/admin on a branch-enabled (Pro) plan; founder either approves
+  the MCP `create_branch` or creates the branch in the Supabase dashboard for `nxaunmyihhjixxxljcqt`.
+- **Setup steps (turnkey once the branch exists):**
+  1. Branch replays the migration history → onboarding schema, `fn_pre_request_gate` (mig_351),
+     RLS policies present. Verify (`gate_is_mig351`, tables, policies).
+  2. Deploy the Edge Functions to the branch (for the Edge-bypass check) or note them tested separately.
+  3. Wire the hook on the branch: `ALTER ROLE authenticator SET pgrst.db_pre_request='public.fn_pre_request_gate'; NOTIFY pgrst,'reload config';`
+  4. Seed synthetic fixtures via the branch admin API: one **incomplete** member (member + discovery_state
+     + COMP entitlement, no business/billing/confirmation) and one **completed** member; mint JWTs by
+     signing each in via the branch auth API.
+  5. `UPDATE public.onboarding_policy SET enforcement_active=true;` (branch only).
+
+## 2. Enforcement test matrix to run on the branch (real HTTP)
+For each, record HTTP status + error code + actual data outcome:
+| Test | Expected |
+|---|---|
+| Incomplete → `POST /rest/v1/rpc/fn_product_explorer` | 403 `onboarding_incomplete` |
+| Incomplete → `GET /rest/v1/commerce_products` (direct table) | 403 |
+| Incomplete → `fn_ensure_member_business_profile` / `get`/`save_business_profile` | 200 |
+| Incomplete → `get`/`save_billing_profile` | 200 (no card; €0 COMP) |
+| Incomplete → `confirm_membership` (after prereqs) | 200 |
+| Completed → `fn_product_explorer` + `GET /rest/v1/commerce_products` | 200 |
+| Anonymous → public endpoint | 200; protected table/RPC → 401/403 |
+| Service-role key → operational RPC | 200 |
+| Cross-tenant → another tenant's rows | 0 rows (RLS) |
+| Auth/recovery (`/auth/v1`) | 200 (no lockout) |
+| Edge Function (authenticated workspace) by incomplete member | no protected workspace action (add edge guard if it allows one) |
+| Full journey business→billing→confirmation→workspace | each step 200; workspace reachable only after all |
+| Negative: missing / malformed Authorization on a protected resource | 401/403 (never 200 with data) |
+
+## 3 & 4. Defects / activation
+Direct-table bypass already **fixed** (mig_351) and fail-open already **fixed** (mig_350), both
+deployed inert. Any further bypass the branch test reveals → smallest fix via the existing gate/RLS,
+re-tested. **Production activation (separate founder approval, after a green branch test):**
+1. (optional) brief `track_functions='pl'` to capture an explicit hook-invocation count, then RESET.
+2. `UPDATE public.onboarding_policy SET enforcement_active=true, updated_by='founder';`
+**Rollback (instant):** `UPDATE public.onboarding_policy SET enforcement_active=false;` and, to fully
+unwire, `ALTER ROLE authenticator RESET pgrst.db_pre_request; NOTIFY pgrst,'reload config';`.
