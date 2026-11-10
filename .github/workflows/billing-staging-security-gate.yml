@@ -1,47 +1,39 @@
 name: billing-staging security gate
 
-# Automated recurrence protection for the billing-staging RLS remediation.
+# Automated recurrence protection for the billing-staging RLS remediation, designed
+# to be SAFE as a REQUIRED status check (context: rls-catalog-gate).
+#
+# Why no `paths:` filter on pull_request, and no job-level skip:
+#   A required status check must report a conclusion for EVERY pull request to the
+#   protected branch. If the workflow is filtered by `paths` (or the job is skipped
+#   via a job-level `if`), a PR that doesn't match never produces the check, leaving
+#   the required check "Expected — waiting" forever and blocking the PR. So the job
+#   ALWAYS runs and decides internally whether the gate applies:
+#     * No billing/security-relevant changes      -> PASS (not applicable).
+#     * Relevant changes, same-repo, secret set    -> run the Tier-1 read-only gate.
+#     * Relevant changes, fork PR (no secret)      -> FAIL (a maintainer must run it).
+#     * Relevant changes, secret missing           -> FAIL (never a misleading green).
 #
 # Runs the TIER-1 read-only catalog gate (scripts/security/security_gate_catalog.sql)
-# against strateloq-billing-staging using a dedicated LEAST-PRIVILEGE, read-only
-# role (security_gate_ro — see scripts/security/provision_ci_gate_role.sql). The
-# gate uses only catalog reads (no SET ROLE, no data reads, no RPC execution), so a
-# leaked CI credential exposes no business data. It FAILS (non-zero exit) if any
-# public table lacks RLS, if anon/authenticated gain unintended access, if the
-# member tenant-isolation policy is missing, or if billing RPC grants drift.
+# against strateloq-billing-staging using the LEAST-PRIVILEGE, read-only role
+# security_gate_ro (scripts/security/provision_ci_gate_role.sql). The gate uses only
+# catalog reads — no SET ROLE, no data reads, no RPC execution — so a leaked CI
+# credential exposes no business data. The privileged Tier-2 behavioural suite
+# (scripts/security/security_regression_test.sql) is run via MCP / a protected manual
+# job, never with credentials exposed to untrusted pull requests.
 #
-# The privileged TIER-2 behavioural suite (scripts/security/security_regression_test.sql)
-# is NOT run here: it needs an elevated connection and is run via MCP / a protected
-# manual job, so administrator credentials are never stored for untrusted CI.
+# Security: least-privilege read-only secret; untrusted fork PRs never receive the
+# secret (pull_request, not pull_request_target) and are failed (not silently passed)
+# when they touch controlled files; minimal permissions; read-only / non-destructive;
+# staging only — production is never targeted.
 #
-# Security properties:
-#   * Least privilege — uses the read-only security_gate_ro role only.
-#   * No misleading green — if the DB-URL secret is absent on a trusted run, the job
-#     FAILS loudly instead of passing with nothing tested.
-#   * Untrusted PRs — the job is skipped for pull requests from forks, which never
-#     receive secrets (uses `pull_request`, not `pull_request_target`).
-#   * Read-only / non-destructive — the SQL makes no changes.
-#   * Staging only — the secret points at billing-staging; production is never targeted.
-#
-# REQUIRED external configuration (one-time, by a repo admin):
-#   Repo → Settings → Secrets and variables → Actions → New repository secret:
-#     BILLING_STAGING_DB_URL_RO = pooler connection string for security_gate_ro
-#     (see scripts/security/provision_ci_gate_role.sql for how to build it).
-#   To enforce before merge: Settings → Branches → protect the default branch →
-#   Require status checks → add "rls-catalog-gate".
+# One-time operator setup: repo secret BILLING_STAGING_DB_URL_RO (pooler connection
+# string for security_gate_ro — see scripts/security/provision_ci_gate_role.sql).
 
 on:
   workflow_dispatch: {}
   push:
-    paths:
-      - 'supabase/billing-staging/**'
-      - 'scripts/security/**'
-      - '.github/workflows/billing-staging-security-gate.yml'
   pull_request:
-    paths:
-      - 'supabase/billing-staging/**'
-      - 'scripts/security/**'
-      - '.github/workflows/billing-staging-security-gate.yml'
 
 permissions:
   contents: read
@@ -49,31 +41,64 @@ permissions:
 jobs:
   rls-catalog-gate:
     runs-on: ubuntu-latest
-    # Skip for pull requests originating from forks: they cannot (and must not)
-    # receive the staging credential. Same-repo branches, pushes and manual runs proceed.
-    if: >-
-      github.event_name != 'pull_request' ||
-      github.event.pull_request.head.repo.full_name == github.repository
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history so we can diff against the base
 
-      - name: Require gate credential (no misleading green)
+      - id: relevance
+        name: Detect billing/security-relevant changes
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          PATTERN='^(supabase/billing-staging/|scripts/security/|\.github/workflows/billing-staging-security-gate\.yml)'
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            echo "Manual dispatch — running the full gate."
+            echo "relevant=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          if [ "$EVENT" = "pull_request" ]; then BASE="${PR_BASE:-}"; else BASE="${PUSH_BEFORE:-}"; fi
+          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "${BASE}^{commit}" 2>/dev/null; then
+            echo "No usable diff base — running the gate (safe default)."
+            echo "relevant=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          CHANGED="$(git diff --name-only "$BASE" HEAD || true)"
+          echo "Changed files:"; printf '%s\n' "$CHANGED"
+          if printf '%s\n' "$CHANGED" | grep -Eq "$PATTERN"; then
+            echo "Billing/security-relevant changes found."
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No billing/security-relevant changes."
+            echo "relevant=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Evaluate RLS catalog security gate
         env:
           DB_URL: ${{ secrets.BILLING_STAGING_DB_URL_RO }}
+          RELEVANT: ${{ steps.relevance.outputs.relevant }}
+          EVENT: ${{ github.event_name }}
+          IS_FORK: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
         run: |
-          if [ -z "$DB_URL" ]; then
+          set -euo pipefail
+          if [ "$RELEVANT" != "true" ]; then
+            echo "::notice::No billing/security-relevant changes in this ${EVENT}; RLS catalog gate not applicable — passing."
+            exit 0
+          fi
+          echo "Billing/security-relevant changes detected — the gate applies."
+          if [ "$IS_FORK" = "true" ]; then
+            echo "::error::This pull request is from a fork and modifies billing/security-controlled files."
+            echo "The gate runs against staging with credentials that are never shared with forked PRs."
+            echo "A maintainer must run it from a trusted context (Actions → Run workflow, or reproduce the"
+            echo "change on a same-repo branch) before merge."
+            exit 1
+          fi
+          if [ -z "${DB_URL:-}" ]; then
             echo "::error::BILLING_STAGING_DB_URL_RO is not configured — the security gate cannot run."
-            echo "Set the repository secret to the security_gate_ro pooler connection string."
             echo "Failing deliberately so a missing credential never looks like a passing gate."
             exit 1
           fi
-          echo "Gate credential present."
-
-      - name: Install PostgreSQL client
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends postgresql-client
-
-      - name: Run Tier-1 read-only catalog security gate
-        env:
-          DB_URL: ${{ secrets.BILLING_STAGING_DB_URL_RO }}
-        run: |
+          echo "Credential present — installing psql and running the Tier-1 read-only catalog gate."
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends postgresql-client
           psql "$DB_URL" -v ON_ERROR_STOP=1 -f scripts/security/security_gate_catalog.sql
