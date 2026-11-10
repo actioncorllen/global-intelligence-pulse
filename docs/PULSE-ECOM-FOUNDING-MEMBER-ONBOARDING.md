@@ -220,3 +220,128 @@ is **PASS (backend, rolled-back)**. The only remaining founder actions are the p
 operations above and the founder-device live-UI checklist — plus the standing external/launch
 gates (Kalodata image-rights reply; competitive + legal). **First five can be invited and
 onboarded reliably** once the founder approves the specific applicants.
+
+---
+
+# First Founding-Member Pilot Preparation (2026-11-10, P0)
+
+Prepare a safe, founder-controlled onboarding pilot for **ONE** real approved founding member.
+Nothing applicant-specific is mutated here: **no approval, no business profile, no invitation, no
+entitlement grant, no contact** was executed. mig_345 and the 17/17 acceptance are accepted and
+not re-run. All queries below are read-only.
+
+## P1 — Founder application review (read-only queue view)
+Existing admin surface: the `list-issuable-applications` edge (founder/admin-gated) and the
+`founding_applications` table (`status='new'`). Minimal review view used (shows only what the
+founder needs to choose, plus issuance-eligibility signals):
+
+```sql
+select
+  row_number() over (order by created_at) as n,
+  id as application_id,
+  first_name || ' ' || last_name as applicant,
+  work_email, company, country, industry, role, company_size,
+  primary_goal, use_case, current_workflow, source, status, created_at,
+  (select count(*) from public.business_profiles bp where bp.application_id = fa.id) as has_business_profile,
+  (select count(*) from public.member m where m.application_ref = fa.id)            as has_member,
+  (select count(*) from public.invitation i where i.application_ref = fa.id)        as invitations
+from public.founding_applications fa
+where status = 'new'
+order by created_at;
+```
+
+**Current queue = 6 pending, but only one is a clean genuine pilot candidate.** Classification
+(by `application_id`; applicant PII shown to the founder in-session, not committed here):
+
+| # | application_id | Classification | Issuance-eligible? |
+|---|---|---|---|
+| 1 | `4919ce8d-…` | internal **verification test** (has 2 prior invitations) | no (test artifact) |
+| 2 | `b40f8bb6-…` | internal **"final test"** verification | no (test artifact) |
+| 3 | `a4906ed3-…` | **genuine applicant** (UK marketing agency); profile present, no member, 0 invitations | **yes — clean pilot candidate** |
+| 4 | `95bb5658-…` | real-looking, **already has a provisioned member** (5 invitations) | no — already onboarded; issuance would reject |
+| 5 | `f760ad56-…` | automated **QA** form test | no (test artifact) |
+| 6 | `83427880-…` | automated **QA** form test | no (test artifact) |
+
+Recommendation for the founder: run the pilot on the single genuine, not-yet-onboarded candidate
+(#3). **The founder selects; nothing is approved or invited automatically.** (A queue cleanup —
+marking the 4 test artifacts and the already-onboarded row to a non-`new` status — is an optional,
+founder-approved follow-up, not done here.)
+
+## P2 — One-member onboarding procedure (exact, founder-authorised at each mutation)
+Reuses the existing workflow and `fn_grant_founding_member_entitlement` (mig_345). Run only after
+the founder picks the individual.
+
+1. **Founder approval → business profile.** Create the applicant's **unowned** business profile
+   (approval marker; `user_id` NULL) for the chosen `application_id`. (If the chosen application
+   already has one — as #3 does — this step is already satisfied; confirm it is unowned.)
+2. **Issue secure invitation** — call the `issue-invitation` edge (founder/admin-gated; the
+   caller's identity is verified server-side against a founder allowlist):
+   ```
+   POST /functions/v1/issue-invitation
+   Authorization: Bearer <founder session JWT>
+   { "application_ref": "<application_id>", "bound_email": "<applicant work email>" }
+   ```
+   The edge generates the token + SHA-256 hash itself, persists via `issue_invitation(...)`, and
+   returns the one-time token **exactly once** (never logged). 14-day expiry, bound to that email.
+3. **Founder delivers** the invite link **from the founder's own mailbox to that exact bound
+   email only** (manual delivery — see P4; no automation, no third parties, no reuse).
+4. **Customer accepts** — applicant signs up at strateloq.com with the **same** email, confirms
+   it (Supabase Auth sends the confirmation), and opens the invite link → `accept-invitation`
+   provisions member + discovery_state.
+5. **COMP entitlement granted** — founder runs (Supabase SQL editor / service role):
+   ```sql
+   select m.auth_user_id from public.member m
+   where lower(btrim(m.email)) = lower(btrim('<applicant email>'));
+
+   select public.fn_grant_founding_member_entitlement(
+     '<auth_user_id>'::uuid, 'founder onboarding', 'pilot founding member');
+   -- expect {"status":"ok","outcome":"granted","active":true,"no_payment_provider_call":true,...}
+   ```
+6. **Workspace READY** — once discovery completes (`discovery_state.analysis_status='ready'`),
+   `fn_workspace_access` returns `READY`. Entitlement-active is immediate after step 5.
+
+Each of steps 1, 2 and 5 is a **founder-authorised mutation**; none runs without the founder
+choosing the individual.
+
+## P3 — Pilot member acceptance checklist (first customer)
+1. Open the invitation link on **strateloq.com**.
+2. Register or sign in using the **authorised (bound) email**.
+3. Confirm account activation (email confirmed; invite accepted → member provisioned).
+4. After the COMP grant, reach the **ecommerce workspace** (not the entitlement/paywall gate).
+5. Select a **country**.
+6. Browse products showing **genuine permitted display images** (image-gated; image-pending
+   products are **not** shown).
+7. Open a **product detail** drawer (correct product identity + image).
+8. **Add Product to My Store.**
+9. Confirm the product **persists** in My Store (page UNPUBLISHED; exact identity).
+10. Verify **mobile usability** and capture feedback.
+
+Guardrails during the pilot: **paid Refresh Discovery stays inactive** (shows the "not
+activated / pricing not set" state); **Product Asset Lock is not bypassed**; image-pending
+products are never displayed.
+
+## P4 — Operational safety (confirmed, read-only)
+All pilot invariants verified to currently hold:
+
+| Invariant | Evidence (today) |
+|---|---|
+| Invitation-only registration | `member` RLS on, **0 INSERT policies** (members created only by SECURITY DEFINER `accept_invitation`); no public self-provision |
+| Email-bound, single-use links | `invitation` carries `bound_email` + `token_hash` (UNIQUE) + `status`/`consumed_at` lifecycle; `accept_invitation` rejects on email mismatch / consumed / revoked / expired |
+| Privileged entitlement grants | `account_entitlement` RLS on with **0 policies** (deny-all); `fn_grant_founding_member_entitlement` EXECUTE = `service_role`/`postgres` only |
+| No billing | **0 active prices, 0 active allowances**; **0 `PROVIDER` subscriptions** |
+| No paid API usage | **0 active `provider_call_budget`** → paid Refresh Discovery fail-closed/inactive |
+| Tenant/country isolation | member is `auth_user_id`-scoped; workspace market-scoped (verified in the 17/17 acceptance) |
+| No unauthorised storefront publishing | Product Asset Lock + image gate enforced; My Store pages created UNPUBLISHED |
+
+Manual invitation delivery is the pilot method; **no email automation that would expose
+invitation tokens is introduced** (an authorized n8n SMTP/Gmail transport exists but is
+deliberately not wired — it would persist one-time tokens in execution logs).
+
+## Pilot readiness — verdict
+Founder review is ready (queue surfaced with eligibility + test-artifact flags). The one-member
+procedure is prepared and reuses only verified components. The acceptance checklist is defined.
+Safety invariants are confirmed. **No genuine operational blocker** to running a one-member pilot
+— it needs only the founder's selection of the individual and the per-member founder-authorised
+mutations above, plus the founder-device live-UI walk-through. Paid Refresh Discovery and the
+Kalodata image-rights item remain out of scope for the pilot (image-pending products stay hidden;
+the pilot relies on the already-permitted FastMoss reference-image products).
