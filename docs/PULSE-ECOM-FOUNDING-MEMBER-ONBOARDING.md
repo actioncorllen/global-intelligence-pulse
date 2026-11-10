@@ -896,3 +896,26 @@ re-tested. **Production activation (separate founder approval, after a green bra
 2. `UPDATE public.onboarding_policy SET enforcement_active=true, updated_by='founder';`
 **Rollback (instant):** `UPDATE public.onboarding_policy SET enforcement_active=false;` and, to fully
 unwire, `ALTER ROLE authenticator RESET pgrst.db_pre_request; NOTIFY pgrst,'reload config';`.
+
+---
+
+# Isolated Acceptance — Pre-Creation Cost Check: STOPPED on plan upgrade (2026-11-10)
+
+Founder authorised ONE temporary preview branch (`strateloq-onboarding-acceptance`). The mandatory
+pre-creation cost check found a blocker and execution was halted per directive.
+
+- **Supabase organization plan: FREE** (`plan=free`, `tier=tier_free`, org `viobdmzcngdcfjagiceb`).
+- **Supabase branching requires a paid (Pro) plan** — it is NOT available on the free tier.
+  (Corroborated: the free tier caps active projects at 2, which is why `strateloq-dr-restore` is
+  force-INACTIVE.)
+- Creating the branch therefore requires **upgrading the org to Pro (~$25/month recurring)** plus
+  branch compute (~$0.01–0.02/hr) — an **additional plan upgrade / unexpected recurring expense**,
+  materially larger than the ~cents preview-branch that was approved.
+- Per the directive's cost-check rule ("If an upgrade or unexpected expense is required, STOP and
+  request founder approval"), **no branch was created, no plan upgraded, no charge incurred.**
+- Production untouched: `enforcement_active=FALSE`, hook wired, pilot COMP preserved, no role/billing
+  changes.
+
+**Awaiting explicit founder approval for the Pro upgrade (or an alternative).** Once a
+branch-capable environment exists, the turnkey setup + the 13-check real-HTTP enforcement matrix
+(documented above) run unchanged, followed by branch deletion and (optionally) plan downgrade.
