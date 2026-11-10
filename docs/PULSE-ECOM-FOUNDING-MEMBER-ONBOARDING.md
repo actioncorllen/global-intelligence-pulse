@@ -345,3 +345,113 @@ Safety invariants are confirmed. **No genuine operational blocker** to running a
 mutations above, plus the founder-device live-UI walk-through. Paid Refresh Discovery and the
 Kalodata image-rights item remain out of scope for the pilot (image-pending products stay hidden;
 the pilot relies on the already-permitted FastMoss reference-image products).
+
+---
+
+# Mandatory Login / Billing-Profile / COMP Onboarding Gate (2026-11-10, P0)
+
+Founder policy: **every** founding member (new and existing) must complete
+LOGIN → ACCOUNT VERIFICATION → BUSINESS PROFILE → BILLING PROFILE → MEMBERSHIP
+CONFIRMATION → WORKSPACE, enforced **server-side**. Existing membership, prior
+invitations and COMP entitlements must not bypass the steps. Migration
+`mig_346_mandatory_onboarding_gate.sql`. **No paid subscription, no charge, no public
+signup, no paid provider call; PAL / tenant / country isolation preserved.**
+
+## 1. Existing login & billing architecture (findings)
+- **Auth / verification:** Supabase Auth (email confirmation). Members are provisioned
+  only by SECURITY-DEFINER `accept_invitation`; `member` RLS has **0 INSERT policies**
+  (no self-provision). Invitation-only.
+- **Access gate:** `fn_workspace_access` → `fn_access_state` state machine. Original
+  states: AUTH_REQUIRED → EMAIL_VERIFICATION_REQUIRED → ENTITLEMENT_REQUIRED →
+  ENTITLEMENT_INACTIVE → WORKSPACE_PREPARING → READY. **It had no business- or
+  billing-profile gate** — the core gap.
+- **Business profile:** `save_business_profile` / `get_own_business_profile`; completion
+  is signalled by `discovery_state.status='complete'`. **Limitation:** both key on
+  `member.application_ref`, so **application-less members (open/direct-invite, e.g. the
+  pilot account) cannot complete a business profile today** — must be fixed before arming.
+- **Billing / checkout / payment:** **none in prod.** No billing/payment/checkout/stripe
+  table or function exists; `account_entitlement` already carries `provider*` columns for a
+  future hosted-checkout subscription. No card data is stored anywhere.
+- **Subscription/entitlement gate:** `account_entitlement` (RLS deny-all) + COMP grant
+  (`fn_grant_founding_member_entitlement`, mig_345, service-role only).
+- **Workspace data entry:** `fn_ecommerce_workspace_intelligence` (+ explorer, hosted
+  store). Direct-API gating for the NEW steps is wired via the guard primitive (below).
+
+## 2. Changes implemented & deployed (mig_346 — additive, flag-OFF, zero prod impact)
+- `onboarding_policy` (singleton, RLS deny-all): **`enforcement_active` DEFAULT FALSE**
+  (the hard gate's arming switch) + founder-configurable complimentary-allowance defaults.
+- `billing_profile` table (RLS deny-all): business billing fields only — **no card/CVV/PAN
+  column exists**; `amount_minor` default 0; `billing_kind` COMP/PAID.
+- `member.membership_confirmed_at`.
+- `fn_member_onboarding_state(auth_user_id)` — the authoritative state machine. When
+  `enforcement_active=false` it reduces **exactly** to the pre-mig_346 states (verified by
+  parity tests), so deploying changed nothing live. When armed it inserts
+  BUSINESS_PROFILE_REQUIRED → BILLING_PROFILE_REQUIRED (before entitlement) and
+  MEMBERSHIP_CONFIRMATION_REQUIRED (after an active entitlement, before WORKSPACE_PREPARING).
+- `fn_workspace_access()` now delegates to it (backward-compatible output + new fields).
+- `fn_workspace_entry_allowed(auth_user_id)` — server-side guard primitive (`= READY`) for
+  wiring into workspace data RPCs when enforcement is armed.
+- Self-service RPCs (authenticated): `save_billing_profile` (rejects any
+  card/cvv/pan/iban/… key; COMP ⇒ €0), `get_own_billing_profile`, `confirm_membership`
+  (requires active membership + complete business + billing profile; idempotent).
+
+**Why flag-gated:** a workspace-blocking gate deployed before the completion UI exists
+would lock out every existing member (founder, demo, pilot). Enforcement is therefore built
+server-side and **armed by the founder** once the onboarding UI + the application-less
+business-profile path ship. This is server-side enforcement (not a frontend redirect),
+staged safely.
+
+## 3. Mandatory-gate acceptance (19/19 PASS, rolled back)
+Parity with the old gate for all real members + no-member + unauthenticated (flag off);
+armed journey steps through BUSINESS_PROFILE_REQUIRED → BILLING_PROFILE_REQUIRED →
+MEMBERSHIP_CONFIRMATION_REQUIRED → WORKSPACE_PREPARING → READY; billing rejects card keys;
+COMP billing = €0; `confirm_membership` gated then idempotent; guard denies entry before
+READY and allows at READY; billing table has no card columns; flag-off reversibility holds.
+
+## 4. Existing-member handling (backfill, no destructive change)
+When armed, existing members with missing data are **routed to their incomplete step** by the
+same state machine (no separate migration, no account deletion, no entitlement/billing change,
+no duplicate invitation/profile). **Prerequisite before arming:** the application-less
+business-profile completion path (so open/direct-invite members — e.g. the pilot, the demo
+account — can complete BUSINESS PROFILE). Until that ships + the frontend collects billing +
+confirmation, enforcement stays OFF so no one is locked out.
+
+## 5. Pilot member (`auth_user_id 83c7e6d2-…`) entitlement & onboarding status
+COMP entitlement **granted** via mig_345: `ecommerce_monthly` / status COMP / source COMP,
+member `57efbe13-…`, `no_payment_provider_call:true`. No other customer's entitlement was
+modified (total entitlements 3). Current access state: `WORKSPACE_PREPARING` (active COMP,
+discovery not yet run). With enforcement OFF they follow today's gate; once armed they will
+complete BUSINESS → BILLING → CONFIRMATION first (needs the application-less business-profile
+path, as this member has `application_ref=NULL`).
+
+## 6. Complimentary Refresh Discovery allowance — design & safety (prepared, fail-closed)
+Reuses Stage B controls; **no unlimited spend, no paid call activated**:
+- **Caps & renewal:** `onboarding_policy.comp_refresh_credits_per_period` (default 10),
+  `comp_refresh_period` (`month`), `comp_provider_max_calls` (default 10) — founder-configurable.
+- **Credits:** a `discovery_credit_allowance` row (`source='COMP'`,
+  `credits_per_period=<cap>`, `active=true`) grants the member complimentary refresh credits;
+  the existing renewal sweep handles the period.
+- **Hard provider cap (fail-closed):** a per-member `provider_call_budget`
+  (`max_calls=<cap>`) caps actual Kalodata calls.
+- **Still fail-closed:** `discovery_credit_price` stays **inactive** (0 active), so **no paid
+  provider call can fire** regardless of credits — until the commercial price + Kalodata
+  image-licensing decisions permit paid Refresh Discovery. Activation snippet is founder-run
+  and deferred; nothing is activated here.
+
+## 7. Remaining founder-device / frontend checks (to arm enforcement)
+1. Frontend (Lovable): BUSINESS PROFILE (incl. application-less path), BILLING PROFILE form
+   (€0 complimentary display, no card for COMP), MEMBERSHIP CONFIRMATION, each driven by the
+   new `fn_workspace_access` states and RPCs.
+2. Application-less business-profile completion path (backend) for open/direct-invite members.
+3. Wire `fn_workspace_entry_allowed` into the workspace data RPCs (defence-in-depth vs direct
+   API) under the same flag.
+4. Then the founder arms: `UPDATE public.onboarding_policy SET enforcement_active=true;`
+5. Founder-device walk-through of the full gated journey for the pilot account.
+
+## 8. External billing / compliance blockers
+- **Payment provider / hosted checkout** for *paying* customers (Stripe or equivalent) is not
+  integrated — **not needed for COMP** and deferred until public/paid launch (no charge now).
+- **PSD2/SCA, tax/VAT handling, invoicing** apply only once real charges exist — out of scope
+  for the complimentary pilot.
+- Standing gates unchanged: Kalodata image-rights reply; competitive + legal. Paid Refresh
+  Discovery stays inactive.
