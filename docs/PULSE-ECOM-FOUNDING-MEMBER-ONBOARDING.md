@@ -749,3 +749,88 @@ client — load the app / sign in, confirm normal operation with the hook wired 
 unchanged); (2) recommended edge-function defense-in-depth onboarding guard; (3) a separate,
 explicitly-authorised controlled enforcement-ON test (branch or window) to confirm incomplete-member
 denial; then (4) separate founder authorisation to set `enforcement_active=true`.
+
+---
+
+# HTTP Hook Execution, Bypass Closure & Controlled-Test Readiness (2026-11-10)
+
+Hook wired on prod `nxaunmyihhjixxxljcqt`; **enforcement_active stays FALSE**. Founder browser
+checks (login, dashboard, discovery, country, product detail) PASS. No enforcement enabled.
+
+## Stage 1 — Real HTTP hook execution evidence
+Distinguishing the three things the directive asks us not to conflate:
+1. **Application success:** founder browser PASS (accepted).
+2. **Real HTTP requests reached PostgREST (CONFIRMED):** `edge_logs` after the 14:03 wire show
+   **255 requests → 254× HTTP 200, 1× 403** between 14:05–14:13 (the founder session). Zero 5xx.
+   (With enforcement OFF the gate cannot emit a 403, so that single 403 is a normal app/RLS
+   response, not the gate.) PostgREST process logs show "Received a config reload…" → **"Config
+   reloaded"** cleanly with no errors.
+3. **Evidence the configured hook actually executed on the success path:** **a direct per-invocation
+   counter is NOT available from existing authorised sources** — `track_functions='none'` (so
+   `pg_stat_user_functions` is empty) and `pg_stat_statements.track='top'` (so the gate's nested
+   enforcement read is not separately counted), and the gate emits no log on the allow path. The
+   available evidence (clean config reload + PostgREST's documented contract that db-pre-request
+   runs before **every** request + 254 clean 200s) is strong but **indirect**; it is not equated
+   with a measured invocation count. **Smallest safe mechanism proposed (needs approval, non-PII,
+   reversible):** briefly set `ALTER ROLE authenticator SET track_functions='pl';` + reload, let a
+   few requests flow, then read `pg_stat_user_functions.calls` for `fn_pre_request_gate` (an exact
+   invocation count — no tokens, bodies or personal data), then `RESET`. (Takes effect as pooled
+   connections recycle.) Not executed; proposed for founder approval.
+
+## Stage 2 — Full bypass assessment + fix (mig_351)
+| Path | Covered | Result |
+|---|---|---|
+| Workspace **RPCs** | gate | incomplete → 403 (verified) |
+| **Direct table** access | **was a bypass → FIXED** | see below |
+| Store/product actions, Refresh Discovery | gate (RPCs) + fail-closed budgets/PAL | protected |
+| **Edge Functions** | not the hook (separate runtime) | no critical bypass: fail-closed spend, RLS/ownership, empty incomplete tenant; defense-in-depth guard recommended before broad rollout |
+| Anonymous / Auth (GoTrue) | not gated by design | public/sign-in/recovery preserved |
+| Background jobs / service_role | never gated | operational jobs unaffected |
+
+**Genuine defect found & fixed:** RLS on customer workspace tables enforces **tenant** scoping, not
+onboarding. The RPC-only gate left non-`/rpc/` paths to RLS, so an incomplete member could read
+workspace data (incl. the shared `GLOBAL_SAFE` `commerce_products` catalog, plus
+`commerce_product_opportunities`, `product_acquisitions`, `marketing_campaign_*`, `commerce_store_*`,
+`discovery_runs`, …) via `/<table>` endpoints, bypassing the gate. Severity low (own tenant empty;
+material item = shared catalog) but a real policy bypass. **mig_351** extends `fn_pre_request_gate`
+to enforce onboarding across the **whole Data API** — deny-by-default for incomplete members on both
+RPC and table paths, with a tight allow-list of onboarding/session/recovery/public-reference
+resources (member, users, business_profiles, billing_profile, discovery_state, pulse_notifications,
+business_category, reference/registry tables, telemetry) — enforcement-read-first so flag-OFF is a
+pure no-op. Verified **33/33** rolled-back (flag-off no-op for all path/role; flag-on denies
+workspace tables incl. both path formats; allows onboarding/reference tables; workspace RPC deny /
+onboarding RPC allow; anon/service allow; malformed/missing claims → deny protected / allow
+allowlisted; complete member → table+rpc allow). Deployed inert; post-deploy prod health: 0 Postgres
+errors, 0 API 5xx, traffic normal. **Edge Functions not mass-changed** (per directive); the
+recommended per-edge onboarding guard remains a pre-broad-rollout defense-in-depth item.
+
+## Stage 3 — Controlled enforcement-ON test readiness (NOT executed)
+`enforcement_active` is a **global** flag; it must not be flipped globally to test one user, and no
+permanent tenant bypass or second onboarding system will be introduced. Options, preferred first:
+- **A (preferred) — isolated Supabase branch:** the founder creates a branch (branch creation is
+  denied to this session); it inherits the schema + gate; wire the hook + set enforcement ON there;
+  run the HTTP checks against the branch API with test identities. Zero production impact.
+- **B (fallback) — time-boxed production canary, under approval:** temporarily extend the gate to
+  enforce for a single named test `auth_user_id` only (same gate, a transient canary predicate,
+  reverted in the same session) — not a permanent per-tenant bypass, not a second system. Allows a
+  real-HTTP enforcement test on one test user without gating the founder/demo. Requires approval
+  (modifies the security function) and immediate revert.
+- **C (discouraged):** brief global enablement — avoided per directive.
+
+**Exact test procedure (whichever environment), establishing each required check over real HTTP:**
+with a **test** incomplete member JWT: `POST /rest/v1/rpc/fn_product_explorer` → **403**; `POST
+/rest/v1/rpc/save_business_profile` / `get_own_business_profile` → 200 (business profile allowed);
+`get_own_billing_profile` / `save_billing_profile` → 200 (billing allowed); `confirm_membership` →
+200 (membership confirmation allowed, once prereqs met); `GET /rest/v1/commerce_products` → **403**
+(direct-table bypass denied); a relevant authenticated Edge Function → confirm behaviour (or apply
+the edge guard first); with a **completed** member JWT: `fn_product_explorer` + `GET
+/rest/v1/commerce_products` → 200 (workspace allowed); `service_role` key → any RPC → 200
+(operational unaffected); `/auth/v1` sign-in/recovery → 200 (unaffected). **Immediate rollback:**
+`UPDATE public.onboarding_policy SET enforcement_active=false;` (and on a branch, discard it).
+surpyjabu is the natural incomplete-member subject once a safe ON environment exists.
+
+## Founder approval required for the next production security change
+Enabling `enforcement_active=true` (globally, or a canary variant) is the next production security
+change and needs **separate explicit founder authorisation**, after the controlled enforcement-ON
+test passes. The wire-only hook stays in place (flag OFF); the direct-table bypass is now closed in
+the deployed (inert) gate.
