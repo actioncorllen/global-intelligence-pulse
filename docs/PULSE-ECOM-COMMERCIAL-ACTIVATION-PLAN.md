@@ -108,3 +108,26 @@ facing or cost-bearing.
 4. Provider budgets per market (B4).
 5. Go / no-go on the single bounded live test (C).
 6. Keep the deep-research cascade decoupled from refresh in beta (recommended).
+
+## F. Kalodata cost evidence + projected provider cost (2026-11-10 scan)
+
+**Kalodata monetary pricing CANNOT be established from available authorised information.** Re-confirmed today:
+no `$`/cost/price/amount column holds a Kalodata rate anywhere (the only cost-named column is
+`discovery_refresh_request.credits_cost`, which is CUSTOMER credits, not money); 0 `discovery_runs` carry
+`provider_usage`; the rank API returns no per-call cost; there is no Kalodata billing connector in this
+environment. The $-per-`tiktok/product/rank` call must come from the founder's Kalodata account (invoice /
+dashboard / contract).
+
+**Projected provider cost (parametric — keep PROVIDER spend separate from CUSTOMER credits):**
+- Let `K` = Kalodata $ per rank call (founder-supplied, currently UNKNOWN).
+- Worst-case PROVIDER spend per customer per period ≤ `funded max_calls × K` (the hard, fail-closed ceiling).
+- With the sizing rule (allowance ≤ funded `max_calls`), CUSTOMER refreshes can authorise at most `max_calls`
+  paid calls, so customer-driven provider spend per period ≤ `max_calls × K`.
+- CUSTOMER-facing "included refreshes" (credits/allowance) are an entitlement counter and are **not** money; they
+  never appear in provider billing. Provider $ spend is governed solely by `provider_call_budget` × `K`.
+- A concrete margin/projection figure is deferred until `K` and the subscription price are supplied; it is not
+  invented here.
+
+**Bounded live test cost ceiling:** with `provider_call_budget.max_calls = 1` for one test tenant/market, the
+single bounded live research test (§C) costs at most **one** Kalodata rank call = `1 × K`; no second paid call is
+possible and no deep-research cascade fires.
