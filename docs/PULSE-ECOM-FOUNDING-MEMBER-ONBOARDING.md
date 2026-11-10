@@ -629,3 +629,80 @@ loads; then as an incomplete member confirm a direct Discovery/My Store/Refresh 
 check mobile + desktop.
 
 **Activation remains gated on explicit founder approval after the real-PostgREST hook check.**
+
+---
+
+# PostgREST Enforcement Security Hardening (2026-11-10, P0)
+
+## Priority 1 — Fail-open corrected → fail-closed for protected ops (mig_350) — **12/12 PASS**
+`fn_pre_request_gate` previously failed OPEN on any internal error — a security defect for an
+authorization gate. Rewritten so it **fails CLOSED for protected workspace RPCs** while never
+locking out legitimate non-workspace flows:
+- Always-allowed cases are classified FIRST with only cheap, NULL-safe reads that do not touch
+  onboarding state: non-`/rpc/` paths (tables → RLS), the onboarding/recovery/status allowlist, and
+  the `anon` / `service_role` principals. These can never be denied.
+- Any other `/rpc/` call (authenticated or unknown-role) is PROTECTED and is allowed ONLY on a
+  DEFINITE "enforcement off" or a DEFINITE "onboarding complete". **Any uncertainty denies:**
+  unreadable policy, missing claims, malformed claims, null uid, or an errored onboarding lookup.
+Verified (rolled-back, 12 cases): anon/service/allowlist/non-rpc allow; incomplete workspace deny;
+complete allow; enforcement-off allow; **missing-claims → DENY; malformed-claims → DENY; errored
+onboarding lookup → DENY**; and under malformed claims / errored state the onboarding allowlist
+still ALLOWS (recovery never locked out). Not a blanket deny.
+
+## Priority 2 — Verified protection coverage model (what the hook does and does NOT cover)
+The `db-pre-request` hook runs only inside **PostgREST (the Data API)**. It is NOT a universal gate.
+
+| Surface | Covered by hook? | Protection |
+|---|---|---|
+| Authenticated workspace **RPCs** (`/rest/v1/rpc/*`) | **Yes** | gate: incomplete → 403 |
+| Direct **table** access (`/rest/v1/<table>`) | No (by design) | **RLS** (deny-all / tenant-scoped); incomplete member sees only its own near-empty tenant |
+| Store / product **actions** | Yes (they are RPCs) | gate + RLS + Product Asset Lock + publish preflight |
+| **Refresh Discovery** | Yes (RPCs) + independent | gate on quote/authorize/fire; **fail-closed** budgets/prices (0 active) mean no paid call can fire regardless |
+| **Supabase Auth** (`/auth/v1/*`, GoTrue) | **No** (separate service) | must remain open for sign-in / recovery — intentionally not gated |
+| **Edge Functions** (`/functions/v1/*`) | **No** (separate Deno runtime) | see assessment below |
+| **Anonymous** access | Allowed by gate | per-RPC grants + RLS; anon is not a "member" |
+| **Privileged** server-side (service_role, cron, edge service-role) | Allowed by gate | operational jobs never gated |
+
+**Edge Function assessment (the real residual surface).** The hook cannot gate Edge Functions. I
+reviewed the authenticated/workspace edges (start-discovery, prepare-product, kalodata-discovery,
+fastmoss-discovery, creative-image-execute, commercial-image-generate, media-asset-url,
+product-image-import, storefront, meta/tiktok). An incomplete member invoking these is **low-risk
+and not a critical bypass today**, because: (a) paid Refresh Discovery / provider calls are
+**fail-closed** (0 active prices/allowances/budgets) so no spend can be triggered; (b) all data is
+**tenant-scoped by RLS / ownership checks**, and an incomplete member owns essentially nothing;
+(c) publishing is independently gated by **PAL + publish preflight**; (d) `storefront` and the OAuth
+edges are public by design. **No critical unauthorised workspace bypass was found.** Recommended
+**defense-in-depth before broad rollout** (not required for the single COMP pilot): add an
+onboarding-complete check (`fn_onboarding_complete(auth.uid())`, or the member-record +
+discovery/billing/confirmation signals) at the entry of the authenticated workspace edge functions
+that act on behalf of the member — so onboarding is enforced on the Edge path as well as the Data
+API path. This is a per-edge code change + redeploy and is listed as a follow-up.
+
+## Priority 3 — Prepared HTTP-transport verification step (founder-approved; NOT executed)
+Real HTTP verification of the deployed hook cannot run from this session (isolated branch denied;
+sandbox host blocked by network policy). It must be done by the founder (or a session with network
+access). **Prepared, narrowly-scoped step — do NOT run without founder approval; do NOT enable
+enforcement:**
+- **Exact configuration change (wire only; enforcement stays OFF):**
+  `ALTER ROLE authenticator SET pgrst.db_pre_request = 'public.fn_pre_request_gate';`
+  `NOTIFY pgrst, 'reload config';`
+- **Expected unaffected operations (flag OFF):** every request behaves exactly as today — the gate
+  returns immediately while `enforcement_active=false`. Sign-in, onboarding, workspace, anon,
+  service-role, Edge Functions all unchanged. (A successful request here proves **compatibility**,
+  not that incomplete-member blocking works — that needs the flag ON, which is a separate approval.)
+- **Test identities & requests (after wiring; to prove execution and, in a non-prod/branch, ON
+  behaviour):** (1) anon `GET /rest/v1/` → 200. (2) an onboarded member's JWT → `POST
+  /rest/v1/rpc/fn_product_explorer` → 200. (3) an incomplete member's JWT → `POST
+  /rest/v1/rpc/fn_product_explorer` → **403 `onboarding_incomplete`** (only observable with the flag
+  ON, so run on a branch or a controlled window), and `POST /rest/v1/rpc/save_billing_profile` →
+  200. (4) service-role key → any RPC → 200.
+- **Monitoring checks:** PostgREST logs for a 5xx spike right after `NOTIFY` (should be none); the
+  rate of `42501 onboarding_incomplete` (should be 0 while flag OFF; only mid-onboarding members
+  when ON); `fn_workspace_access` error rate unchanged.
+- **Immediate rollback:** `ALTER ROLE authenticator RESET pgrst.db_pre_request; NOTIFY pgrst, 'reload config';`
+  (and, if the flag was turned on, `UPDATE public.onboarding_policy SET enforcement_active=false;`).
+- **Evidence of actual hook execution:** either a `42501 onboarding_incomplete` response body for an
+  incomplete member with the flag ON, or (flag OFF) a temporary probe `db-pre-request` that records
+  `current_setting('request.path')` for one request (as prepared and torn down in the sandbox test).
+
+**Production ALTER ROLE and `enforcement_active=true` remain gated on explicit founder approval.**
