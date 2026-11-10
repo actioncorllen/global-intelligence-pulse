@@ -67,3 +67,77 @@ gate-allowlist mig; Kalodata plan cost confirmation; VAT/tax treatment decision.
 4. `trial_autogrant_active=true` (14-day trials at acceptance).
 5. `card_enforcement_active=true` (only after card UI + webhook path tested end-to-end in test mode).
 6. Migration moment for the two existing COMP members to register cards (no charge; COMP preserved).
+
+---
+
+# P0 PAYMENT INTEGRATION STAGE (2026-11-10 evening) — TEST-MODE READY, INERT
+
+## mig_355 / mig_355b (applied to prod)
+Trial autogrant hardened to the invitation-acceptance signature (application_ref +
+account_status='active'); verified by code inspection that accept_invitation is the ONLY
+INSERT INTO public.member and stamps exactly that signature at successful activation.
+PSP webhook event dedupe (psp_webhook_event + fn_psp_webhook_begin/finish; error-outcome
+claims are RECLAIMABLE so Stripe retries re-process after transient faults — mig_355b,
+3/3 tested); service-only card registration/detach RPCs; get_own_credit_wallet owner read.
+
+## Rolled-back prod suite: 14/14 PASS (+3 reclaim)
+Trial at acceptance (exactly 14 d); placeholder insert grants nothing; re-grant refused
+with trial_end unchanged (no reset via reinvite); COMP never expires (period NULL) and both
+live COMP rows byte-identical before/after; webhook claim/retry idempotent + outcome write;
+card register x2 -> one ACTIVE row -> detach -> re-register recovers; duplicate purchase
+events single-fund (balance stays 5); wallet balances tenant-isolated (own 5 / other 0,
+empty history). Zero residue.
+
+## Stripe edges (deployed; fail-closed; live probes 4/4)
+- stripe-card-setup v1 (verify_jwt true): hosted Checkout mode=setup; Stripe customer bound
+  server-side to the AUTHENTICATED member (metadata + client_reference_id); customer reuse
+  from the registry; NOT onboarding-gated (card setup is itself an onboarding step).
+- stripe-wallet-topup v2 (verify_jwt true): onboarding-gated (mig_352); server-side price
+  authority (ACTIVE price points only -> INERT today); exact server amounts; quote returned
+  for pre-confirmation; return URLs /workspace/billing?topup=... (aligned with the UI).
+- stripe-webhook v1 (verify_jwt false; signature-gated): HMAC-SHA256 Stripe-Signature
+  verification (5-min tolerance, timing-safe; UNIT-TESTED 7/7 under Deno with a synthetic
+  secret: valid / tampered / wrong-secret / stale / missing header / missing v1 / multi-v1);
+  event dedupe with reclaim; handles checkout.session.completed (setup -> card registration
+  with expand payment_method; payment -> fn_wallet_credit_purchase) and
+  payment_method.detached; LIVE events ignored unless STRIPE_LIVE_ALLOWED='true'.
+- Live probes: webhook unsigned 424 webhook_not_configured; webhook fake-signature 424;
+  card-setup anon 401; topup anon 401. Nothing can process until credentials exist.
+- Test-mode-first guard in both checkout edges: a non-sk_test_ key is refused unless
+  STRIPE_LIVE_ALLOWED='true' (separate founder approval).
+
+## Lovable payment experience (commit 45fe877, PREVIEW ONLY, not published)
+Card onboarding step (server-driven CARD_SETUP_REQUIRED routing; unreachable until the
+founder activates card enforcement), /workspace/billing Billing & Credits panel (balance,
+history, purchases rendered only from server price_points -> "coming soon" today; server
+quote confirmed before redirect), COMP "0 EUR" + trial badges + trial-ended preserved-data
+copy. 639 tests / 83 files pass; typecheck + preview build green; no live payment testing.
+
+## Research economics (provisional; NO paid calls made)
+Customer operation: 1 credit = 1 Refresh Discovery for ONE country = 1 Kalodata call
+(page of 10 products; duplicates suppressed on ingest; never promised as 10 NEW products).
+Provider consumption verified earlier: 1 call = 0.1 Kalodata credit.
+Let K = EUR cost per Kalodata credit on the founder's actual plan (UNVERIFIED — founder
+input needed; do not activate prices before this is known). Provider cost/our credit = K/10.
+Stripe EEA card fees ~1.5% + EUR 0.25 per transaction:
+  EUR 5 / 5 cr   -> fee 0.325 -> net 4.675  -> net/credit 0.935  -> positive if K < 9.35
+  EUR 10 / 11 cr -> fee 0.40  -> net 9.60   -> net/credit 0.873  -> positive if K < 8.73
+  EUR 25 / 30 cr -> fee 0.625 -> net 24.375 -> net/credit 0.8125 -> positive if K < 8.13
+(Non-EEA cards ~2.5–3.25%+0.25 reduce net ~1–2%.) VAT: if prices are VAT-inclusive (B2C EU),
+divide net by (1+rate) first (e.g. DE 19% at the EUR 10 tier: net/credit ~0.734 -> positive
+if K < 7.34). VAT treatment decision = founder/accountant input.
+Hard spend ceilings unchanged: per-tenant provider_call_budget (atomic, fail-closed) +
+reserve-before-call + evidence-based settle/refund; no top-up can bypass them.
+
+## External dependencies (unchanged stop points)
+Stripe account + sk_test_ key + whsec_ webhook secret (edge env), webhook endpoint
+registration in Stripe (checkout.session.completed, payment_method.detached), Kalodata
+plan cost figure, VAT treatment decision.
+
+## Exact next founder authorisation
+1. Create the Stripe account; provide TEST-mode keys (STRIPE_SECRET_KEY sk_test_...,
+   STRIPE_WEBHOOK_SECRET whsec_...) as Supabase edge secrets -> end-to-end test-mode run.
+2. Confirm Kalodata plan cost (K) + VAT treatment -> final price approval ->
+   wallet_price_point.active=true.
+3. Later, separately: trial_autogrant_active, card_enforcement_active (after the
+   test-mode run + Lovable publish), and any live-mode switch (STRIPE_LIVE_ALLOWED).

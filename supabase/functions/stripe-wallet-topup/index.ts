@@ -13,8 +13,8 @@ const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const STRIPE_KEY = Deno.env.get("STRIPE_SECRET_KEY") ?? "";
 const LIVE_ALLOWED = (Deno.env.get("STRIPE_LIVE_ALLOWED") ?? "") === "true";
 const APP_ORIGIN = Deno.env.get("STRATELOQ_APP_ORIGIN") ?? "https://globalintelligenceactions.com";
-const SUCCESS_URL = Deno.env.get("STRIPE_TOPUP_SUCCESS_URL") ?? `${APP_ORIGIN}/workspace?topup=success`;
-const CANCEL_URL = Deno.env.get("STRIPE_TOPUP_CANCEL_URL") ?? `${APP_ORIGIN}/workspace?topup=cancelled`;
+const SUCCESS_URL = Deno.env.get("STRIPE_TOPUP_SUCCESS_URL") ?? `${APP_ORIGIN}/workspace/billing?topup=success`;
+const CANCEL_URL = Deno.env.get("STRIPE_TOPUP_CANCEL_URL") ?? `${APP_ORIGIN}/workspace/billing?topup=cancelled`;
 
 const CORS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
