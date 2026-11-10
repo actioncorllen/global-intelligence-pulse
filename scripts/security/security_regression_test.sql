@@ -1,9 +1,16 @@
 -- =====================================================================
--- security_regression_test.sql — billing-staging RLS/grant security gate
+-- security_regression_test.sql — TIER 2: privileged behavioural security suite
 -- =====================================================================
 -- Project: strateloq-billing-staging (nlfkwrjmhxbubtlwepwx). Staging only.
 --
--- Lightweight, self-contained regression gate for the RLS remediation. Verifies:
+-- PRIVILEGED: uses SET ROLE (anon/authenticated/service_role) + executes the
+-- service_role-only fn_billing_selftest, so it needs an ELEVATED connection
+-- (postgres / service role). Run it via the Supabase MCP or a protected manual
+-- job — NOT with credentials exposed to untrusted pull requests. The least-
+-- privilege, CI-safe catalog checks live in scripts/security/security_gate_catalog.sql
+-- (Tier 1), which is what the GitHub Actions workflow runs.
+--
+-- Self-contained behavioural regression suite for the RLS remediation. Verifies:
 --   * every public table has RLS enabled;
 --   * anon has no table access (direct or via PUBLIC);
 --   * authenticated has no unauthorized table writes, and no access to billing tables;
