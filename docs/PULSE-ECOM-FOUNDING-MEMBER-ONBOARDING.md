@@ -528,7 +528,29 @@ tenant-scoped + RLS. 10. Duplicate profile/confirmation — idempotent ensure/co
 **No member stranded:** application-less members can complete the business profile (Stage 1); the
 gate allowlists onboarding/status/recovery RPCs; enforcement is reversible in one statement.
 
+## Stage 2 — Frontend onboarding journey (Lovable) — **BUILT + PUBLISHED**
+Project "Pulse Implementation", commit `04a034a` (published; `is_published=true`). Reviewed diff:
+33 frontend files only (no backend/edge changes), 613 tests pass (33 new), typecheck + lint clean,
+desktop + 360px mobile walkthrough. Implements `/onboarding` (SIGN IN → VERIFY EMAIL → BUSINESS →
+BILLING → MEMBERSHIP CONFIRMATION → WORKSPACE) with `fn_workspace_access()` as the sole routing
+authority, a 5-step progress indicator, a workspace **route-guard** that redirects incomplete
+members and blocks URL step-skipping, the "Membership pending" + Re-check screens, and a
+billing-return onboarding view. **No card/payment field anywhere** (two negative tests assert card
+keys are stripped/absent); COMP members see the complimentary €0 banner; PAID shows coming-soon, no
+checkout. **Flag-off safe (verified in code):** `onboardingStepFor` returns null for every state
+that occurs while `enforcement_active=false` (the new states never appear; entitlement/preparing
+redirect only when `onboardingEnforced=true`), so the guard never redirects and the live workspace
+is unchanged until the backend flag is armed; manually visiting `/onboarding` flag-off redirects to
+`/workspace`. The public landing page is unchanged.
+
 ## Pilot account status
 COMP entitlement active (`ecommerce_monthly`/COMP/COMP). With enforcement OFF it follows today's
 gate (`WORKSPACE_PREPARING` until discovery runs). When armed it will complete BUSINESS → BILLING →
 CONFIRMATION (Stage 1 lets it) before the workspace. No other customer's entitlement changed.
+
+## Remaining to arm enforcement (founder-approved)
+Frontend + API gate + backend are all in place and flag-off safe. Remaining: (1) founder-device
+acceptance of the gated journey on a test account (instructions in the report); (2) wire the
+pre-request gate (`ALTER ROLE authenticator SET pgrst.db_pre_request='public.fn_pre_request_gate'; NOTIFY pgrst,'reload config';`);
+(3) on founder approval, `UPDATE public.onboarding_policy SET enforcement_active=true;`. Instant
+rollback: set it back to false (and RESET the role setting).
