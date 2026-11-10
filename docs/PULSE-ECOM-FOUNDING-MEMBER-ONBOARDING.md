@@ -91,3 +91,132 @@ No code **defect** was found in the lifecycle. Two operational items:
    first-login + discovery acceptance, and collect feedback — in parallel with the Kalodata image-rights reply.
 
 Target 18 December 2026, subject to product-quality, competitive and legal gates.
+
+---
+
+# Operational Completion — Entitlement provisioning & delivery (2026-11-10, P0)
+
+Follow-up to the accepted backend lifecycle above. Goal: make onboarding **operationally
+reliable** before inviting the first five. No security test rebuilt; the application/invitation
+system is unchanged. **No invitation sent, no real applicant emailed, no account activated, no
+billing/signup/paid refresh enabled. One backend function deployed (inert until a founder
+invokes it for a specific activated member); no payment provider is ever called.**
+
+## P1 — Entitlement provisioning: **RESOLVED** (was the Stage-4/#9 PARTIAL)
+**Problem:** `accept_invitation` provisions member + discovery_state but not the
+`ecommerce_monthly` entitlement. The two live members were comped by a hand-written backfill
+(`granted_by '012A internal COMP backfill'`); there was **no reusable, verified grant path** —
+the operational gap.
+
+**Fix (deployed): `fn_grant_founding_member_entitlement(p_auth_user_id, p_granted_by, p_notes)`**
+— migration `mig_345_founding_member_comp_grant.sql` (DB: `founding_member_comp_entitlement_grant`).
+A controlled **founder-admin grant step** (not auto-on-activation — see *Design choice* below).
+Properties, each verified (10/10 rolled-back cases):
+
+| Requirement | How it is met | Test |
+|---|---|---|
+| 1. Only founder-approved, **activated** members qualify | requires a provisioned `member` (which only exists after a founder-issued invitation was accepted) that is `active` **and** has exactly one `discovery_state` | R0/R1/D1 reject |
+| 2. Correct user **and** tenant | resolves `member_id` from `auth_user_id` and stamps it on the row | G1 |
+| 3. Idempotent | one row per `auth_user_id` (`UNIQUE`); re-run = `already_granted`, no second row | I1 |
+| 4. Failed/incomplete onboarding cannot create access | no member / no workspace / disabled → `rejected`, **no write** | R0/R1/D1 |
+| 5. No self-grant | `EXECUTE` to `service_role` + `postgres` only; **revoked from `authenticated`/`anon`/`PUBLIC`** (mirrors `issue_invitation`/`accept_invitation`) | S1 (ACL) |
+| 6. No paid subscription / payment-provider call | writes a `COMP` row only; never sets `provider*`; response carries `no_payment_provider_call:true` | G1 row |
+| 7. Existing legitimate entitlements preserved | a pre-existing `PROVIDER` (paid) sub is never overwritten (guarded both pre-check and in the `ON CONFLICT ... WHERE`) → `preserved` | P1 |
+
+Post-deploy live checks: grants are `service_role`+`postgres` only; calling it for a real
+non-member returns `rejected/no_member` with **no write** (still 2 entitlements) — confirming it
+is inert and safe.
+
+**Design choice — controlled grant, not auto-on-activation.** Auto-comping every member who
+activates any invitation would hand a paid-tier entitlement out as a side-effect of activation —
+the commercial/policy decision the founder reserved in Stage 4. The directive permits preserving
+"a controlled founder-admin grant step" when automation carries that risk; this does exactly
+that, while replacing the unreliable hand-written backfill with a verified, idempotent, secure
+one-call grant.
+
+### Founder operation (run in the Supabase SQL editor — privileged/service-role)
+```sql
+-- 1) find the activated member by their email
+select m.auth_user_id, m.id as member_id, m.account_status
+from public.member m
+where lower(btrim(m.email)) = lower(btrim('MEMBER_EMAIL_HERE'));
+
+-- 2) grant the COMP entitlement (idempotent; safe to re-run)
+select public.fn_grant_founding_member_entitlement(
+  'AUTH_USER_ID_HERE'::uuid,
+  'founder onboarding',      -- granted_by label (stored on the row)
+  'founding member'          -- optional note
+);
+-- expect {"status":"ok","outcome":"granted","active":true,"no_payment_provider_call":true,...}
+-- a member with no workspace yet -> {"status":"rejected","reason":"workspace_not_provisioned"}
+```
+
+## P2 — Invitation delivery: manual founder delivery (made explicit)
+**Verified:** the `issue-invitation` edge makes **no outbound call** (`fetch` count 0), wires **no
+email provider** (no Resend/SMTP/SendGrid/etc.), and **never logs raw tokens** (no `console.*`).
+It returns the one-time link for the founder to deliver.
+
+**Authorised email infrastructure that exists:** the founder's n8n holds an **SMTP account** and
+several **Gmail OAuth2** accounts — a non-paid transport *does* exist. **It is deliberately not
+wired to invitation delivery**, because routing a one-time invitation token through an n8n
+workflow would persist that token in n8n execution history (a token exposure outside the
+founder's control), and transactional deliverability/domain-auth for strateloq.com is not set up
+there. For five hand-picked founders, **manual founder delivery is the safe, recommended
+procedure** and keeps delivery under founder control:
+
+1. Founder runs `issue-invitation` (founder/admin auth) → copies the returned one-time link.
+2. Founder sends the link **from their own mailbox to the exact bound email only**. No third
+   parties; no reuse; links expire in 14 days.
+3. The applicant signs up at strateloq.com with the **same email** (Supabase Auth sends the
+   signup-confirmation email), confirms, then opens the invite link.
+
+Automated invitation email remains an **optional, founder-approved future enhancement** (would
+require a no-log transactional path + strateloq.com domain auth); not a launch blocker.
+
+## P3 — Full non-chargeable acceptance (incl. entitlement): **17/17 PASS** (rolled back)
+One forward trace chaining the **real** functions, synthetic fixtures, transaction rolled back:
+
+application submitted (no account) → **founder approval required** (issuance rejected pre-approval)
+→ invitation issued → correct email binding (validate) → activation → member + discovery_state →
+workspace correctly withholds pre-grant (`ENTITLEMENT_REQUIRED`) → **entitlement granted** (new
+step, active, no payment call) → `WORKSPACE_PREPARING` → **`READY`** once discovery ready →
+duplicate invitation blocked → re-accept = `already_provisioned` (no duplicate member) → duplicate
+grant idempotent → cross-tenant isolation (entitlement scoped to the user/tenant; another user
+gets no workspace) → failure recovery (bogus/invalid tokens fail safe; member & entitlement counts
+unchanged). Post-run: nothing persisted — 0 test members, entitlements still 2, the 6 real pending
+applications untouched.
+
+## P4 — First-five readiness
+**Founder-operated workflow (no automatic selection or invitation):**
+1. Review the queue — `founding_applications WHERE status='new'` (6 real pending) via
+   `list-issuable-applications`. Verify work email + fit. **Choose up to five.**
+2. Approve + invite — create the applicant's unowned `business_profiles` (approval marker), run
+   `issue-invitation` (founder/admin) → deliver the one-time link to that exact email (P2).
+3. Activate — applicant signs up at strateloq.com with the same email, confirms, opens the link →
+   `accept-invitation` provisions member + discovery_state.
+4. **Grant entitlement** — run `fn_grant_founding_member_entitlement` for that member (P1 snippet).
+   Confirm `active:true`.
+5. First-login + Product Discovery acceptance + feedback + per-account security checks (as in the
+   Stage 5 runbook above).
+
+**Do not select, invite, or grant for any real applicant without founder approval of the specific
+person.** Paid Refresh Discovery stays disabled.
+
+### Minimum founder-device checklist (live, signed in at strateloq.com)
+Per onboarded member, on their first login:
+- [ ] Sign-in succeeds; lands in the ecommerce workspace (not the entitlement/paywall gate).
+- [ ] Dashboard loads; country selector present.
+- [ ] Product Discovery shows image-gated products; open one product drawer (correct identity + image).
+- [ ] Add one product to My Store; My Store shows it (page UNPUBLISHED).
+- [ ] (optional) Create Free Store; My Campaigns nav present.
+- [ ] Refresh Discovery shows the "not activated / pricing not set" state (paid refresh stays off — correct).
+- [ ] Member sees only their own tenant data (no other members' data/admin functions).
+
+## Operational completion — verdict
+Entitlement provisioning is now **reliable and secure** (deployed grant function, 10/10 + 17/17
+rolled-back PASS). Invitation delivery is **explicit manual founder delivery** (safe for five;
+automation optional/approved-later). The complete onboarding path including the entitlement step
+is **PASS (backend, rolled-back)**. The only remaining founder actions are the per-member founder
+operations above and the founder-device live-UI checklist — plus the standing external/launch
+gates (Kalodata image-rights reply; competitive + legal). **First five can be invited and
+onboarded reliably** once the founder approves the specific applicants.
