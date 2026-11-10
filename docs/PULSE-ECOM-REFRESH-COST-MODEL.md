@@ -139,3 +139,28 @@ Nothing here changes pricing or activates credits. All allowances/prices remain 
 engineering (`mig_341`/`mig_341b`/`mig_341c`, refresh-aware edge, unified frontend `c56e6e0`) is untouched, and
 Product Asset Lock, country/tenant isolation, permitted-image gating, and founding-member-only access are
 preserved.
+
+---
+
+## 7. Kalodata pricing evidence received (2026-11-10) — credit cost VERIFIED, $ cost ESTIMATED
+
+Founder supplied Kalodata Open Center pricing screenshots. **Credit cost per refresh is now verified from the
+published rule; the dollar figure remains an estimate pending the confirmed credit purchase price.**
+
+- **Published rule:** Product Rank API = **0.1 provider credit** per up to 100 returned rows, scaling
+  `0.1 × ceil(returned_rows / 100)`.
+- **Deployed contract (verified):** `fn_kalodata_discovery_request` sets `page_size = 10`, one page per refresh →
+  ≤10 rows → `ceil(10/100) = 1` → **0.1 provider credit per refresh** (one authorised rank call).
+- **$ estimate:** reference ≈ **$0.10 / provider credit** → **≈ $0.01 USD per refresh (ESTIMATE)**. The actual
+  credit **purchase price** still needs account-billing confirmation; the $0.10 is a reference, not a verified
+  rate.
+- **Not part of a refresh:** Product Images API (0.01 credit/call) — image resolution is a separate provider path,
+  not the rank refresh.
+- **Provider credits ≠ Strateloq customer refresh credits.** Account balance screenshot: 14.2 provider credits
+  (≈142 refreshes of headroom at 0.1 credit each).
+- **5 included refreshes/period** = `5 × 0.1` = **0.5 provider credit ≈ $0.05 USD/subscriber/period (estimate)** —
+  trivial even at 10× the reference credit price ($0.50). Economically safe for beta.
+
+**Still missing to finalise margin:** (a) confirmed **$/provider-credit purchase price** (account billing);
+(b) **`ecommerce_monthly` subscription price**. The FastMoss/DataForSEO/CJ rates (§5) are **not** needed for the
+refresh itself — the deep-research cascade is decoupled from the customer refresh.

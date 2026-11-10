@@ -138,3 +138,27 @@ dashboard / contract).
 **Bounded live test cost ceiling:** with `provider_call_budget.max_calls = 1` for one test tenant/market, the
 single bounded live research test (§C) costs at most **one** Kalodata rank call = `1 × K`; no second paid call is
 possible and no deep-research cascade fires.
+
+## G. Kalodata pricing evidence received (2026-11-10)
+
+Founder supplied Kalodata Open Center pricing screenshots. **Credit cost is verified; dollar cost is an estimate
+pending the confirmed credit purchase price.**
+
+| Quantity | Value | Status |
+|---|---|---|
+| Rank API credit cost | **0.1 provider credit** per up to 100 rows (`0.1 × ceil(rows/100)`) | Verified (published rule) |
+| Deployed page size | **`page_size = 10`**, one page per refresh (`fn_kalodata_discovery_request`) | Verified (deployed) |
+| **Provider credits per refresh** | **0.1 provider credit** (10 rows → ceil=1) | **Verified** |
+| Reference credit price | ≈ **$0.10 / provider credit** | Reference only |
+| **Estimated $ per refresh** | **≈ $0.01 USD** | **Estimate** (pending purchase-price confirmation) |
+| Product Images API | 0.01 credit/call — **not part of a refresh** (separate path) | Verified (published rule) |
+| Account balance | 14.2 provider credits (≈142 refreshes headroom) | Context |
+
+- **`K` is now partially known:** `K = 0.1 provider credit × ($/credit)`. With the reference $0.10/credit,
+  `K ≈ $0.01`. Worst-case provider spend per customer/period `≤ max_calls × K`.
+- **5 included refreshes/period** = 0.5 provider credit ≈ **$0.05/subscriber/period** (estimate); ≈ $0.50 even at
+  10× the reference. Set `provider_call_budget.max_calls ≥ 5` (allowance ≤ max_calls). **Recommendation: 5 included
+  refreshes is economically safe for beta.**
+- **Bounded one-call test expenditure:** exactly **0.1 provider credit ≈ $0.01 USD** (`max_calls = 1`).
+- **Still required:** confirmed **$/provider-credit purchase price** (account billing) + **subscription price**.
+  Provider credits remain strictly separate from Strateloq customer refresh credits.
