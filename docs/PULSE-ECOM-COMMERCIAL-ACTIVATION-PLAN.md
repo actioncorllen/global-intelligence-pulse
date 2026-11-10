@@ -15,8 +15,15 @@ The system records **no $ cost** per provider call (verified: the Kalodata `tikt
 no cost field; instrumentation now records call counts + provider credits, never dollars). To compute margin, the
 founder must supply, from the provider accounts (not from the API):
 
-1. **Kalodata** — $ per `tiktok/product/rank` call (or the plan's included-call quota + overage rate, and whether
-   billing is prepaid credits or metered). **This is the only provider needed for the refresh itself.**
+1. **Kalodata** — $ per `tiktok/product/rank` call. The system does **not** store this and the connected account
+   exposes only an API secret (no plan/billing/pricing metadata), so the founder supplies it from the Kalodata
+   **dashboard / invoice / contract**. Exact fields needed (any one route gives the rate):
+   - Plan name + **monthly plan price** + **currency** (Billing / Subscription page).
+   - **Included API credits (or calls) per month** for that plan.
+   - **Credits consumed by the `tiktok/product/rank` endpoint** per call (Kalodata API credit table).
+   - **Overage rate** ($ per extra credit/call beyond quota), if the plan bills overage.
+   Then effective $/rank call `K` = `(plan_price ÷ included_credits) × credits_per_rank_call` within quota, or the
+   overage rate for calls beyond quota. **This is the only provider needed for the refresh itself.**
 2. **Subscription price** — the intended `ecommerce_monthly` price (currency + amount). Currently COMP /
    `amount_minor = NULL`.
 3. **(Only if deep research is later bundled into refresh — currently DECOUPLED, so NOT required now)**
