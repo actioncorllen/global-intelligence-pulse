@@ -1,0 +1,53 @@
+name: billing-staging security gate
+
+# Automated regression protection for the billing-staging RLS remediation.
+# Runs scripts/security/security_regression_test.sql, which fails (non-zero exit)
+# if any public table lacks RLS, if anon/authenticated gain unintended access,
+# if member tenant isolation breaks, or if backend billing RPCs regress.
+#
+# Requires repository secret BILLING_STAGING_DB_URL = the Postgres connection
+# string for strateloq-billing-staging, using a role that may SET ROLE to
+# anon/authenticated/service_role (e.g. the postgres/pooler connection). The test
+# only seeds data inside a transaction that is ROLLED BACK — it never mutates data.
+#
+# Safe by default: if the secret is absent the job no-ops (does not fail), so this
+# workflow never blocks on a repo that has not wired the credential yet.
+
+on:
+  workflow_dispatch: {}
+  pull_request:
+    paths:
+      - 'scripts/security/**'
+      - 'supabase/billing-staging/**'
+      - '.github/workflows/billing-staging-security-gate.yml'
+
+jobs:
+  rls-security-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for DB credential
+        id: creds
+        env:
+          DB_URL: ${{ secrets.BILLING_STAGING_DB_URL }}
+        run: |
+          if [ -z "$DB_URL" ]; then
+            echo "has_db=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::BILLING_STAGING_DB_URL secret not set — skipping live security gate."
+          else
+            echo "has_db=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install psql
+        if: steps.creds.outputs.has_db == 'true'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends postgresql-client
+
+      - name: Run RLS/grant security regression gate
+        if: steps.creds.outputs.has_db == 'true'
+        env:
+          PGSSLMODE: require
+        run: |
+          psql "${{ secrets.BILLING_STAGING_DB_URL }}" \
+            -v ON_ERROR_STOP=1 \
+            -f scripts/security/security_regression_test.sql
