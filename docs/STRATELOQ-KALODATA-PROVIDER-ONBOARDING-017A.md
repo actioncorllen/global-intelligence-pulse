@@ -132,3 +132,91 @@ does not expose as unavailable rather than fabricating it.
 
 **Not deployed by this change.** Migration + self-test are additive and must pass the repo's normal
 deploy/advisor checks before activation.
+
+---
+
+# Phase 2 — Product-intelligence API research + provider registration (`mig_293`)
+
+## 8. Verified Kalodata Open API facts (from Kalodata's own sources, 2026-11-11)
+
+> `www.kalodata.com` is **not reachable from this build's network** (`ENOTFOUND` via the agent proxy),
+> so the pages below were read through web search of Kalodata's own blog / knowledge base / Open API
+> announcement, not fetched directly. Third-party wrappers (Nexscope, Glama/Cotlet MCP, XCrawl,
+> ClawHub) are **not** treated as authoritative and were not used to define any contract.
+
+- **Open API exists**, 6 modules: **Category, Shop, Creator, Product, Video, Livestream**.
+- **Transport/auth:** HTTP **POST + JSON + API key**.
+- **Base host:** `https://www.kalodata.com/openapi/v1/tiktok/…`.
+- **Named product endpoints (verified):** `POST /openapi/v1/tiktok/product/rank`,
+  `POST /openapi/v1/tiktok/product/detail`.
+- **Access/credentials:** **Enterprise-gated**; API keys issued via Kalodata's **"Open Center"**;
+  usage is **credit-metered (billable)**. Reported Enterprise entry ≈ $570/mo (second-hand; confirm on
+  your account).
+- **Market coverage (Kalodata knowledge base): 15 countries** — US, GB, DE, FR, ES, IT, MX, BR, ID, MY,
+  TH, VN, PH, SG, JP. (A separate "24-country weekly product ranking" is a dashboard report, not the
+  data-analysis coverage.)
+- **Metric families (what Kalodata provides, at capability level):** sales, revenue, growth, price,
+  ranking, market/category coverage.
+
+**Not verified (gated / needs credentials) — deliberately NOT encoded as a callable contract:** exact
+request parameter names, response field names, per-endpoint credit cost, and rate limits. These require
+Kalodata's partner documentation + an Enterprise API key.
+
+## 9. Coverage vs Strateloq's markets — do not assume full coverage
+
+Strateloq's active provider-registry markets (18): US, CA, GB, DE, FR, IT, ES, NL, IE, AT, BE, CH, PL,
+AU, HK, SG, MY, PH.
+
+| Set | Markets |
+|---|---|
+| Kalodata **covers** within Strateloq's active-18 (9) | US, GB, DE, FR, IT, ES, SG, MY, PH |
+| Strateloq active-18 **NOT** covered by Kalodata (9) | CA, NL, IE, AT, BE, CH, PL, AU, HK |
+| Kalodata covers **beyond** the active-18 (in the wider universe) | MX, BR, ID, TH, JP (+ VN, not modelled by Strateloq) |
+
+Consequence: Kalodata can enrich **9 of 18** active markets today; the other 9 must continue to rely on
+existing providers. The integration must be market-gated, never global.
+
+## 10. What was implemented (verified, credential-free, no fabricated contract) — `mig_293`
+
+Registered Kalodata in the **existing** `provider_capability_registry` (the registry the market-
+eligibility engine already uses for DataForSEO/eBay/CJ/Meta):
+
+- `source='KALODATA'`, `evidence_category='PRODUCT_INTELLIGENCE'`, one row per **verified** market (15),
+  `coverage_type='PRODUCT_PERFORMANCE'`.
+- `availability='SOURCE_UNSUPPORTED'` for every row — we cannot source Kalodata yet (no credentials),
+  mirroring how TIKTOK was staged (mig_259/267/268) before its broker connected. The *coverage* fact is
+  recorded in the `capability` jsonb (`provider_market_covered=true`, metric families, the two verified
+  endpoints, auth/billing/access, `field_schema_state=PENDING_PARTNER_DOCS_AND_CREDENTIALS`).
+- `fn_kalodata_market_supported(country)` — gate returning `{provider_covered, availability,
+  sourceable_now, connection_state}` so a future ingestion never requests an uncovered market and never
+  assumes a live connection.
+- `fn_kalodata_provider_selftest()` — **7/7 pass** (validated in ephemeral Postgres): exactly the 15
+  markets registered; covered markets are `provider_covered=true` but `sourceable_now=false` (pending
+  credential); the 9 uncovered active markets report not-covered; **no** Kalodata row is `AVAILABLE`
+  without credentials; existing providers untouched; registered strictly as `PRODUCT_INTELLIGENCE`;
+  field schema explicitly marked pending.
+
+**Safety:** the eligibility recompute reads only (DATAFORSEO,SEARCH_DEMAND), (EBAY,MARKETPLACE),
+(CJ,SUPPLIER), (META_AD_LIBRARY,ADVERTISING). A KALODATA/PRODUCT_INTELLIGENCE row is read by none of
+them, so no existing market's eligibility/score/decision changes.
+
+## 11. Planned ingestion (BLOCKED on credentials + verified field schema — not built)
+
+Following the DataForSEO adapter pattern (mig_255): server-side n8n fetch → idempotent SQL ingest →
+candidate/evidence into the existing country-specific pipeline. Kalodata **never declares a winner**; it
+contributes market-gated product-performance evidence that feeds the unchanged WPS / Product Decision.
+This requires the verified request/response field schema (to map Kalodata metrics → Strateloq's
+`product_market_evaluations` / `commerce_signals` without fabrication) and an API key. The research
+image lane (mig_292) remains the only image path and stays research-only.
+
+## 12. Credential + cost requirements to unblock the live client
+1. **Kalodata Enterprise account + Open Center API key** → install as edge-function secret
+   `KALODATA_API_KEY` (never in repo/chat).
+2. **Kalodata partner API documentation** → exact params, response fields, per-endpoint credit cost,
+   rate limits.
+3. **Credit budget approval** → endpoints are billable; set a per-run credit cap + caching before any
+   live call. No credits/subscriptions were or should be purchased without approval.
+
+**Genuine external blocker reached:** without (1) and (2) the live product-intelligence client cannot be
+built against a verified contract, and none was fabricated. Everything implementable without them
+(provider registration + market-coverage gate + tests) is done and green.
