@@ -10,15 +10,15 @@
 //   * persist:     fn_persist_kalodata_product_detail (REFERENCE_ONLY; tenant-isolated)
 //   * usage:       fn_kalodata_record_lane_outcome (run) + fn_kalodata_record_usage
 //
-// FAIL-CLOSED on the one unverified element: the exact product/detail REQUEST params are not yet
-// confirmed against Kalodata Open Center, so this broker REFUSES to make the chargeable call unless
-// KALODATA_DETAIL_REQUEST_CONFIRMED=true is set in the Edge env (set it only after confirming the params).
-// This guarantees no paid call is made on a guessed request. Not deployed; no call is made here.
+// Request params now match the DOCUMENTED Open Center contract (region, language, currency, date_range,
+// product_id, optional need_image), built by fn_kalodata_detail_request — so the provisional
+// contract-blocking flag has been removed. Spending/safety controls remain: secret-key auth, service_role
+// /nonce gate, market gate, and the UPSTREAM budget reservation that the caller must perform (same as the
+// product/rank lane). Not deployed; no call is made here.
 
 const SECRET_ENV = "KALODATA_SECRET_KEY";
 const SECRET_HEADER_ENV = "KALODATA_SECRET_HEADER";
 const DETAIL_BASE_ENV = "KALODATA_DETAIL_BASE_URL";
-const DETAIL_CONFIRMED_ENV = "KALODATA_DETAIL_REQUEST_CONFIRMED";
 const DEFAULT_DETAIL_ENDPOINT = "https://www.kalodata.com/openapi/v1/tiktok/product/detail";
 
 function jsonResponse(status: number, body: unknown): Response {
@@ -86,8 +86,7 @@ Deno.serve(async (req) => {
 
   const secret = (Deno.env.get(SECRET_ENV) ?? "").trim();
   if (payload.probe === true) {
-    return jsonResponse(200, { ok: true, mode: "probe", secret_present: Boolean(secret),
-      detail_request_confirmed: (Deno.env.get(DETAIL_CONFIRMED_ENV) || "").toLowerCase() === "true" });
+    return jsonResponse(200, { ok: true, mode: "probe", secret_present: Boolean(secret) });
   }
 
   const market = String(payload.market ?? "").trim().toUpperCase();
@@ -106,13 +105,6 @@ Deno.serve(async (req) => {
   if (!reqBuild.ok || !rb || rb.ok !== true) {
     const reason = rb?.reason ?? "request_builder_failed";
     return jsonResponse(reason === "UNSUPPORTED_MARKET" ? 200 : 502, { ok: reason === "UNSUPPORTED_MARKET" ? false : false, provider: "KALODATA", market, lane_status: reason });
-  }
-
-  // FAIL-CLOSED: never send a guessed request. Require explicit confirmation of the detail params.
-  if ((Deno.env.get(DETAIL_CONFIRMED_ENV) || "").toLowerCase() !== "true") {
-    return jsonResponse(409, { ok: false, provider: "KALODATA", market, lane_status: "REQUEST_PARAMS_UNCONFIRMED",
-      note: "product/detail request params not yet confirmed against Kalodata Open Center; set KALODATA_DETAIL_REQUEST_CONFIRMED=true after confirming. No chargeable call made.",
-      request_preview: rb.request_body });
   }
 
   const endpoint = (Deno.env.get(DETAIL_BASE_ENV) || DEFAULT_DETAIL_ENDPOINT).trim();

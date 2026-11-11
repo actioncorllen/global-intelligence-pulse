@@ -564,3 +564,66 @@ are confirmed. Playback URLs, if ever stored, are expiring and must be cached un
      `KALODATA_DETAIL_REQUEST_CONFIRMED=true`.
   3. **Video:** official video endpoint/field specs + confirmed media rights.
   4. **Approvals:** chargeable-call approval and production deploy approval before any live run.
+
+---
+
+# Phase 8 — Documented contracts applied: Product Detail finalized + Video Intelligence built
+
+Reference: `kalodata_official_api_contracts_2026-11-11.md` (documented Open Center fields; the file itself
+says "confirm against live docs before production deployment"). No live/paid call; nothing deployed.
+
+## 36. Product Detail adapter finalized (documented contract)
+`supabase/drafts/kalodata_product_detail_fetch.sql` — `fn_kalodata_detail_request` now emits the documented
+request: `region, language, currency, date_range, product_id` + optional `need_image` (default **1** =
+official URL, image rights confirmed; **2** = Kalodata-hosted = **PAID**, requires approval). The response
+fields already match the deployed persister. The provisional `KALODATA_DETAIL_REQUEST_CONFIRMED` fail-closed
+flag was **removed** from `supabase/functions/kalodata-product-detail/index.ts` (contract now documented);
+secret-key auth, market gate, tenant isolation, and the upstream budget reservation remain. Self-test
+**8/8** (ephemeral Postgres).
+
+## 37. Video Intelligence built (research-only) — `supabase/drafts/kalodata_video_intelligence.sql`
+- **`kalodata_video_research`** store: research-only (`CHECK rights_state='RESEARCH_ONLY'`), RLS deny-all,
+  **no playback/url/media/download column** (no permanent video storage). Metrics kept under their
+  documented verbatim names (incl. `sales_volumn` [sic]).
+- **`fn_kalodata_video_rank_request`** / **`fn_kalodata_video_detail_request`** — market-gated, secret-free,
+  documented params (rank: region/language/currency/date_range/sort_field/page_size/page_number + optional
+  product_id; detail: + video_id/need_extra).
+- **`fn_kalodata_video_url_request`** — **HARD-BLOCKED** (`VIDEO_RIGHTS_UNCONFIRMED`, `invocation_blocked`);
+  reference contract only; **no edge function invokes it**; the 5-min signed CloudFront URL is never stored.
+- **`fn_kalodata_ingest_video_rank`** — stores videos research-only; keeps the **requested {product_id,
+  country} as provenance only** (`association_basis=REQUESTED_FILTER_PROVENANCE`); **invents no per-video
+  product link** (video/rank has none). Tenant-isolated when a canonical product is named.
+- **`fn_persist_kalodata_video_detail`** — stores `product_number` as a **count** (never a product list).
+- Edge brokers: `supabase/functions/kalodata-video-rank/index.ts`, `kalodata-video-detail/index.ts`
+  (mirror the discovery lane; reuse secret-key auth, nonce gate, market gate, usage accounting). **No**
+  `kalodata-video-url` edge. Self-test **10/10** (ephemeral Postgres).
+
+## 38. Preservation (Part 7) — unchanged
+product/rank lane, 9 enabled markets, `discovery_provider_market_config` gate, cost/credit accounting,
+country isolation, Product Identity Resolution, Product Asset Lock, FastMoss/DataForSEO/CJ and all other
+providers were not modified. Video media rights remain **unconfirmed** → no customer-facing playback,
+download, permanent media storage, or advertising reuse.
+
+## 39. Exact changes required for a controlled deployment
+1. **Confirm** the documented contracts against the live authenticated Open Center pages (the reference
+   file is from indexed copies).
+2. **Apply DB objects** via the canonical Supabase migration pipeline (`supabase db push`, as a new
+   timestamp-versioned migration) — the detail request builder, the `kalodata_video_research` table + RLS,
+   the video request builders, ingest/persist functions, and self-tests. **Do not** replay this repo's
+   `mig_*` or the snapshot.
+3. **Deploy edge functions** `kalodata-product-detail`, `kalodata-video-rank`, `kalodata-video-detail`
+   (`supabase functions deploy`). **Do not** deploy any `video/url` function.
+4. **Wire callers** that reserve one budget unit per call and invoke the edge with a single-use nonce
+   (reuse the `fn_kalodata_run_discovery` pattern + the existing credit authorize/reserve/refund) — this
+   caller wiring hooks production-only budget functions and is the one piece left to wire.
+5. **Run self-tests** on the live project (`fn_kalodata_product_detail_selftest` 8/8,
+   `fn_kalodata_video_selftest` 10/10).
+6. **Confirm per-call credit cost** from the account pricing/consumption page (rate limits ≠ price) and
+   **approve a chargeable budget** before the first live call; keep the 9-market gate.
+7. **Video media rights:** keep `video/url` uninvoked and playback/storage disabled until Kalodata confirms
+   video rights.
+
+## 40. Outstanding external approvals / blockers
+- Confirm contracts against live docs; **chargeable-call + production-deploy approval**; **video media
+  rights** confirmation (for `video/url`/playback); caller↔budget wiring (step 4, production-only functions).
+- Everything implementable without a paid call or deployment is complete and green (8/8 + 10/10).
