@@ -361,3 +361,52 @@ deploy. The non-chargeable `probe` was **not** invoked (needs a trusted-server/s
    the account's recorded Product Detail usage needs its path identified before planning those.
 5. **Live billable test** — unnecessary for validity (already proven) and still requires explicit
    approval + a confirmed per-call cost if ever run.
+
+---
+
+# Phase 5 — Deployed Kalodata lane exported into the repo (source of truth)
+
+Per the decision to make the repo reflect reality, the deployed Kalodata COMMERCE discovery lane was
+exported **read-only** from production (`nxaunmyihhjixxxljcqt`) into this repo:
+
+- `supabase/functions/kalodata-discovery/index.ts` — the deployed edge client, verbatim.
+- `supabase/snapshots/kalodata_commerce_lane_production_snapshot_2026-11-11.sql` — the 9 `fn_kalodata_*`
+  functions (verbatim `pg_get_functiondef`), the 3 tables (`kalodata_discovery_cursor`,
+  `kalodata_invoke_nonce`, `discovery_provider_market_config`), the **authoritative Kalodata market
+  coverage**, and grants. Syntax-validated in ephemeral Postgres (9 functions / 3 tables / 9 enabled
+  markets load clean). It is a **reference snapshot**, not a numbered forward migration — the repo is
+  many migrations behind production (prod references mig_336+; repo stops at mig_294), and the lane
+  depends on other production-only objects (`discovery_runs`, `ingest_commerce_product`,
+  `fn_persist_reference_image`, `fn_multi_lane_discovery_plan`, `net.http_post`, …) not exported here.
+
+## 23. Authoritative facts now captured
+- **Secret:** `KALODATA_SECRET_KEY` + header `secret-key` (overridable via `KALODATA_SECRET_HEADER`;
+  base via `KALODATA_BASE_URL`). Key validity proven by recorded `product/rank` usage.
+- **Coverage (enabled, 9):** US, GB, DE, FR, ES, IT, MY, PH, SG. IE is present but `supported/enabled
+  = false` (and a self-test asserts it can't silently become supported). Gated by
+  `discovery_provider_market_config`, **not** `provider_capability_registry`.
+- **Images:** Kalodata cover → `fn_persist_reference_image(... 'KALODATA' ...)` as **REFERENCE_ONLY**;
+  the self-test asserts the lane never touches `product_image_assets` / `fn_resolve_product_image`.
+- **Cost:** one paid call/request, upstream authorize/reserve/refund; usage into `discovery_runs` via
+  `fn_kalodata_record_usage(p_run_id, p_usage, p_endpoint)`.
+- **Discipline:** Kalodata yields **candidates only** (never a winner/opportunity); UNKNOWN ≠ 0;
+  country-isolated — the same reuse pattern as the DataForSEO adapter.
+
+## 24. Reconciliation of my earlier migrations (next step, not yet done)
+| My migration | Duplicates existing production mechanism | Recommended action |
+|---|---|---|
+| `mig_294 fn_kalodata_record_usage(5-arg)` | **name-collides** with prod `fn_kalodata_record_usage(p_run_id,p_usage,p_endpoint)` | **Remove** (collision) |
+| `mig_294 kalodata_cost_policy / budget_precheck / usage_ledger` | upstream authorize/reserve/refund + `discovery_runs` usage | **Remove / do not deploy** |
+| `mig_293 provider_capability_registry(KALODATA)` | `discovery_provider_market_config` (authoritative gate) | **Remove** or repurpose only if the eligibility UI needs a registry mirror |
+| `mig_292 product_research_images` lane | `fn_persist_reference_image` REFERENCE_ONLY path | **Remove / do not deploy**; reuse the existing path |
+
+None of mig_292/293/294 are deployed, so there is no production impact. Recommend reverting them from
+this branch (leaving this doc as the record) once you confirm — that is the clean end state now that the
+real lane is in the repo.
+
+## 25. Genuinely open items (not duplicative)
+- **`product/detail` + Video module:** not present in the deployed functions (only `product/rank`). If
+  wanted, they are net-new against the real lane patterns (and Video carries the unresolved media-rights
+  question). The account's recorded Product Detail usage still needs its path identified.
+- **Broader repo drift:** many non-Kalodata production functions/migrations are also missing from this
+  repo; a full reconciliation is a larger, separate effort.
