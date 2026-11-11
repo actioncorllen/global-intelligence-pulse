@@ -1025,3 +1025,81 @@ delivery mechanism. **No production deployment and no chargeable Kalodata call w
 - Kalodata's written research-display permission on file before any cached image is shown.
 
 No production records, functions, edges or storage were modified in this phase; no chargeable Kalodata call was made.
+
+# Phase 15 — End-to-end customer-facing display path verified; frontend integration added
+
+Verified the complete display path and fixed the missing frontend integration. The Lovable frontend had NO
+consumer of the image signing endpoint: both existing image surfaces render only https URLs, so the corrected
+cached research images (signed descriptors, no URL) could not render anywhere. Added the integration by
+mirroring the EXISTING self-hosted reference-video signed-delivery pattern. No production deployment; no
+chargeable Kalodata call; the Lovable change is on preview only (NOT published).
+
+## 62. Findings (before the fix)
+- Frontend project: Lovable "Pulse Implementation" (12db6c84-161b-4c23-aac4-e19e8cd24ab1), workspace Strateloq.
+- `reference-video-gallery.tsx` already mints SHORT-LIVED signed URLs for self-hosted video via
+  `fetchSignedMediaUrl` → the `media-asset-url` edge, with re-mint on expiry (the pattern to reuse).
+- Both image galleries (`product-gallery.tsx`, `product-detail-media.tsx`) render only `isHttps` URLs, and the
+  workspace RPC `fn_ecommerce_workspace_intelligence` does not emit the research gallery. So nothing consumed
+  the image signing endpoint — the research gallery was unrenderable. This was the real missing integration.
+
+## 63. Frontend fix (Lovable commit 57132e00; preview only, not published)
+Reuses the reference-video mechanism exactly; existing https galleries + Product Explorer untouched.
+- `product-media-contract.ts`: added `fetchSignedResearchImageUrl(assetId)` → invokes `kalodata-research-image-url`
+  with `{ product_image_asset_id }`, maps 403→forbidden, reuses `decodeSignedMediaUrl` (requires https + ok).
+  `decodeSignedMediaUrl` unchanged.
+- `research-image-gallery-contract.ts` (+ tests): `fetchKalodataResearchGallery(productId, tenant)` calls RPC
+  `fn_kalodata_product_images_cached`; `decodeKalodataResearchGallery` fails closed, dropping anything not
+  `SELF_HOSTED_SIGNED` + endpoint `kalodata-research-image-url` + `REFERENCE_ONLY` + `CACHED`, and NEVER exposes
+  storage bucket/object to the UI; sorts primary-first then position.
+- `use-kalodata-research-gallery.ts`: passes the signed-in user's id as tenant; enabled only when authenticated.
+- `reference-image-gallery.tsx` (+ tests): `SignedImage` mints a 300s signed URL (component state only),
+  re-mints once on `<img>` error (expiry) then shows "Image unavailable" + Retry; forbidden → renders nothing.
+  `ReferenceImageGallery` shows the multi-image set + thumbnails + an Enlarge dialog with REFERENCE_ONLY
+  captions, reusing existing shadcn primitives (no redesign).
+- `product-intelligence.tsx`: a `ResearchImagesBlock` (renders nothing without authorised cached images) under
+  the video in the detail layout and as a side-panel section. `ecommerce-workspace.tsx`: passes the product id.
+- UNTOUCHED: `product-gallery.tsx`, `product-detail-media.tsx`, `product-explorer.tsx`, `package.json` — the
+  public main-image cover and Product Explorer display behaviour are unchanged.
+
+## 64. Requirement-by-requirement (display path)
+1. Authenticated Product Discovery user requests a cached gallery image — `useKalodataResearchGallery` →
+   `fn_kalodata_product_images_cached` (tenant = auth uid) → `fetchSignedResearchImageUrl`. ✔
+2. Signing edge returns a usable short-lived URL; never exposes service-role — `kalodata-research-image-url`
+   mints a 300s signed URL with the service role server-side; the browser gets only `signed_url`; the object
+   reference is never surfaced to the UI. ✔
+3. Frontend gallery actually consumes the signing endpoint and renders multiple images — `ReferenceImageGallery`
+   renders one `SignedImage` per image (each invokes the edge); a unit test asserts one mint per image and a
+   multi-image thumbnail grid. Not a descriptor-only stub. ✔
+4. Another tenant cannot request/retrieve — RPC enforces `auth.uid()=p_tenant`; the edge's
+   `fn_product_image_signed_ref` enforces tenant+product ownership; the client passes the signed-in uid; the
+   decoder fails closed on `forbidden`. ✔
+5. Expired URLs cannot be reused — 300s TTL; URLs live only in component state; re-mint once on error then Retry. ✔
+6. Public main cover + Product Explorer display preserved — the three existing gallery files are untouched. ✔
+   (Note: the research block currently appears in the Product Discovery / workspace Overview product panel, not
+   the Product Explorer's panel, because wiring Explorer would mean editing the preserved `product-explorer.tsx`.
+   Optional one-line follow-up if Explorer parity is wanted.)
+7. REFERENCE_ONLY + commercial restrictions preserved — decoder requires `authority=REFERENCE_ONLY`; captions
+   state "not cleared for commercial/advertising use"; never fed to commerce/ads/creative/publishing/Asset Lock. ✔
+8. Success / missing / expired / unauthorised all tested — see test results. ✔
+
+## 65. Evidence
+- Frontend (Lovable): full vitest suite **704/704 across 90 files passed**; TypeScript (tsgo --noEmit) passed;
+  eslint on changed files 0 errors; production build passed. Code diff reviewed (above). Preview only; not published.
+- Backend (prior phases, ephemeral Postgres against real production defs): `fn_kalodata_product_images_cached`
+  returns signed-delivery descriptors with no durable URL; `fn_product_image_signed_ref` is owner-only
+  (cross-tenant forbidden, anon unauthenticated); images selftest **11/11**; display-safety confirmation **4/4**;
+  caller lifecycle regression **12/12**. Edges `kalodata-product-images` + `kalodata-research-image-url`
+  type-check clean.
+- Live end-to-end (rendering a real cached image in the browser) cannot run here: it requires deploying the
+  backend migration + both edges + the private bucket AND one chargeable Kalodata call to populate a cache —
+  both explicitly out of scope. Until deployed, the frontend fails closed (renders no block) and the page looks
+  exactly as today.
+
+## 66. Go-live checklist (pending approval; no deploy / no paid call done)
+1. Apply migrations (Phase 9 bundle, then `20261111010000_kalodata_product_images.sql`).
+2. Create private bucket `pulse-research-reference`.
+3. Deploy edges `kalodata-product-images` + `kalodata-research-image-url`.
+4. Publish the Lovable frontend (commit 57132e00) — currently preview only.
+5. Approve a `KALODATA` provider budget + confirm per-call credit cost; obtain Kalodata's written
+   research-display permission before any cached image is shown.
+Optional: one-line `product-explorer.tsx` change to show the research block in the Explorer panel too.
