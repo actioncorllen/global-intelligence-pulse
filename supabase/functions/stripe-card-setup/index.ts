@@ -15,11 +15,27 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const STRIPE_KEY = Deno.env.get("STRIPE_SECRET_KEY") ?? "";
 const LIVE_ALLOWED = (Deno.env.get("STRIPE_LIVE_ALLOWED") ?? "") === "true";
-const APP_ORIGIN = Deno.env.get("STRATELOQ_APP_ORIGIN") ?? "https://globalintelligenceactions.com";
-const SUCCESS_URL = Deno.env.get("STRIPE_SETUP_SUCCESS_URL") ?? `${APP_ORIGIN}/onboarding?card=success`;
-const CANCEL_URL = Deno.env.get("STRIPE_SETUP_CANCEL_URL") ?? `${APP_ORIGIN}/onboarding?card=cancelled`;
-const BILLING_SUCCESS_URL = `${APP_ORIGIN}/workspace/billing?card=success`;
-const BILLING_CANCEL_URL = `${APP_ORIGIN}/workspace/billing?card=cancelled`;
+// Canonical production origin (founder-confirmed). The browser return URL is cosmetic —
+// a card is registered ONLY by the signature-verified webhook, never by the return param —
+// but it must land on a live origin.
+const PROD_ORIGIN = "https://strateloq.com";
+// Server-authoritative return origin. A client-proposed origin is honoured ONLY if it is
+// the production domain or a Lovable first-party preview host; anything else (including the
+// legacy domain or an arbitrary attacker URL) falls back to production. Never an open redirect.
+function safeReturnOrigin(requested: string): string {
+  try {
+    const u = new URL(requested);
+    const h = u.hostname.toLowerCase();
+    if (
+      u.protocol === "https:" &&
+      (h === "strateloq.com" || h === "www.strateloq.com" ||
+        h.endsWith(".lovable.app") || h.endsWith(".lovableproject.com"))
+    ) {
+      return `https://${u.host}`;
+    }
+  } catch { /* fall through to production */ }
+  return PROD_ORIGIN;
+}
 
 const CORS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
@@ -68,11 +84,19 @@ Deno.serve(async (req: Request): Promise<Response> => {
   } catch { return json(401, { status: "UNAUTHENTICATED" }); }
   if (!userId) return json(401, { status: "UNAUTHENTICATED" });
 
-  // Optional context: "billing" returns to the Billing & Credits panel instead of onboarding.
-  let context = "";
-  try { context = String(((await req.json()) as { context?: string })?.context ?? ""); } catch { /* empty body ok */ }
-  const successUrl = context === "billing" ? BILLING_SUCCESS_URL : SUCCESS_URL;
-  const cancelUrl = context === "billing" ? BILLING_CANCEL_URL : CANCEL_URL;
+  // Optional body: { context?: "billing", origin?: string }. "billing" returns to the
+  // Billing & Credits panel instead of onboarding; origin is validated server-side
+  // (allowlist above) — a legacy or arbitrary origin is ignored in favour of production.
+  let context = "", reqOrigin = "";
+  try {
+    const b = (await req.json()) as { context?: string; origin?: string };
+    context = String(b?.context ?? "");
+    reqOrigin = String(b?.origin ?? "");
+  } catch { /* empty body ok */ }
+  const origin = safeReturnOrigin(reqOrigin);
+  const returnPath = context === "billing" ? "/workspace/billing" : "/onboarding";
+  const successUrl = `${origin}${returnPath}?card=success`;
+  const cancelUrl = `${origin}${returnPath}?card=cancelled`;
 
   // Reuse the member's existing Stripe customer where one is on record (any status)
   let customer = "";

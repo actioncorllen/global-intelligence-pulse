@@ -213,6 +213,30 @@ blocked-popup retry; closing re-reads the card/balance or re-checks onboarding).
 normal tab keeps direct navigation. URL guards unchanged (200 + ok +
 checkout.stripe.com only). 661 tests pass (8 new), typecheck + lint clean.
 
+## P0 fix (2026-11-11 ~13:05 UTC): return URL pointed at the dead legacy domain
+Founder's test-mode card setup SUCCEEDED end to end (webhook evt_1Uab1v...
+checkout.session.completed -> card_registered:ok; payment_method_registry has the
+Visa ****4242 bound to the founder member; 0 charges; COMP x3 unchanged). The ONLY
+failure was the browser landing on https://globalintelligenceactions.com/... (legacy
+domain, ERR_SSL_PROTOCOL_ERROR). The webhook never travels through the browser, so
+registration was never at risk; the ?card=success param is cosmetic (a card is written
+ONLY by the signed webhook, never by a return param).
+Root cause: both checkout edges defaulted their return origin to the hardcoded legacy
+domain (STRATELOQ_APP_ORIGIN unset or legacy). Fix (smallest safe): removed the legacy
+default; added safeReturnOrigin() -> canonical https://strateloq.com, honouring a
+client-proposed `origin` ONLY if it is strateloq.com / www.strateloq.com / *.lovable.app
+/ *.lovableproject.com (server-side allowlist; NOT an open redirect). Applied to BOTH
+stripe-card-setup (v5) and stripe-wallet-topup (v5). Lovable asked to send
+origin: window.location.origin so preview tests return to the preview tab.
+Verification: local Deno unit test 14/14 (incl. open-redirect vectors: userinfo @ trick,
+suffix spoof strateloq.com.attacker.com, lookalike evil-lovable.app, http://, javascript:).
+Live end-to-end probe read Stripe's STORED success_url on created sessions:
+  no origin     -> https://strateloq.com/workspace/billing?card=success
+  legacy domain -> https://strateloq.com/... (rejected)
+  lovable preview-> https://id-preview--12db6c84-...lovable.app/... (honoured)
+  evil.example  -> https://strateloq.com/... (blocked)
+All mode=setup, nothing chargeable. Diag apparatus retired (410) + probe workflows archived.
+
 ## Remaining journeys (need the founder's signed-in device; everything else ready)
 - Card registration: preview app -> Workspace -> Billing & Credits -> Add payment card
   -> Stripe-hosted page -> test card 4242 4242 4242 4242 (any future expiry/CVC).

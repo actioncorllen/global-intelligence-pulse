@@ -12,9 +12,27 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const STRIPE_KEY = Deno.env.get("STRIPE_SECRET_KEY") ?? "";
 const LIVE_ALLOWED = (Deno.env.get("STRIPE_LIVE_ALLOWED") ?? "") === "true";
-const APP_ORIGIN = Deno.env.get("STRATELOQ_APP_ORIGIN") ?? "https://globalintelligenceactions.com";
-const SUCCESS_URL = Deno.env.get("STRIPE_TOPUP_SUCCESS_URL") ?? `${APP_ORIGIN}/workspace/billing?topup=success`;
-const CANCEL_URL = Deno.env.get("STRIPE_TOPUP_CANCEL_URL") ?? `${APP_ORIGIN}/workspace/billing?topup=cancelled`;
+// Canonical production origin (founder-confirmed). The browser return URL is cosmetic —
+// credits land ONLY via the signature-verified webhook, never by the return param — but it
+// must land on a live origin.
+const PROD_ORIGIN = "https://strateloq.com";
+// Server-authoritative return origin. A client-proposed origin is honoured ONLY if it is the
+// production domain or a Lovable first-party preview host; anything else (legacy domain or an
+// arbitrary attacker URL) falls back to production. Never an open redirect.
+function safeReturnOrigin(requested: string): string {
+  try {
+    const u = new URL(requested);
+    const h = u.hostname.toLowerCase();
+    if (
+      u.protocol === "https:" &&
+      (h === "strateloq.com" || h === "www.strateloq.com" ||
+        h.endsWith(".lovable.app") || h.endsWith(".lovableproject.com"))
+    ) {
+      return `https://${u.host}`;
+    }
+  } catch { /* fall through to production */ }
+  return PROD_ORIGIN;
+}
 
 const CORS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
@@ -82,10 +100,17 @@ Deno.serve(async (req: Request): Promise<Response> => {
   } catch { return json(403, { status: "ONBOARDING_INCOMPLETE" }); }
   // ---- STRATELOQ mandatory-onboarding gate (edge) END ------------------------
 
-  let priceCode = "";
-  try { priceCode = String(((await req.json()) as { price_code?: string })?.price_code ?? ""); }
+  let priceCode = "", reqOrigin = "";
+  try {
+    const b = (await req.json()) as { price_code?: string; origin?: string };
+    priceCode = String(b?.price_code ?? "");
+    reqOrigin = String(b?.origin ?? "");
+  }
   catch { return json(400, { status: "INVALID_JSON" }); }
   if (!priceCode) return json(400, { status: "PRICE_CODE_REQUIRED" });
+  const origin = safeReturnOrigin(reqOrigin);
+  const successUrl = `${origin}/workspace/billing?topup=success`;
+  const cancelUrl = `${origin}/workspace/billing?topup=cancelled`;
 
   // Server-side price authority: ACTIVE price points only (inactive -> denied; INERT today).
   let pp: { code?: string; amount_eur_cents?: number; credits?: number } | null = null;
@@ -108,8 +133,8 @@ Deno.serve(async (req: Request): Promise<Response> => {
     "line_items[0][price_data][currency]": "eur",
     "line_items[0][price_data][unit_amount]": String(pp.amount_eur_cents),
     "line_items[0][price_data][product_data][name]": `Strateloq research credits — ${pp.credits} credits`,
-    success_url: SUCCESS_URL,
-    cancel_url: CANCEL_URL,
+    success_url: successUrl,
+    cancel_url: cancelUrl,
   });
   if (!s.ok || !s.data.url) return json(502, { status: "SESSION_CREATE_FAILED" });
   return json(200, {
