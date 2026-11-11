@@ -1129,3 +1129,80 @@ detail panel, reusing the EXACT existing implementation — no new component, no
   in `product-explorer.tsx`, untouched). Production build: OK.
 - Both Product Discovery (workspace Overview) and Product Explorer now surface the signed research gallery
   (whenever authorised cached images exist). Still preview only — no publish, no backend deploy, no paid call.
+
+# Phase 17 — Coordinated release preflight + GO/NO-GO (no production change made)
+
+Read-only preflight for the coordinated Kalodata release (Product Detail, Video Intelligence, multi-image
+retrieval + caching, short-lived signed delivery, Discovery + Explorer gallery). STOPPED before any production
+modification. No migration applied, no bucket created, no edge deployed, no paid call, no Lovable publish.
+
+## 69. Verified production state (project nxaunmyihhjixxxljcqt)
+- Applied-migration frontier: `mig_358` (20261111170431). Both release migrations
+  (`20261111000000_kalodata_detail_video_caller.sql`, `20261111010000_kalodata_product_images.sql`) are NOT
+  applied. Of all proposed functions, only `fn_persist_kalodata_product_detail` exists (pre-existing/reused).
+- `fn_asset_rights_class('PROVIDER_DISCOVERY_REFERENCE','KALODATA') = RIGHTS_UNKNOWN` (req-10 not yet applied).
+- `product_image_assets` cache columns: 0 present. `discovery_refresh_request.operation`: absent.
+  `kalodata_video_research`: absent. (All awaiting deploy — nothing partially applied.)
+- 9-market config correct: US,GB,DE,FR,ES,IT,MY,PH,SG enabled; IE disabled.
+- Pre-existing infra present: Product Asset Lock (`fn_product_commercial_asset_readiness`),
+  `fn_product_commercial_rights`, `fn_provider_budget_try_consume`, `fn_discovery_refresh_authorize/settle/
+  reconcile`, `kalodata_invoke_nonce`, `fn_persist_reference_image`.
+- FINANCIAL (fail-closed today): active KALODATA `provider_call_budget` = 0; active `discovery_credit_price` = 0
+  (only one INACTIVE DE row). => reserve/authorize deny => NO paid call is currently possible. Both are deploy
+  prerequisites for Phase D, not bugs.
+- Deployed edges operational: `kalodata-discovery` (Product Ranking), `media-asset-url` (video signing),
+  `fastmoss-*`, `product-image-import`, Stripe billing edges. Awaiting deploy (not present): kalodata-product-detail,
+  kalodata-video-rank, kalodata-video-detail, kalodata-product-images, kalodata-research-image-url.
+- Security advisors: 6 pre-existing INFO/WARN (RLS-no-policy INFO; mutable search_path; extension-in-public;
+  SECURITY DEFINER executable-by-role; leaked-password-protection off). No ERROR. None introduced by this release.
+
+## 70. Lovable preview commits (image galleries)
+- `57132e0` — Product Discovery research gallery (signed delivery). `1c8ca1b` — Product Explorer parity (HEAD).
+  Working tree clean; suite 682/682 passing.
+- 704-vs-682 reconciliation (git-verified): the drop is from an UNRELATED interleaved commit
+  `12fc3ab "Onboarding: retire the Preparing step"` that deleted two onboarding test files (~24 it.each cases);
+  90−2+1=89 files, 704−24+2=682 tests. No gallery test lost. NOTE: other sessions commit to this Lovable project
+  between edits — publish must pin commit 1c8ca1b and re-verify.
+
+## 71. Confirmations still required (cannot be read via MCP; dashboard/owner)
+- Edge secret `KALODATA_SECRET_KEY` present (the deployed kalodata-discovery and all 5 new edges read it; value
+  never read by design). If stored as `KALODATA_API_KEY`, set/rename to `KALODATA_SECRET_KEY` before deploy. Do
+  NOT regenerate the key.
+- Current Supabase daily backup / PITR (Dashboard → Database → Backups) as a safety net before deploy.
+- Per-call Kalodata credit cost per operation, from the authenticated Open Center account page (kalodata.com is
+  unreachable from this environment; owner previously stated ~0.1 credits/call, balance ~14.1).
+
+## 72. Proposed deployment sequence (additive; requires explicit approval; NOT executed)
+1. Apply `20261111000000_...` (Product Detail + Video Intelligence + caller wiring).
+2. Apply `20261111010000_...` (multi-image + req-10 classifier + signing authz).
+3. Create private bucket `pulse-research-reference` (public=off; no public policy; service-role writes, signed reads).
+4. Deploy edges kalodata-product-detail, kalodata-video-rank, kalodata-video-detail.
+5. Deploy edges kalodata-product-images, kalodata-research-image-url.
+6. Self-tests (no paid call): product_detail 8/8, video 10/10, caller_lifecycle 12/12, product_images 11/11;
+   re-confirm fn_asset_rights_class reclass + publishable/ai gates fail-closed.
+7. Verify Lovable frontend plumbing against the deployed backend (empty-state until a cache exists).
+8. Publish Lovable commit 1c8ca1b ONLY after 6 is green.
+Apply via the canonical Supabase pipeline (supabase db push / Management API apply_migration) — NOT by replaying
+this DR repo and NOT the reference snapshot.
+
+## 73. Financial safeguards (Phase C)
+- Reuse existing `KALODATA_SECRET_KEY`; no key regeneration. No public paid usage; no wallet/Stripe-price activation.
+- Smallest useful paid-test budget: one-market, founder-tenant `provider_call_budget` with `max_calls≈20`
+  (≈2 credits at ~0.1/call) + one active `discovery_credit_price` for that market — enough to exercise each
+  operation + dedup + refund once/twice; hard-capped and fail-closed. Everything else stays default-off.
+- Provision the budget + price ONLY under separate Phase-D approval, after per-call cost is confirmed.
+
+## 74. Backup & rollback readiness
+- All DB changes additive/reversible without a restore: drop new fn_kalodata_* / fn_persist_kalodata_research_image /
+  fn_product_image_signed_ref / kalodata_video_research; revert fn_asset_rights_class + fn_kalodata_op_reserve to
+  their captured current bodies; `ALTER … DROP COLUMN` the 4 image cache columns + `operation`. Existing rows
+  unaffected. Edge rollback: delete the 5 new slugs. Frontend: unpublish/republish prior version. Bucket: delete
+  (empty). A current daily backup/PITR is the belt-and-braces safety net (confirm before deploy).
+
+## 75. GO/NO-GO
+- Backend code + migrations + edges + frontend: PREPARED and verified (self-tests 8/8+10/10+12/12+11/11;
+  display-safety 4/4; frontend 682/682, TypeScript clean, build OK). Changes are additive and reversible.
+- VERDICT: ready to proceed with the non-paid additive deploy (steps 1-8) upon explicit approval and the three
+  §71 confirmations. HOLD on paid testing (Phase D) until per-call cost is confirmed and a capped budget + active
+  price are provisioned — a SEPARATE approval. Video URL/playback/downloads/permanent storage/ad-reuse remain
+  disabled pending written Kalodata video rights. STOPPED here before any production modification.
