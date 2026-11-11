@@ -280,9 +280,9 @@ set -a; [ -f "`$HOME/.strateloq-dr.env" ] && . "`$HOME/.strateloq-dr.env"; set +
 u="`${SUPABASE_DB_URL:-}"
 if [ -z "`$u" ]; then echo 'NO_DB_URL'; exit 0; fi
 host=`$(echo "`$u" | sed -E 's#^[a-z]+://[^@]*@([^:/]+).*#\1#')
-# mask: show only whether it references the expected project ref
+# mask: show only whether it references the expected project ref (host OR pooler username carries it)
 echo "DB_HOST_MASKED=`$(echo "`$host" | sed -E 's/([a-z0-9]{4})[a-z0-9]+/\1****/')"
-echo "MATCHES_EXPECTED=`$(echo "`$host" | grep -q '$ExpectedProject' && echo yes || echo NO)"
+echo "MATCHES_EXPECTED=`$(echo "`$u" | grep -q '$ExpectedProject' && echo yes || echo NO)"
 "@
 Line $proj.Out
 if ($proj.Out -match 'MATCHES_EXPECTED=yes') { Pass "SUPABASE_DB_URL points at the production project ref '$ExpectedProject'." }
