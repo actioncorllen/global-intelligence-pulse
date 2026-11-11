@@ -107,6 +107,13 @@ prior state; mig_357/356/358 are independent and stay).
 ANDROID ACCEPTANCE: NOT marked complete — pending surpyjabu's own successful test (register the
 Stripe TEST card 4242 4242 4242 4242 on the preview URL -> becomes READY -> workspace).
 
+## Frontend polish complete (Lovable preview 12fc3ab, NOT published)
+Retired the website-as-requirement/Preparing step (onboarding is now Business -> Billing -> Card
+-> Membership -> Workspace); honest "No product research yet — run your first discovery" empty
+state for a READY member with no research (no spinner/blank/crash); READY routes straight to
+workspace; card onboarding step (CARD_SETUP_REQUIRED) UNCHANGED. 680/680 tests pass; typecheck/
+lint/build clean; browser-verified 360px + 1280px, no overflow/errors. Preview-only.
+
 ## Guardrails preserved
 Mandatory onboarding ON; invitation-only; COMP x3 at EUR 0 unchanged; card enforcement OFF;
 trial autogrant OFF; wallet prices + provider budgets inactive; live Stripe OFF. Kalodata
