@@ -76,6 +76,31 @@ Deno.serve(async (req: Request): Promise<Response> => {
     return json(424, { status: "LIVE_MODE_NOT_APPROVED", message: "Live payments are not enabled." });
   }
 
+  // FAIL CLOSED for the live-card requirement: if policy requires a genuine LIVE card
+  // (onboarding_policy.require_live_card) but live mode is not available (no sk_live_ key, or
+  // live not approved), DO NOT hand the customer a sandbox checkout — a test card could never
+  // satisfy the requirement, leaving them stuck in a loop. Return clear guidance instead.
+  // Read fails open to current behaviour (require_live_card defaults FALSE => no-op today).
+  const liveReady = STRIPE_KEY.startsWith("sk_live_") && LIVE_ALLOWED;
+  if (!liveReady) {
+    let requireLive = false;
+    try {
+      const pr = await fetch(
+        `${SUPABASE_URL}/rest/v1/onboarding_policy?select=require_live_card&limit=1`,
+        { headers: { apikey: SERVICE_ROLE, authorization: `Bearer ${SERVICE_ROLE}` } });
+      if (pr.ok) {
+        const rows = (await pr.json()) as Array<{ require_live_card?: boolean }>;
+        requireLive = rows?.[0]?.require_live_card === true;
+      }
+    } catch { requireLive = false; }
+    if (requireLive) {
+      return json(424, {
+        status: "LIVE_CARD_REQUIRED_NOT_AVAILABLE",
+        message: "A verified live payment card is required, but live card setup is not available yet. Please check back shortly — no sandbox card can be used here.",
+      });
+    }
+  }
+
   // Authenticate the member (server-side)
   const authHeader = req.headers.get("Authorization") ?? "";
   if (!/^Bearer\s+.+/i.test(authHeader)) return json(401, { status: "UNAUTHENTICATED" });
