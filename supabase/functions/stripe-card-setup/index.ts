@@ -37,6 +37,14 @@ async function stripe(path: string, params: Record<string, string>): Promise<{ o
   });
   const txt = await res.text();
   let data: Record<string, unknown> = {}; try { data = txt ? JSON.parse(txt) : {}; } catch { data = { raw: txt.slice(0, 200) }; }
+  if (!res.ok) {
+    // Diagnosable failures: Stripe error class/code/param/message only — never keys or card data.
+    const e = (data.error ?? {}) as Record<string, unknown>;
+    console.error(`stripe ${path} failed`, JSON.stringify({
+      status: res.status, type: e.type, code: e.code, param: e.param,
+      message: String(e.message ?? "").slice(0, 300),
+    }));
+  }
   return { ok: res.ok, status: res.status, data };
 }
 
@@ -82,11 +90,13 @@ Deno.serve(async (req: Request): Promise<Response> => {
   }
 
   // Hosted Checkout Session, mode=setup. Binding: client_reference_id = authenticated uid.
+  // No payment_method_types: current Stripe API versions (2026-10-28.endive) refuse it on
+  // Checkout Sessions (methods are Dashboard-managed); mode=setup instead requires currency.
   const s = await stripe("checkout/sessions", {
     mode: "setup",
     customer,
     client_reference_id: userId,
-    "payment_method_types[0]": "card",
+    currency: "eur",
     success_url: successUrl,
     cancel_url: cancelUrl,
   });

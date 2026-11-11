@@ -180,6 +180,22 @@ the diag function was neutralised (410 stub) and its n8n driver archived afterwa
   entitlement/flag changed; 3 test event rows in psp_webhook_event are the audit trail.
 - Edge logs show exactly the expected deliveries (two 200s per run window).
 
+## P0 fix (2026-11-11 ~12:30 UTC): card-setup 502 SESSION_CREATE_FAILED
+Founder's live billing test failed at "Add payment card" (502). Root cause CONFIRMED by
+in-runtime reproduction (never assumed): on the account's Stripe API version
+(2026-10-28.endive) `payment_method_types` is NO LONGER SUPPORTED on Checkout Session
+creation (invalid_request_error; methods are Dashboard-managed), and `mode=setup` now
+REQUIRES `currency`. Customer creation was unaffected. Fix (smallest durable change):
+stripe-card-setup drops payment_method_types and sends currency=eur (v4 deployed);
+probe of the exact fixed params returned 200 + hosted checkout.stripe.com URL,
+mode=setup, livemode=false, amount_total NULL (nothing chargeable), member binding
+echoed. stripe-wallet-topup's params were probed UNCHANGED-OK (200 + URL; v4 adds only
+secret-free Stripe-error logging, now in both edges: type/code/param/message, no keys,
+no card data). Post-deploy regression: webhook unsigned/fake-sig 400, anon edges 401.
+Two orphaned test-mode Stripe customers from the failed attempts remain in the sandbox
+(harmless; no card, no charge). Lovable asked to harden the billing UI so any non-200
+shows a calm toast instead of a runtime overlay (preview-only).
+
 ## Remaining journeys (need the founder's signed-in device; everything else ready)
 - Card registration: preview app -> Workspace -> Billing & Credits -> Add payment card
   -> Stripe-hosted page -> test card 4242 4242 4242 4242 (any future expiry/CVC).

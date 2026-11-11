@@ -44,6 +44,14 @@ async function stripe(path: string, params: Record<string, string>): Promise<{ o
   });
   const txt = await res.text();
   let data: Record<string, unknown> = {}; try { data = txt ? JSON.parse(txt) : {}; } catch { data = { raw: txt.slice(0, 200) }; }
+  if (!res.ok) {
+    // Diagnosable failures: Stripe error class/code/param/message only — never keys or card data.
+    const e = (data.error ?? {}) as Record<string, unknown>;
+    console.error(`stripe ${path} failed`, JSON.stringify({
+      status: res.status, type: e.type, code: e.code, param: e.param,
+      message: String(e.message ?? "").slice(0, 300),
+    }));
+  }
   return { ok: res.ok, data };
 }
 
