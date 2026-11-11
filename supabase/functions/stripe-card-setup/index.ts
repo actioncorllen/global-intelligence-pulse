@@ -18,6 +18,8 @@ const LIVE_ALLOWED = (Deno.env.get("STRIPE_LIVE_ALLOWED") ?? "") === "true";
 const APP_ORIGIN = Deno.env.get("STRATELOQ_APP_ORIGIN") ?? "https://globalintelligenceactions.com";
 const SUCCESS_URL = Deno.env.get("STRIPE_SETUP_SUCCESS_URL") ?? `${APP_ORIGIN}/onboarding?card=success`;
 const CANCEL_URL = Deno.env.get("STRIPE_SETUP_CANCEL_URL") ?? `${APP_ORIGIN}/onboarding?card=cancelled`;
+const BILLING_SUCCESS_URL = `${APP_ORIGIN}/workspace/billing?card=success`;
+const BILLING_CANCEL_URL = `${APP_ORIGIN}/workspace/billing?card=cancelled`;
 
 const CORS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
@@ -58,6 +60,12 @@ Deno.serve(async (req: Request): Promise<Response> => {
   } catch { return json(401, { status: "UNAUTHENTICATED" }); }
   if (!userId) return json(401, { status: "UNAUTHENTICATED" });
 
+  // Optional context: "billing" returns to the Billing & Credits panel instead of onboarding.
+  let context = "";
+  try { context = String(((await req.json()) as { context?: string })?.context ?? ""); } catch { /* empty body ok */ }
+  const successUrl = context === "billing" ? BILLING_SUCCESS_URL : SUCCESS_URL;
+  const cancelUrl = context === "billing" ? BILLING_CANCEL_URL : CANCEL_URL;
+
   // Reuse the member's existing Stripe customer where one is on record (any status)
   let customer = "";
   try {
@@ -79,8 +87,8 @@ Deno.serve(async (req: Request): Promise<Response> => {
     customer,
     client_reference_id: userId,
     "payment_method_types[0]": "card",
-    success_url: SUCCESS_URL,
-    cancel_url: CANCEL_URL,
+    success_url: successUrl,
+    cancel_url: cancelUrl,
   });
   if (!s.ok || !s.data.url) return json(502, { status: "SESSION_CREATE_FAILED" });
   return json(200, { status: "ok", url: String(s.data.url), session_id: String(s.data.id ?? "") });
