@@ -16,19 +16,22 @@ const LIVE_ALLOWED = (Deno.env.get("STRIPE_LIVE_ALLOWED") ?? "") === "true";
 // credits land ONLY via the signature-verified webhook, never by the return param — but it
 // must land on a live origin.
 const PROD_ORIGIN = "https://strateloq.com";
-// Server-authoritative return origin. A client-proposed origin is honoured ONLY if it is the
-// production domain or a Lovable first-party preview host; anything else (legacy domain or an
-// arbitrary attacker URL) falls back to production. Never an open redirect.
+// EXACT authorised return origins only — production plus the single Strateloq preview host.
+// No wildcard: other Lovable projects' *.lovable.app / *.lovableproject.com hosts are NOT
+// trusted. A client-proposed origin is honoured only on an exact, case-normalised match;
+// anything else (legacy domain, another project's preview, an attacker URL) falls back to
+// production. Never an open redirect.
+const ALLOWED_RETURN_ORIGINS = new Set<string>([
+  PROD_ORIGIN,
+  "https://www.strateloq.com",
+  "https://id-preview--12db6c84-161b-4c23-aac4-e19e8cd24ab1.lovable.app",
+]);
 function safeReturnOrigin(requested: string): string {
   try {
     const u = new URL(requested);
-    const h = u.hostname.toLowerCase();
-    if (
-      u.protocol === "https:" &&
-      (h === "strateloq.com" || h === "www.strateloq.com" ||
-        h.endsWith(".lovable.app") || h.endsWith(".lovableproject.com"))
-    ) {
-      return `https://${u.host}`;
+    if (u.protocol === "https:") {
+      const origin = `https://${u.host.toLowerCase()}`;
+      if (ALLOWED_RETURN_ORIGINS.has(origin)) return origin;
     }
   } catch { /* fall through to production */ }
   return PROD_ORIGIN;

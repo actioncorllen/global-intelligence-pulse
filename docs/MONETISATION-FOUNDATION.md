@@ -237,6 +237,28 @@ Live end-to-end probe read Stripe's STORED success_url on created sessions:
   evil.example  -> https://strateloq.com/... (blocked)
 All mode=setup, nothing chargeable. Diag apparatus retired (410) + probe workflows archived.
 
+## Card acceptance FINISHED + return-origin hardened (2026-11-11 ~13:20 UTC)
+Card registration accepted as complete: one ACTIVE Visa ****4242 (exp 12/2029) bound to
+the founder member (auth 7c8ddf9d...), exactly one registry row, one
+checkout.session.completed event, 0 charges, 0 PURCHASE ledger entries, COMP x3 at EUR 0,
+flags unchanged (enforcement ON / card_enforcement OFF / trial_autogrant OFF),
+0 active prices. No new Checkout Session created to verify this (pure read).
+
+Lovable origin passthrough: commit 3ac1ca1 (preview only, 666 tests pass, typecheck+lint
+clean) adds origin: window.location.origin to both edge calls, guarded for SSR.
+
+Return-origin security TIGHTENED (card-setup v6 + wallet-topup v6): replaced the
+*.lovable.app / *.lovableproject.com WILDCARD with an EXACT allowlist set
+{https://strateloq.com, https://www.strateloq.com,
+https://id-preview--12db6c84-161b-4c23-aac4-e19e8cd24ab1.lovable.app}; exact,
+case-normalised origin match or fall back to production. Unit test 17/17 incl. NEGATIVE
+cases (another project's id-preview, some-other-project.lovable.app, this project's
+lovableproject.com host, preview suffix-spoof -> all fall back to prod) plus the prior
+open-redirect vectors. Live end-to-end (Stripe stored success_url) 6/6:
+  no origin / legacy / attacker / other-project preview / lovableproject host -> strateloq.com
+  exact Strateloq preview -> honoured.
+Diag apparatus retired (410) + probe workflows archived.
+
 ## Remaining journeys (need the founder's signed-in device; everything else ready)
 - Card registration: preview app -> Workspace -> Billing & Credits -> Add payment card
   -> Stripe-hosted page -> test card 4242 4242 4242 4242 (any future expiry/CVC).
