@@ -220,3 +220,74 @@ image lane (mig_292) remains the only image path and stays research-only.
 **Genuine external blocker reached:** without (1) and (2) the live product-intelligence client cannot be
 built against a verified contract, and none was fabricated. Everything implementable without them
 (provider registration + market-coverage gate + tests) is done and green.
+
+---
+
+# Phase 3 — Account active: confirmed cost model, cost controls, video research (`mig_294`)
+
+## 13. Account status update (verified by the owner from the authenticated Open Center dashboard, 2026-11-11)
+- **Open Center account is ACTIVE — no Enterprise subscription or new purchase is required.** (This
+  supersedes the "Enterprise-gated / $570-mo" blocker reported in Phase 1–2.)
+- **Balance:** 14.1 credits. **5 historical calls cost 0.5 credits total.**
+- **Confirmed per-call cost: 0.1 credits/call** for Product Rank and Product Detail.
+- **Key rotation warning:** generating a new API key **immediately invalidates the previous one** — the
+  existing key must be reused, never regenerated.
+
+`mig_294` refreshes the `KALODATA/PRODUCT_INTELLIGENCE` capability with the confirmed cost + active
+account state (`enterprise_required=false`, `per_call_credits=0.1`, `connection_state=
+ACCOUNT_ACTIVE_SUPABASE_SECRET_INSTALL_REQUIRED`). `availability` stays `SOURCE_UNSUPPORTED` because the
+key is not yet installed as a Supabase secret and the field schema is not yet in hand.
+
+## 14. Supabase secret configuration required to connect the existing account (deliverable)
+Mirror the established trusted-server broker pattern (`supabase/functions/tiktok-commercial-token`,
+`meta-insights-reader`) — secrets live **only** as Edge Function secrets, read via `Deno.env.get`,
+`.trim()`-ed, never logged/returned, behind a `service_role` trusted-server gate, fail-closed.
+
+1. **Secret name:** `KALODATA_API_KEY` (single API key; Kalodata auth is POST + JSON + API key).
+2. **How to set (value never in repo, chat, or VCS):**
+   - CLI: `supabase secrets set KALODATA_API_KEY=<existing key>` (do **not** regenerate the key), or
+   - Dashboard → Project → Edge Functions → **Secrets** → add `KALODATA_API_KEY`.
+3. **How the edge function reads it:** `const KEY = Deno.env.get("KALODATA_API_KEY")?.trim()`; include it
+   in a `redact()` scrub of every response/log; require a `service_role` caller; return `424` if the
+   secret is absent.
+4. **Attachment to the request** (header name / placement of the key on each Kalodata call) must come
+   from Kalodata's **verified auth spec** — not guessed. The secret *name* is fixed; the *placement* is
+   pending the partner docs (see §16 blocker 2).
+5. **Rotation:** if the key is ever rotated, update the Supabase secret in the same step, since the old
+   key stops working the instant a new one is generated.
+
+> No `KALODATA_API_KEY` is set in this repo and none should be; it is installed only in Supabase. This
+> session did not request or receive the key value and made no Kalodata API call.
+
+## 15. Cost controls implemented (`mig_294`) — fail-closed
+- `kalodata_cost_policy` (singleton): `calls_enabled=false` by default, `per_call_credits=0.1`,
+  `max_credits_per_run=2.0`, `last_known_balance=14.1`. **Default-deny** — no chargeable call is possible
+  until an approved change sets `calls_enabled=true`.
+- `fn_kalodata_budget_precheck(estimated_calls)`: fail-closed pre-call gate — denies when calls are
+  disabled, over the per-run cap, or over last-known balance. A live call path must pass this first.
+- `kalodata_api_usage_ledger` + `fn_kalodata_record_usage(...)`: per-call credit accounting (decrements
+  last-known balance). RLS deny-all; service-role only.
+- Self-test `fn_kalodata_cost_video_selftest` → **10/10** (ephemeral Postgres): default-deny holds;
+  allow-within-limits / deny-over-cap / deny-over-balance all correct; ledger records; video gated.
+
+## 16. Video research registration (`mig_294`) — media rights UNRESOLVED
+- `KALODATA/VIDEO_RESEARCH` registered for the 15 verified markets. Video **performance intelligence**
+  (metrics) may be used for research display under the same research-only terms as product intelligence.
+- Video **MEDIA rights** (storing/displaying the actual video files or thumbnails) are **UNRESOLVED**:
+  `media_ingestion=BLOCKED_PENDING_VIDEO_RIGHTS`, `ad_eligible=false`, `storefront_eligible=false` — the
+  same research-only posture as the mig_292 image lane, and stricter (blocked) until rights are verified.
+- Per-call cost for video endpoints is **UNCONFIRMED** (no video call observed) — not assumed to be 0.1.
+
+## 17. Remaining blockers (accurate, as of Phase 3)
+| # | Blocker | Owner action |
+|---|---|---|
+| 1 | `KALODATA_API_KEY` not yet installed as a Supabase Edge Function secret | Set the **existing** key as `KALODATA_API_KEY` (do not regenerate) |
+| 2 | Verified request/response **field schema + auth header placement** (gated partner docs; `kalodata.com` unreachable from this build) | Provide the Product Rank / Product Detail / Video endpoint docs, or paste the relevant pages |
+| 3 | **Video media rights** unresolved | Confirm whether video media (files/thumbnails) may be stored/displayed, and under what terms |
+| 4 | **Chargeable-call approval** | Approve flipping `calls_enabled=true` with a per-run credit cap (0.1/call; balance 14.1) |
+
+No longer a blocker: Enterprise subscription / new account purchase (account is active).
+
+**Nothing deployed.** All Phase-3 changes are additive, verified-only, make no API call, and pass their
+self-tests. The live client (edge function + n8n fetch + field mapping) is unblocked only when §17 items
+1–2 are supplied.
