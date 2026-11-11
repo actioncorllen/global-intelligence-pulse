@@ -78,6 +78,35 @@ website-entry screen from Lovable 83bbc02 was the WRONG fix.
   WORKSPACE_PREPARING screen is now unreachable) and ensure an honest empty Product Discovery
   state for members with no research.
 
+## CARD ENFORCEMENT ACTIVATED (2026-11-11, explicit founder approval, TEST mode)
+Preflight PASS: project nxaunmyihhjixxxljcqt; enforcement ON; mig_357 applied (discovery not a
+gate); invitation/membership/entitlement checks intact; card registry owner-only; stripe-card-setup
+v6 + signed webhook functional (founder EUR 0 card registered earlier today); Stripe TEST only
+(sk_test_, livemode=false); surpyjabu 0 active cards (billing contact != card); founder 1 active
+card; 0 duplicate card rows; COMP x3 at EUR 0; prices + budgets inactive. The onboarding
+CardSetupStep (CARD_SETUP_REQUIRED -> hosted Stripe EUR 0 setup, never renders a card field)
+exists in the Lovable preview = the accessible approved onboarding route.
+Server-side enforcement prepared (mig_358): added get_own_payment_methods to the
+fn_pre_request_gate RPC allow-list = the narrow exception so a CARD_SETUP_REQUIRED member can read
+their own card status + reach stripe-card-setup (edge, ungated) while ALL workspace data stays
+blocked. Both gates enforce the card requirement via fn_onboarding_complete (CARD_SETUP_REQUIRED ->
+false -> blocked); not UI-only.
+ACTIVATED: UPDATE onboarding_policy SET card_enforcement_active=true. Verified live: founder READY
+(card_on_file true); surpyjabu CARD_SETUP_REQUIRED (card_on_file false); incomplete member
+BUSINESS_PROFILE_REQUIRED; surpyjabu fn_onboarding_complete=false + fn_edge_onboarding_allowed=false
+(server-side blocked from workspace data); COMP x3 EUR 0 unchanged; prices/budgets inactive; no
+duplicate card rows; no charge (mode=setup EUR 0); live charging still OFF (sk_test_, STRIPE_LIVE_
+ALLOWED unset).
+NOT PUBLISHED (safety: payment UI unpublished unless separately authorised): surpyjabu's accessible
+card-setup route is the PREVIEW URL (shares the production backend; registering a card there makes
+them READY everywhere). Publishing the card-setup UI to production strateloq.com for future members
+is a SEPARATE founder publish authorisation.
+ROLLBACK (if an actual access regression / a member cannot reach card setup):
+UPDATE public.onboarding_policy SET card_enforcement_active=false WHERE id; (one line; restores the
+prior state; mig_357/356/358 are independent and stay).
+ANDROID ACCEPTANCE: NOT marked complete — pending surpyjabu's own successful test (register the
+Stripe TEST card 4242 4242 4242 4242 on the preview URL -> becomes READY -> workspace).
+
 ## Guardrails preserved
 Mandatory onboarding ON; invitation-only; COMP x3 at EUR 0 unchanged; card enforcement OFF;
 trial autogrant OFF; wallet prices + provider budgets inactive; live Stripe OFF. Kalodata
