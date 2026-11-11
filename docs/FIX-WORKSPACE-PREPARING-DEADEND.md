@@ -50,6 +50,34 @@ Two paths:
     (same effect as start-discovery), member becomes READY.
 READY was NOT force-set (analysis genuinely not run; forcing it would give an empty workspace).
 
+## CORRECTION (2026-11-11, founder-approved rules supersede the website approach)
+Founder clarified: the initial discovery analysis is NOT a prerequisite for workspace
+access; business name+industry mandatory, website OPTIONAL; a registered payment card is the
+pre-workspace requirement under the (separately approved) card-enforcement policy. The
+website-entry screen from Lovable 83bbc02 was the WRONG fix.
+- Backend mig_357 (deployed): removed the `WHEN NOT v_ready THEN 'WORKSPACE_PREPARING'`
+  clause from fn_member_onboarding_state. Workspace access is now READY once the approved
+  prerequisites pass (email verified, business profile, billing, card ONLY when
+  card_enforcement_active, entitlement, membership). Discovery readiness is informational
+  only (workspace_ready + workspace_analysis_status retained for the empty-state UI). No
+  access_state/enforcement/RLS weakening; no fake discovery data; no forced readiness flag.
+- Result: surpyjabu is now access_state=READY under current flags (business+billing+
+  membership+COMP; card enforcement OFF so no card required yet). No website, no discovery
+  needed. Verified live.
+- Card-enforcement rolled-back simulation (zero residue): enforcement OFF -> surpyjabu READY;
+  enforcement ON + no card -> CARD_SETUP_REQUIRED; enforcement ON + card -> READY; founder
+  (has card) READY; incomplete member -> BUSINESS_PROFILE_REQUIRED. Proves the mandatory-card
+  gate works WHEN the founder approves it, without enabling it now.
+- surpyjabu payment card status (TASK 2): NO active card (payment_method_registry empty for
+  them). Billing CONTACT complete != a stored card.
+- €0 card setup (TASK 3): the existing Stripe Checkout Setup edge (mode=setup, EUR 0) + signed
+  webhook + CARD_SETUP_REQUIRED state are the mandatory-card path; proven earlier (founder
+  registered a EUR 0 card, no charge). Making it mandatory = flip card_enforcement_active=TRUE
+  = SEPARATE founder approval (global, affects all members). NOT enabled here.
+- Frontend follow-up (Lovable, preview): neutralise the 83bbc02 website-as-requirement (the
+  WORKSPACE_PREPARING screen is now unreachable) and ensure an honest empty Product Discovery
+  state for members with no research.
+
 ## Guardrails preserved
 Mandatory onboarding ON; invitation-only; COMP x3 at EUR 0 unchanged; card enforcement OFF;
 trial autogrant OFF; wallet prices + provider budgets inactive; live Stripe OFF. Kalodata
