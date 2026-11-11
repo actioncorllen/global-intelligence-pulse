@@ -259,6 +259,28 @@ open-redirect vectors. Live end-to-end (Stripe stored success_url) 6/6:
   exact Strateloq preview -> honoured.
 Diag apparatus retired (410) + probe workflows archived.
 
+## BOUNDED €5 WALLET TEST — EXECUTED (2026-11-11 14:05 UTC, founder-authorised)
+Method (true founder-only isolation, no production-wide price, no exposure): a dedicated
+code 'WALLET_TEST_FOUNDER_5' was NEVER added to wallet_price_point (so invisible to
+get_own_credit_wallet and unpurchasable via the topup edge for everyone); instead a
+TEMPORARY founder-only special case in fn_wallet_credit_purchase funded it only for the
+founder uid. All real price codes stayed byte-identical.
+Pre-payment isolation proof (rolled-back txn, zero residue): founder funds 5; duplicate
+payment_ref idempotent; surpyjabu (the OTHER onboarding-complete member) denied
+TEST_PRICE_FOUNDER_ONLY; real codes still PRICE_POINT_NOT_ACTIVE; other tenant balance 0.
+One Checkout Session (cs_test_a0VFb2Ip...) created server-side, client_reference_id=founder,
+livemode=false, €5/5cr. Founder paid test card.
+Live results: signed webhook evt_1Uac9Y... checkout.session.completed -> wallet_purchase:ok
+(livemode=false); founder funded EXACTLY 5 (one PURCHASE row, payment pi_3Uac9X...); all
+other members balance 0 (tenant isolation); duplicate re-delivery of the same signed event
+-> 200 {duplicate:true}, balance stayed 5 (dedupe). Reversed with auditable ADJUST -5
+(idempotency 'ADJUST:reverse-WALLET_TEST_FOUNDER_5-pi_3Uac9X...'); founder balance back to 0.
+Cleanup: fn_wallet_credit_purchase restored to original (special case removed, verified);
+zz-wallet-test-session + zz-stripe-diag -> 410; driver workflow archived.
+Final state: 0 active prices, 0 test price rows, 0 active budgets, enforcement ON,
+card_enforcement OFF, trial_autogrant OFF, COMP x3 at EUR 0 (no billing period), UI preview-only,
+no live billing. Next queued build: Kalodata Product Imagery Integration.
+
 ## Remaining journeys (need the founder's signed-in device; everything else ready)
 - Card registration: preview app -> Workspace -> Billing & Credits -> Add payment card
   -> Stripe-hosted page -> test card 4242 4242 4242 4242 (any future expiry/CVC).
