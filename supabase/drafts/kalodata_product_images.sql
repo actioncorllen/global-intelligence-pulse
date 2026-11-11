@@ -14,10 +14,14 @@
 --     images stay rights_state='PROVIDER_DISCOVERY_REFERENCE', provenance authority='REFERENCE_ONLY'
 --     (never publishable / never ad / storefront / commercial-creative eligible).
 --   * The 5-minute signed URL cannot be a durable display source, so the edge DOWNLOADS the bytes
---     server-side (before expiry) and stores them in a PRIVATE Supabase Storage bucket, then mints a
---     durable signed URL stored as image_url — exactly the pattern product-image-import already uses
---     for customer uploads (service role never leaves the edge; tenant-authorised delivery is enforced
---     by the existing auth.uid()+ownership display gates fn_product_media_state / fn_resolve_product_image).
+--     server-side (before expiry) and stores them in a PRIVATE Supabase Storage bucket. SECURITY: a
+--     long-lived signed URL is a bearer credential and is NEVER persisted. image_url holds the durable
+--     PRIVATE-OBJECT REFERENCE (same value as storage_ref, not a URL); delivery is SHORT-LIVED and
+--     tenant-authorised, minted on demand by the research-image-url edge via fn_product_image_signed_ref
+--     (auth.uid()+ownership) — the exact mechanism media-asset-url uses for self-hosted video. source_url
+--     keeps the original Kalodata URL as PROVENANCE ONLY (it expires in ~5 min; never a delivery URL).
+--     Because image_url is a non-http reference, the existing display gates (fn_product_explorer gates on
+--     image_url ILIKE 'http%'; is_primary=false keeps these out of the cover path) never emit it as a URL.
 --   * Credits: REUSES fn_kalodata_op_reserve / fn_discovery_refresh_authorize / fn_kalodata_op_fire /
 --     fn_kalodata_op_complete_from_edge (discovery_credit_ledger + provider_call_budget). Only addition:
 --     'PRODUCT_IMAGES' is accepted as an operation. Already-cached products short-circuit BEFORE reserve
@@ -176,21 +180,26 @@ GRANT EXECUTE ON FUNCTION public.fn_kalodata_images_request(text,text) TO authen
 --    adding the durable-cache columns. Pure DB registration — the edge has already downloaded the bytes,
 --    stored them in the private bucket, and minted the durable signed URL (p_image_url). Ownership-checked.
 -- ---------------------------------------------------------------------------
+-- SECURITY: image_url stores the DURABLE PRIVATE-OBJECT REFERENCE (storage_ref), NOT a signed URL.
+-- A long-lived signed URL is a bearer credential; it is never persisted. Delivery is short-lived and
+-- tenant-authorised (fn_product_image_signed_ref + the research-image-url edge). source_url keeps the
+-- original Kalodata URL as PROVENANCE ONLY (it expires in ~5 min and is never used for delivery).
 CREATE OR REPLACE FUNCTION public.fn_persist_kalodata_research_image(
   p_tenant uuid, p_product uuid, p_market text, p_kalodata_product_id text, p_gallery_position integer,
-  p_image_url text, p_source_url text, p_source_url_expires_at timestamptz,
+  p_source_url text, p_source_url_expires_at timestamptz,
   p_storage_ref text, p_content_hash text, p_mime text)
  RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path TO '' AS $function$
-DECLARE v_owner uuid; v_id uuid; v_has_primary boolean; v_market text := nullif(upper(btrim(coalesce(p_market,''))),'');
+DECLARE v_owner uuid; v_id uuid; v_market text := nullif(upper(btrim(coalesce(p_market,''))),'');
         v_hash text := nullif(btrim(coalesce(p_content_hash,'')),''); v_sref text := nullif(btrim(coalesce(p_storage_ref,'')),'');
 BEGIN
   IF p_tenant IS NULL OR p_product IS NULL THEN
     RETURN jsonb_build_object('status','error','error','missing_tenant_or_product'); END IF;
-  -- durable cached copy is MANDATORY: never register a row whose only reference is an expiring source URL.
-  IF p_image_url IS NULL OR p_image_url !~* '^https?://' OR position('/default/' in lower(p_image_url)) > 0 THEN
-    RETURN jsonb_build_object('status','error','error','invalid_durable_image_url'); END IF;
+  -- a durable cached private object is MANDATORY: never register a row without the cached copy + hash.
   IF v_sref IS NULL OR v_hash IS NULL THEN
     RETURN jsonb_build_object('status','error','error','missing_storage_ref_or_hash'); END IF;
+  -- defense in depth: refuse to store an http(s) value as image_url (that would be a durable credential).
+  IF v_sref ~* '^https?://' THEN
+    RETURN jsonb_build_object('status','error','error','storage_ref_must_not_be_a_url'); END IF;
   IF lower(coalesce(p_mime,'')) NOT IN ('image/png','image/jpeg','image/webp') THEN
     RETURN jsonb_build_object('status','error','error','unsupported_mime','mime',p_mime); END IF;
 
@@ -204,21 +213,22 @@ BEGIN
   IF v_id IS NOT NULL THEN
     RETURN jsonb_build_object('status','exists','deduped',true,'asset_id',v_id); END IF;
 
-  SELECT EXISTS(SELECT 1 FROM public.product_image_assets WHERE product_id=p_product AND is_primary=true)
-    INTO v_has_primary;
-
+  -- is_primary is ALWAYS false: these are supplementary research-gallery angles, never the product cover
+  -- (the cover remains the product-rank main image). This also keeps a non-http reference out of every
+  -- is_primary-ordered display path, so no display function can emit it as a broken/renderable URL.
   INSERT INTO public.product_image_assets
     (tenant_id, product_id, market, image_url, source_provider, source_url, source_entity_id,
      rights_state, availability, is_primary, observed_at, provenance,
      storage_ref, source_url_expires_at, cache_state, content_hash)
-  VALUES (p_tenant, p_product, v_market, p_image_url, 'KALODATA', p_source_url,
+  VALUES (p_tenant, p_product, v_market, v_sref, 'KALODATA', p_source_url,
           nullif(btrim(coalesce(p_kalodata_product_id,'')),''),
-          'PROVIDER_DISCOVERY_REFERENCE', 'AVAILABLE', NOT v_has_primary, now(),
+          'PROVIDER_DISCOVERY_REFERENCE', 'AVAILABLE', false, now(),
           jsonb_build_object('authority','REFERENCE_ONLY','lane','DISCOVERY','provider','KALODATA',
             'source_entity_id', p_kalodata_product_id, 'gallery_position', p_gallery_position,
             'cache_bucket', split_part(v_sref,'/',1), 'content_hash', v_hash, 'mime', lower(p_mime),
+            'delivery','SELF_HOSTED_SIGNED', 'delivery_endpoint','kalodata-research-image-url',
             'source_signed_url_expires_at', p_source_url_expires_at,
-            'note','kalodata product/images research gallery; REFERENCE_ONLY research media; durable private-bucket cache of an expiring provider signed URL; NOT supplier-authoritative; never unlocks store/ad/creative/publishing'),
+            'note','kalodata product/images research gallery; REFERENCE_ONLY research media; durable PRIVATE-bucket cache delivered via SHORT-LIVED signed URLs only; image_url holds the object reference, not a credential; source_url is provenance only (expired); NOT supplier-authoritative; never unlocks store/ad/creative/publishing'),
           v_sref, p_source_url_expires_at, 'CACHED', v_hash)
   ON CONFLICT (product_id, content_hash) WHERE content_hash IS NOT NULL DO NOTHING
   RETURNING id INTO v_id;
@@ -228,11 +238,12 @@ BEGIN
     RETURN jsonb_build_object('status','exists','deduped',true,'asset_id',v_id);
   END IF;
 
-  RETURN jsonb_build_object('status','registered','asset_id',v_id,'is_primary',(NOT v_has_primary),
-    'rights_state','PROVIDER_DISCOVERY_REFERENCE','authority','REFERENCE_ONLY','cache_state','CACHED');
+  RETURN jsonb_build_object('status','registered','asset_id',v_id,'is_primary',false,
+    'rights_state','PROVIDER_DISCOVERY_REFERENCE','authority','REFERENCE_ONLY','cache_state','CACHED',
+    'delivery','SELF_HOSTED_SIGNED');
 END; $function$;
-REVOKE ALL ON FUNCTION public.fn_persist_kalodata_research_image(uuid,uuid,text,text,integer,text,text,timestamptz,text,text,text) FROM public, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.fn_persist_kalodata_research_image(uuid,uuid,text,text,integer,text,text,timestamptz,text,text,text) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_persist_kalodata_research_image(uuid,uuid,text,text,integer,text,timestamptz,text,text,text) FROM public, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_persist_kalodata_research_image(uuid,uuid,text,text,integer,text,timestamptz,text,text,text) TO service_role;
 
 -- ---------------------------------------------------------------------------
 -- 6) Fast existence check (lets the edge skip a redundant byte upload for an already-cached hash).
@@ -248,8 +259,35 @@ REVOKE ALL ON FUNCTION public.fn_kalodata_research_image_exists(uuid,uuid,text) 
 GRANT EXECUTE ON FUNCTION public.fn_kalodata_research_image_exists(uuid,uuid,text) TO service_role;
 
 -- ---------------------------------------------------------------------------
--- 7) Tenant-authorised cached gallery (durable signed URLs only ever returned to the owner).
---    Used both for credit-saving cache reuse and for the research-gallery display surface.
+-- 6b) Short-lived signed-URL AUTHORISATION (mirrors fn_media_asset_signed_ref exactly):
+--     auth.uid() ownership gate, returns only the bucket + object reference for an OWNED cached research
+--     image; the research-image-url edge mints a short-lived (300s) signed URL and never returns the
+--     service-role key or a durable URL. Called WITH the caller's JWT so a tenant can never resolve
+--     another tenant's object.
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.fn_product_image_signed_ref(p_asset_id uuid)
+ RETURNS jsonb LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path TO '' AS $function$
+DECLARE v_uid uuid := auth.uid(); a public.product_image_assets%rowtype;
+BEGIN
+  IF v_uid IS NULL THEN RETURN jsonb_build_object('status','unauthenticated'); END IF;
+  SELECT * INTO a FROM public.product_image_assets WHERE id=p_asset_id;
+  IF NOT FOUND THEN RETURN jsonb_build_object('status','not_found'); END IF;
+  IF a.tenant_id <> v_uid THEN RETURN jsonb_build_object('status','forbidden'); END IF;
+  -- cross-check product ownership too (defense in depth; tenant_id is the authority).
+  IF NOT EXISTS (SELECT 1 FROM public.commerce_products cp WHERE cp.id=a.product_id AND cp.user_id=v_uid) THEN
+    RETURN jsonb_build_object('status','forbidden'); END IF;
+  IF coalesce(a.storage_ref,'')='' OR coalesce(a.cache_state,'') <> 'CACHED' THEN
+    RETURN jsonb_build_object('status','no_asset'); END IF;
+  RETURN jsonb_build_object('status','ok','bucket', split_part(a.storage_ref,'/',1), 'storage_ref', a.storage_ref,
+    'rights_state', a.rights_state, 'authority','REFERENCE_ONLY', 'commercial_use','NOT_CLEARED_REFERENCE_ONLY');
+END; $function$;
+REVOKE ALL ON FUNCTION public.fn_product_image_signed_ref(uuid) FROM public, anon;
+GRANT EXECUTE ON FUNCTION public.fn_product_image_signed_ref(uuid) TO authenticated, service_role;
+
+-- ---------------------------------------------------------------------------
+-- 7) Tenant-authorised cached gallery — returns signed-delivery DESCRIPTORS (asset_id + object ref),
+--    NEVER a durable URL and never the raw provider URL. The client exchanges each asset_id for a
+--    short-lived signed URL via the research-image-url edge. Used for credit-saving reuse + display.
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.fn_kalodata_product_images_cached(p_tenant uuid, p_product uuid)
  RETURNS jsonb LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path TO '' AS $function$
@@ -265,13 +303,17 @@ BEGIN
     RETURN jsonb_build_object('status','forbidden'); END IF;
 
   SELECT coalesce(jsonb_agg(jsonb_build_object(
-      'asset_id', a.id, 'image_url', a.image_url, 'is_primary', a.is_primary,
+      'asset_id', a.id,                                   -- exchange this for a short-lived signed URL
+      'delivery_mode','SELF_HOSTED_SIGNED', 'delivery_endpoint','kalodata-research-image-url',
+      'storage_bucket', split_part(a.storage_ref,'/',1),  -- object reference only; NOT a credential
+      'storage_object', a.storage_ref,
+      'is_primary', a.is_primary,
       'gallery_position', coalesce((a.provenance->>'gallery_position')::int, 999),
       'source_provider', a.source_provider, 'kalodata_product_id', a.source_entity_id,
       'rights_state', a.rights_state, 'authority','REFERENCE_ONLY',
       'cache_state', a.cache_state, 'source_url_expires_at', a.source_url_expires_at,
       'commercial_use','NOT_CLEARED_REFERENCE_ONLY', 'observed_at', a.observed_at)
-      ORDER BY a.is_primary DESC, coalesce((a.provenance->>'gallery_position')::int, 999), a.observed_at), '[]'::jsonb)
+      ORDER BY coalesce((a.provenance->>'gallery_position')::int, 999), a.observed_at), '[]'::jsonb)
     INTO v_imgs
   FROM public.product_image_assets a
   WHERE a.product_id=p_product AND a.tenant_id=p_tenant
@@ -280,7 +322,9 @@ BEGIN
 
   RETURN jsonb_build_object('status','ok','product_id',p_product,
     'cached_count', jsonb_array_length(v_imgs), 'images', v_imgs,
-    'authority','REFERENCE_ONLY', 'contract','pulse_kalodata_product_images_cached_v1');
+    'delivery','SELF_HOSTED_SIGNED_SHORT_LIVED', 'authority','REFERENCE_ONLY',
+    'note','exchange asset_id for a short-lived signed URL via the research-image-url edge; no durable credential is returned',
+    'contract','pulse_kalodata_product_images_cached_v2');
 END; $function$;
 REVOKE ALL ON FUNCTION public.fn_kalodata_product_images_cached(uuid,uuid) FROM public, anon;
 GRANT EXECUTE ON FUNCTION public.fn_kalodata_product_images_cached(uuid,uuid) TO authenticated, service_role;
@@ -327,8 +371,10 @@ REVOKE ALL ON FUNCTION public.fn_kalodata_run_product_images(text,uuid,text,text
 GRANT EXECUTE ON FUNCTION public.fn_kalodata_run_product_images(text,uuid,text,text,text,boolean,boolean) TO authenticated, service_role;
 
 -- ---------------------------------------------------------------------------
--- 9) Self-test: contract, caching, dedup, tenant isolation, expiry, Product Asset Lock,
---    rights-class fail-closed, and the credit-reuse short-circuit. Self-seeding + self-cleaning.
+-- 9) Self-test: contract, caching, dedup, tenant isolation, expiry, Product Asset Lock, rights-class
+--    fail-closed, credit reuse, PLUS the security correction — NO durable credential stored, source_url
+--    is provenance only, and short-lived signed delivery is owner-only (unauthorised access denied).
+--    Self-seeding + self-cleaning.
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.fn_kalodata_product_images_selftest()
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path TO '' AS $function$
@@ -338,12 +384,13 @@ DECLARE
   v_b uuid := 'ca11ab00-0000-4000-8000-0000000000b2';  -- tenant B (isolation)
   v_p uuid := 'ca11ab00-0000-4000-8000-0000000000cc';  -- product owned by A
   v_pb uuid := 'ca11ab00-0000-4000-8000-0000000000dd'; -- product owned by B
-  url1 text := 'https://nxaunmyihhjixxxljcqt.supabase.co/storage/v1/object/sign/pulse-research-reference/kalodata/a/p/h1.jpg?token=aaa';
-  url2 text := 'https://nxaunmyihhjixxxljcqt.supabase.co/storage/v1/object/sign/pulse-research-reference/kalodata/a/p/h2.jpg?token=bbb';
-  src1 text := 'https://cdn.kalodata.com/img/one.jpg?e=123&sig=zzz';  -- expiring provider URL
-  exp  timestamptz := now() + interval '5 minutes';
+  sref1 text := 'pulse-research-reference/kalodata/a/p/h1.jpg';  -- durable private object reference (NOT a URL)
+  sref2 text := 'pulse-research-reference/kalodata/a/p/h2.jpg';
+  src1  text := 'https://cdn.kalodata.com/img/one.jpg?e=123&sig=zzz';  -- provider signed URL (provenance; expires)
+  src2  text := 'https://cdn.kalodata.com/img/two.jpg?e=123&sig=yyy';
+  exp   timestamptz := now() + interval '5 minutes';
   r_req jsonb; r_bad jsonb; r1 jsonb; r1b jsonb; r2 jsonb; r_x jsonb; r_cached jsonb; r_reuse jsonb;
-  cls_kd text; rights jsonb; v_cnt int; v_primary_url text;
+  cls_kd text; rights jsonb; v_cnt int; aid uuid; sig_owner jsonb; sig_cross jsonb; sig_anon jsonb; img0 jsonb;
 BEGIN
   -- clean + seed two tenants / products
   DELETE FROM public.product_image_assets WHERE product_id IN (v_p,v_pb);
@@ -361,35 +408,32 @@ BEGIN
          AND (r_bad->>'ok')::boolean=false AND r_bad->>'reason'='UNSUPPORTED_MARKET'
          AND (public.fn_kalodata_images_request('US',NULL)->>'reason')='MISSING_PRODUCT_ID'));
 
-  -- 2) CACHING: persist a cached research image -> durable row with REFERENCE_ONLY rights + cache metadata
-  r1 := public.fn_persist_kalodata_research_image(v_a,v_p,'US','kd_prod_1',0,url1,src1,exp,
-          'pulse-research-reference/kalodata/a/p/h1.jpg','hash_one','image/jpeg');
+  -- 2) CACHING: persist -> durable row; image_url is the OBJECT REFERENCE (not a URL); is_primary false
+  r1 := public.fn_persist_kalodata_research_image(v_a,v_p,'US','kd_prod_1',0,src1,exp,sref1,'hash_one','image/jpeg');
+  aid := (r1->>'asset_id')::uuid;
   v := v || jsonb_build_object('case','caching_persist_durable','pass',
-        (r1->>'status'='registered' AND (r1->>'is_primary')::boolean=true
-         AND EXISTS(SELECT 1 FROM public.product_image_assets WHERE id=(r1->>'asset_id')::uuid
+        (r1->>'status'='registered' AND (r1->>'is_primary')::boolean=false AND r1->>'delivery'='SELF_HOSTED_SIGNED'
+         AND EXISTS(SELECT 1 FROM public.product_image_assets WHERE id=aid
              AND rights_state='PROVIDER_DISCOVERY_REFERENCE' AND source_provider='KALODATA'
-             AND cache_state='CACHED' AND content_hash='hash_one' AND image_url=url1 AND source_url=src1
+             AND cache_state='CACHED' AND content_hash='hash_one'
+             AND image_url=sref1 AND storage_ref=sref1 AND source_url=src1
              AND source_url_expires_at=exp AND provenance->>'authority'='REFERENCE_ONLY'
-             AND storage_ref='pulse-research-reference/kalodata/a/p/h1.jpg')));
+             AND provenance->>'delivery'='SELF_HOSTED_SIGNED')));
 
   -- 3) DEDUP: same content_hash again -> no new row, returns existing (credit/storage saving)
-  r1b := public.fn_persist_kalodata_research_image(v_a,v_p,'US','kd_prod_1',0,
-          'https://nxaunmyihhjixxxljcqt.supabase.co/storage/v1/object/sign/pulse-research-reference/kalodata/a/p/h1b.jpg?token=ccc',
-          src1,exp,'pulse-research-reference/kalodata/a/p/h1b.jpg','hash_one','image/jpeg');
+  r1b := public.fn_persist_kalodata_research_image(v_a,v_p,'US','kd_prod_1',0,src1,exp,
+          'pulse-research-reference/kalodata/a/p/h1b.jpg','hash_one','image/jpeg');
   SELECT count(*) INTO v_cnt FROM public.product_image_assets WHERE product_id=v_p AND content_hash='hash_one';
   v := v || jsonb_build_object('case','dedup_content_hash','pass',
         (r1b->>'status'='exists' AND (r1b->>'deduped')::boolean=true AND v_cnt=1
-         AND (r1b->>'asset_id')::uuid=(r1->>'asset_id')::uuid));
+         AND (r1b->>'asset_id')::uuid=aid));
 
   -- add a genuine second image (different hash) so the gallery is multi-image
-  r2 := public.fn_persist_kalodata_research_image(v_a,v_p,'US','kd_prod_1',1,url2,
-          'https://cdn.kalodata.com/img/two.jpg?e=123&sig=yyy',exp,
-          'pulse-research-reference/kalodata/a/p/h2.jpg','hash_two','image/jpeg');
+  r2 := public.fn_persist_kalodata_research_image(v_a,v_p,'US','kd_prod_1',1,src2,exp,sref2,'hash_two','image/jpeg');
 
   -- 4) TENANT ISOLATION: cannot attach A's product image under tenant B; B cannot read A's gallery
-  r_x := public.fn_persist_kalodata_research_image(v_b,v_p,'US','kd_prod_1',2,
-          'https://nxaunmyihhjixxxljcqt.supabase.co/storage/v1/object/sign/pulse-research-reference/x/h3.jpg?token=d',
-          src1,exp,'pulse-research-reference/x/h3.jpg','hash_three','image/jpeg');
+  r_x := public.fn_persist_kalodata_research_image(v_b,v_p,'US','kd_prod_1',2,src1,exp,
+          'pulse-research-reference/x/h3.jpg','hash_three','image/jpeg');
   PERFORM set_config('request.jwt.claims', json_build_object('sub', v_b::text)::text, true);
   r_cached := public.fn_kalodata_product_images_cached(v_a, v_p);  -- B asking for A's tenant -> forbidden
   PERFORM set_config('request.jwt.claims', json_build_object('sub', v_a::text)::text, true);
@@ -398,34 +442,66 @@ BEGIN
          AND r_cached->>'status'='forbidden'
          AND NOT EXISTS(SELECT 1 FROM public.product_image_assets WHERE content_hash='hash_three')));
 
-  -- 5) EXPIRY: the provider signed URL is expired, but the durable cached copy stays available
+  -- 5) NO DURABLE CREDENTIAL: image_url is never an http(s) URL; gallery descriptor returns the object
+  --    reference + asset_id for short-lived signing, and NEVER a url / signed_url / raw source_url.
+  r_cached := public.fn_kalodata_product_images_cached(v_a, v_p);
+  img0 := r_cached->'images'->0;
+  v := v || jsonb_build_object('case','no_durable_credential_stored','pass',
+        (NOT EXISTS(SELECT 1 FROM public.product_image_assets
+                    WHERE source_provider='KALODATA' AND cache_state='CACHED' AND image_url ILIKE 'http%')
+         AND (img0->>'delivery_mode')='SELF_HOSTED_SIGNED'
+         AND (img0->>'storage_object')=sref1
+         AND img0 ? 'asset_id'
+         AND NOT (img0 ? 'image_url') AND NOT (img0 ? 'url') AND NOT (img0 ? 'signed_url')
+         AND NOT (img0 ? 'source_url')));
+
+  -- 6) SOURCE URL = PROVENANCE ONLY: the original Kalodata URL is retained in the DB column but is never
+  --    surfaced as a delivery field by the gallery (checked above) nor stored as image_url.
+  v := v || jsonb_build_object('case','source_url_provenance_only','pass',
+        (EXISTS(SELECT 1 FROM public.product_image_assets WHERE id=aid AND source_url=src1)
+         AND NOT EXISTS(SELECT 1 FROM public.product_image_assets WHERE id=aid AND image_url=src1)));
+
+  -- 7) SHORT-LIVED SIGNING AUTHZ: owner gets only an object reference (no URL); cross-tenant + anon denied
+  sig_owner := public.fn_product_image_signed_ref(aid);                       -- owner
+  PERFORM set_config('request.jwt.claims', json_build_object('sub', v_b::text)::text, true);
+  sig_cross := public.fn_product_image_signed_ref(aid);                       -- another tenant
+  PERFORM set_config('request.jwt.claims','',true);
+  sig_anon  := public.fn_product_image_signed_ref(aid);                       -- unauthenticated
+  PERFORM set_config('request.jwt.claims', json_build_object('sub', v_a::text)::text, true);
+  v := v || jsonb_build_object('case','signed_delivery_owner_only','pass',
+        (sig_owner->>'status'='ok' AND sig_owner->>'bucket'='pulse-research-reference'
+         AND sig_owner->>'storage_ref'=sref1 AND NOT (sig_owner ? 'signed_url') AND NOT (sig_owner ? 'url')
+         AND sig_owner->>'authority'='REFERENCE_ONLY'
+         AND sig_cross->>'status'='forbidden'
+         AND sig_anon->>'status'='unauthenticated'));
+
+  -- 8) EXPIRY: provider signed URL expired, but the durable cached copy stays available + deliverable
   UPDATE public.product_image_assets SET source_url_expires_at = now() - interval '1 minute'
     WHERE product_id=v_p AND content_hash='hash_one';
   r_cached := public.fn_kalodata_product_images_cached(v_a, v_p);
-  SELECT (r_cached->'images'->0->>'image_url') INTO v_primary_url;
   v := v || jsonb_build_object('case','expiry_durable_copy_survives','pass',
-        ((r_cached->>'cached_count')::int=2 AND v_primary_url=url1  -- still served from our durable URL
-         AND (r_cached->'images'->0->>'authority')='REFERENCE_ONLY'
-         AND (r_cached->'images'->0->>'commercial_use')='NOT_CLEARED_REFERENCE_ONLY'));
+        ((r_cached->>'cached_count')::int=2
+         AND (r_cached->'images'->0->>'storage_object')=sref1       -- still deliverable from our private object
+         AND (r_cached->'images'->0->>'delivery_mode')='SELF_HOSTED_SIGNED'
+         AND public.fn_product_image_signed_ref(aid)->>'status'='ok'));
 
-  -- 6) RIGHTS-CLASS FAIL-CLOSED: PROVIDER_DISCOVERY_REFERENCE -> RESEARCH_REFERENCE_ONLY, still non-publishable
+  -- 9) RIGHTS-CLASS FAIL-CLOSED: PROVIDER_DISCOVERY_REFERENCE -> RESEARCH_REFERENCE_ONLY, still non-publishable
   cls_kd := public.fn_asset_rights_class('PROVIDER_DISCOVERY_REFERENCE','KALODATA','{}'::jsonb);
   v := v || jsonb_build_object('case','rights_class_research_reference_only','pass',
         (cls_kd='RESEARCH_REFERENCE_ONLY'
          AND public.fn_asset_rights_class('MARKETPLACE_PUBLIC_LISTING','EBAY_BROWSE','{}'::jsonb)='RESEARCH_REFERENCE_ONLY'
-         -- publishable classes unchanged / fail-closed:
          AND public.fn_asset_rights_class('CUSTOMER_OWNED','CUSTOMER_UPLOAD',jsonb_build_object('rights_confirmed','true'))='CUSTOMER_OWNED'
          AND public.fn_asset_rights_class('SUPPLIER_PROVIDED','CJ_SUPPLIER','{}'::jsonb)='SUPPLIER_AUTHORIZED'));
 
-  -- 7) PRODUCT ASSET LOCK: a product with ONLY Kalodata research images is NOT publishable / NOT AI-eligible
+  -- 10) PRODUCT ASSET LOCK: a product with ONLY Kalodata research images is NOT publishable / NOT AI-eligible
   rights := public.fn_product_commercial_rights(v_p);
   v := v || jsonb_build_object('case','product_asset_lock_non_publishable','pass',
         ((rights->>'publishable_present')::boolean=false
          AND (rights->>'ai_reference_present')::boolean=false
          AND (rights->>'research_only_count')::int >= 2
-         AND (rights->>'unknown_count')::int = 0));  -- research images no longer count as "unknown"
+         AND (rights->>'unknown_count')::int = 0));
 
-  -- 8) CREDIT REUSE: run caller short-circuits to cache_reuse with NO credit spent (no reserve row created)
+  -- 11) CREDIT REUSE: run caller short-circuits to cache_reuse with NO credit spent (no reserve row created)
   r_reuse := public.fn_kalodata_run_product_images('US', v_p, 'kd_prod_1', 'img_idem_1', NULL, false, false);
   v := v || jsonb_build_object('case','credit_reuse_short_circuit','pass',
         (r_reuse->>'stage'='cache_reuse' AND (r_reuse->>'credit_spent')::boolean=false
@@ -442,7 +518,7 @@ BEGIN
     'passed', (SELECT count(*) FROM jsonb_array_elements(v) x WHERE (x->>'pass')::boolean),
     'failed', (SELECT count(*) FROM jsonb_array_elements(v) x WHERE NOT (x->>'pass')::boolean),
     'all_pass', NOT EXISTS (SELECT 1 FROM jsonb_array_elements(v) x WHERE NOT (x->>'pass')::boolean),
-    'note','reuses product_image_assets + PROVIDER_DISCOVERY_REFERENCE rights + credit workflow; durable private-bucket cache; research images never publishable.',
+    'note','no durable signed URL stored (image_url = private object reference); short-lived owner-only signed delivery; source_url provenance only; research images never publishable.',
     'results', v);
 EXCEPTION WHEN OTHERS THEN
   DELETE FROM public.product_image_assets WHERE product_id IN (v_p,v_pb);

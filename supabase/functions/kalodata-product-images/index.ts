@@ -10,11 +10,13 @@
 //   Rate limit: 10 requests / 10 seconds.
 //
 // Because the signed image URLs expire in ~5 minutes, this edge DOWNLOADS the bytes server-side
-// immediately, stores them in the PRIVATE research bucket (service role, never exposed to the browser),
-// mints a durable signed URL, and registers each image as a REFERENCE_ONLY research asset via
-// fn_persist_kalodata_research_image (rights_state PROVIDER_DISCOVERY_REFERENCE). Tenant-authorised
-// delivery is enforced downstream by the auth.uid()+ownership display gates (fn_product_media_state /
-// fn_resolve_product_image), which decide who ever receives the durable URL.
+// immediately and stores them in the PRIVATE research bucket (service role, never exposed to the browser).
+// SECURITY: it does NOT mint or persist any long-lived signed URL (that would be a durable bearer
+// credential). It registers each image via fn_persist_kalodata_research_image storing ONLY the durable
+// private-object reference (storage_ref) as image_url, plus source_url as provenance. Delivery is
+// short-lived and owner-authorised at read time: the client exchanges asset_id for a 300s signed URL via
+// the research-image-url edge (fn_product_image_signed_ref, auth.uid()+ownership) — the same mechanism
+// media-asset-url uses for self-hosted video. Rights stay PROVIDER_DISCOVERY_REFERENCE / REFERENCE_ONLY.
 //
 // Credits: the caller (fn_kalodata_run_product_images) has already reserved + authorized via the EXISTING
 // discovery credit workflow and passes refresh_request_id. This edge settles SUCCESS once the provider
@@ -34,7 +36,6 @@ const DEFAULT_BUCKET = "pulse-research-reference";
 const MAX_IMAGES = 24;
 const MAX_BYTES = 15 * 1024 * 1024;        // per image
 const FETCH_TIMEOUT_MS = 15000;
-const DURABLE_SIGNED_TTL = 315360000;      // ~10y durable signed URL (same convention as product-image-import)
 const ALLOWED_MIME: Record<string, string> = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp" };
 
 const SUPABASE_URL = (Deno.env.get("SUPABASE_URL") || "").replace(/\/+$/, "");
@@ -199,21 +200,13 @@ Deno.serve(async (req) => {
       });
       if (!up.ok) { failed++; results.push({ position: i, status: "upload_failed", reason: redact(await up.text().catch(() => "")) }); continue; }
 
-      // 5) mint a durable signed URL (only ever returned to the owner via the display gates)
-      let displayUrl = "";
-      const sig = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/${bucket}/${objectPath}`, {
-        method: "POST", headers: { authorization: `Bearer ${SERVICE_ROLE}`, apikey: SERVICE_ROLE, "content-type": "application/json" }, body: JSON.stringify({ expiresIn: DURABLE_SIGNED_TTL }),
-      });
-      if (!sig.ok) { failed++; results.push({ position: i, status: "sign_failed", reason: redact(await sig.text().catch(() => "")) }); continue; }
-      const signed = await sig.json().catch(() => ({})) as { signedURL?: string; signedUrl?: string };
-      const rel = String(signed.signedURL || signed.signedUrl || "");
-      if (!rel) { failed++; results.push({ position: i, status: "sign_empty" }); continue; }
-      displayUrl = rel.startsWith("http") ? rel : `${SUPABASE_URL}/storage/v1${rel.startsWith("/") ? "" : "/"}${rel}`;
-
-      // 6) register as REFERENCE_ONLY research asset (RPC re-checks ownership + dedups on hash)
+      // 5) register as a REFERENCE_ONLY research asset storing ONLY the durable private-object reference
+      //    (storage_ref). SECURITY: no long-lived signed URL is ever minted or persisted here — delivery
+      //    is short-lived and owner-authorised at read time via the research-image-url edge. source_url is
+      //    kept as provenance only. The RPC re-checks ownership + dedups on content hash.
       const persist = await rpc("fn_persist_kalodata_research_image", {
         p_tenant: tenant, p_product: productId, p_market: market, p_kalodata_product_id: kalodataProductId,
-        p_gallery_position: i, p_image_url: displayUrl, p_source_url: src, p_source_url_expires_at: expiresAt,
+        p_gallery_position: i, p_source_url: src, p_source_url_expires_at: expiresAt,
         p_storage_ref: storageRef, p_content_hash: hash, p_mime: mime,
       });
       const pb: any = persist.body;

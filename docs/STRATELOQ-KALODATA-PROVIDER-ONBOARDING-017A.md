@@ -952,3 +952,76 @@ no approved budget → no paid call. No new ledger or billing path.
    cost for `product/images` from the authenticated Open Center account page.
 3. **Kalodata's written research-display permission** on file (requirement 9) before any cached image is shown.
 No production records, functions, edges, or storage were modified in this phase; no chargeable Kalodata call was made.
+
+# Phase 14 — Imagery security correction: no durable credentials; short-lived signed delivery
+
+Focused security correction to the Phase 13 caching design. The earlier draft stored a long-lived (~10-year)
+signed URL as `product_image_assets.image_url` — a durable bearer credential (leak it once and it grants
+private-object access for a decade, with no tenant check at fetch time). Corrected to store only a durable
+object reference and mint short-lived signed URLs on demand through Strateloq's existing tenant-authorised
+delivery mechanism. **No production deployment and no chargeable Kalodata call were made.**
+
+## 58. What changed (focused; no redesign; no unrelated production function modified)
+- **Persister `fn_persist_kalodata_research_image`** — now stores `image_url = storage_ref` (the durable
+  PRIVATE-object reference, a non-http value), `source_url` = the original Kalodata URL as PROVENANCE ONLY,
+  `storage_ref`/`content_hash`/`source_url_expires_at`/`cache_state='CACHED'`. **No signed URL is ever
+  persisted.** Signature dropped `p_image_url`. `is_primary` is forced `false` (gallery angles never become
+  the product cover and never lead any `is_primary`-ordered display path). Defense-in-depth: it refuses to
+  store an http(s) value as the object reference.
+- **New `fn_product_image_signed_ref(asset_id)`** — a faithful mirror of `fn_media_asset_signed_ref`:
+  `auth.uid()` + product-ownership gate; returns only the bucket + object reference for an OWNED cached image
+  (never a URL). Reuses the exact existing self-hosted-video signing authorisation pattern.
+- **New edge `kalodata-research-image-url`** — a faithful clone of the `media-asset-url` mechanism: `verify_jwt`,
+  ownership enforced by the RPC called WITH the caller's JWT, service role used ONLY to mint a **300s** signed
+  URL for the owned object, never returned to the browser; CORS; REFERENCE_ONLY semantics. (media-asset-url
+  itself is left untouched to avoid any regression to the live video delivery path.)
+- **`fn_kalodata_product_images_cached`** — returns signed-delivery DESCRIPTORS (`asset_id` + object reference +
+  `delivery_mode=SELF_HOSTED_SIGNED`), never a durable URL and never the raw provider URL.
+- **Edge `kalodata-product-images`** — the durable-sign step is removed; it uploads bytes to the private bucket
+  and registers only the object reference.
+- **Unchanged:** `fn_product_explorer` and `fn_product_media_state` were **not** modified. Because `image_url`
+  is now non-http and gallery rows are `is_primary=false`, Explorer's `image_url ILIKE 'http%'` gate and the
+  media-state `is_primary DESC` ordering keep the public product-rank cover image and can never emit the
+  private object reference as a URL. The private gallery is delivered only through the signed descriptor path.
+
+## 59. Requirement-by-requirement (this correction)
+1. Durable object reference stored in `storage_ref` (and as the non-credential `image_url`). ✔
+2. Original Kalodata URL kept in `source_url` as provenance only; never surfaced as a delivery field. ✔
+3. Short-lived signed URLs via the reused mechanism (`fn_product_image_signed_ref` + `kalodata-research-image-url`,
+   300s), mirroring `media-asset-url`. ✔
+4. Product Discovery + Product Explorer render without exposing credentials or bypassing isolation —
+   **confirmed** in ephemeral Postgres: both select the public main CDN cover, the private refs are excluded by
+   the `http%` gate / `is_primary` ordering, zero `http` credentials exist in `image_url`, and cross-tenant read
+   is `forbidden`. ✔
+5. `PROVIDER_DISCOVERY_REFERENCE` / REFERENCE_ONLY preserved. ✔
+6. Research images never unlock ads/storefront/commercial creatives (rights gates unchanged; fail-closed). ✔
+7. Expiry, unauthorised access, duplicate requests, legitimate owner access — all tested (below). ✔
+8. API budget, content-hash dedup and caching controls preserved (credit workflow unchanged). ✔
+
+## 60. Test results (ephemeral Postgres against real production function defs; edges type-checked)
+- `fn_kalodata_product_images_selftest()` → **11/11 all_pass**: contract; caching (object reference, not a URL);
+  dedup; tenant isolation; **no_durable_credential_stored**; **source_url_provenance_only**;
+  **signed_delivery_owner_only** (owner ok / cross-tenant forbidden / anon unauthenticated); expiry (durable copy
+  survives, still deliverable); rights-class fail-closed; Product Asset Lock (non-publishable); credit reuse.
+- **Display-safety confirmation** (real image predicates of `fn_product_explorer` + `fn_product_media_state`):
+  both select the public main CDN cover; `cached_refs_matching_http_gate = 0`; `http_credentials = 0`;
+  cross-tenant gallery read `forbidden`.
+- `fn_kalodata_caller_lifecycle_selftest()` → **12/12** (regression).
+- Regenerated migration file (`BEGIN…COMMIT`) applies as a transaction on the Phase 9 wiring; 11/11 after apply.
+- `kalodata-product-images` and `kalodata-research-image-url` edges → `tsc --strict` clean.
+
+## 61. Deployment-readiness report (no deployment / no chargeable call authorised)
+**Ready to deploy (pending approval), in order:**
+1. Apply `20261111000000_kalodata_detail_video_caller.sql` (Phase 9 bundle) if not already applied.
+2. Apply `20261111010000_kalodata_product_images.sql` (this correction is folded in).
+3. Create the private bucket `pulse-research-reference`.
+4. Deploy edges `kalodata-product-images` and `kalodata-research-image-url`.
+5. Run the two self-tests (expect 11/11 and 12/12) — no paid calls.
+
+**Remaining blockers (unchanged; require explicit approval / external confirmation):**
+- Approval to deploy via the canonical Supabase pipeline + create the private bucket.
+- Approved chargeable `provider_call_budget` for `KALODATA` + the confirmed per-call credit cost for
+  `product/images` (from the authenticated Open Center account page) before any live fetch.
+- Kalodata's written research-display permission on file before any cached image is shown.
+
+No production records, functions, edges or storage were modified in this phase; no chargeable Kalodata call was made.
