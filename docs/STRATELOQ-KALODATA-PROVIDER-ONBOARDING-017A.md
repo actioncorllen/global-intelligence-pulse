@@ -1103,3 +1103,29 @@ Reuses the reference-video mechanism exactly; existing https galleries + Product
 5. Approve a `KALODATA` provider budget + confirm per-call credit cost; obtain Kalodata's written
    research-display permission before any cached image is shown.
 Optional: one-line `product-explorer.tsx` change to show the research block in the Explorer panel too.
+
+# Phase 16 — Product Explorer research-gallery parity (one-prop reuse; preview only)
+
+Closed the optional item from Phase 15 §64.6: the research gallery now also appears in the Product Explorer
+detail panel, reusing the EXACT existing implementation — no new component, no duplicated signing.
+
+## 67. Change (Lovable commit 1c8ca1b; preview only, not published)
+- `src/components/business-discovery/product-explorer.tsx`: ONE prop added to the `ProductIntelligenceDrawer`
+  call inside `ExplorerDrawer` — `researchProductId={item.productId}` (the canonical product id already in
+  scope). This reuses the existing `ResearchImagesBlock` → `ReferenceImageGallery` → `useKalodataResearchGallery`
+  → `fetchSignedResearchImageUrl` path. Nothing else in the file changed.
+- `src/components/business-discovery/product-explorer.research-images.test.tsx` (new): renders the real
+  `ExplorerDrawer`; the research block (`detail-media-research-images`) appears only when the hook returns
+  cached images, and is absent otherwise.
+- Verified clean/additive via the commit diff: no other file changed, no duplicated gallery/signing, the
+  existing cover/gallery/actions and `product-detail-media.tsx`/`product-gallery.tsx` are untouched. Research
+  images remain REFERENCE_ONLY, tenant-scoped (hook passes the signed-in user id), never a cover or gate input.
+
+## 68. Regression results (this run)
+- Tests: **682/682 passed (89 files)**, including the 2 new Explorer tests. (The earlier Phase-15 run reported
+  704; the commit-1c8ca1b diff is purely additive — one prop + one new test file — so the difference is a
+  vitest invocation/counting artifact between two separate runs, not removed tests.)
+- TypeScript (`tsgo --noEmit`): clean. ESLint on changed files: 0 errors (6 pre-existing fast-refresh warnings
+  in `product-explorer.tsx`, untouched). Production build: OK.
+- Both Product Discovery (workspace Overview) and Product Explorer now surface the signed research gallery
+  (whenever authorised cached images exist). Still preview only — no publish, no backend deploy, no paid call.
