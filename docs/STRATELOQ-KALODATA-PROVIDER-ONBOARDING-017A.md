@@ -866,3 +866,89 @@ for it. The multi-image + caching piece is **not deployable** until the Product 
 then the additive caching above goes through the canonical Supabase pipeline with chargeable-call approval.
 **Files changed this phase:** this doc (verification + findings). No new production code — the feature exists;
 a second image pipeline would violate "do not introduce a duplicate image architecture."
+
+# Phase 13 — Product Images multi-image integration (contract supplied; built + tested; no paid calls)
+
+The account owner supplied the official **Product Images API** contract (2026-11-11), unblocking the multi-image
+work scoped in Phase 12. Confirmed contract:
+`POST https://www.kalodata.com/openapi/v1/tiktok/product/images` · header `secret-key` ·
+request `{ "product_id": "<kalodata product id>" }` · response data `{ product_id, images: string[] (signed),
+expires_at }` · rate limit **10 req / 10 s** · signed image URLs **expire in ~5 minutes**.
+
+Built as **non-deploying drafts** (no deploy, no chargeable call). All 10 requirements met by reusing the
+existing architecture — no new image store, no second billing system.
+
+## 53. What was built (reuse-first)
+- **Migration draft** `supabase/drafts/kalodata_product_images.sql` (+ standalone migration
+  `supabase/drafts/migration/20261111010000_kalodata_product_images.sql`, applies **after** the Phase 9 bundle):
+  - Additive columns on `product_image_assets`: `storage_ref`, `source_url_expires_at`, `cache_state`,
+    `content_hash` + a `cache_state` CHECK and two partial UNIQUE indexes `(product_id, content_hash)` and
+    `(storage_ref)`. Existing rows default to NULL/`EXTERNAL`; hotlinked-image display is byte-for-byte unchanged.
+  - `fn_kalodata_images_request(market, kalodata_product_id)` — market-gated; documented body is only `{product_id}`.
+  - `fn_persist_kalodata_research_image(...)` — reuses the **exact** `fn_persist_reference_image` rights model
+    (`rights_state='PROVIDER_DISCOVERY_REFERENCE'`, provenance `authority='REFERENCE_ONLY'`, lane `DISCOVERY`,
+    is_primary = NOT exists-primary), adds the durable-cache columns, enforces ownership, and **requires** a
+    durable cached copy + content hash (never registers a row whose only reference is an expiring source URL).
+  - `fn_kalodata_research_image_exists(...)`, `fn_kalodata_product_images_cached(...)` (tenant-authorised gallery),
+    `fn_kalodata_run_product_images(...)` (cache reuse → reserve → authorize → fire), `fn_kalodata_op_reserve`
+    widened to accept `PRODUCT_IMAGES`, and `fn_kalodata_product_images_selftest()`.
+- **Edge** `supabase/functions/kalodata-product-images/index.ts` — mirrors `kalodata-video-detail`
+  (secret-key auth, service-role/nonce gate, market gate, settle/refund via `fn_kalodata_op_complete_from_edge`)
+  and `product-image-import` (private-bucket upload + durable signed URL). It downloads each signed URL
+  server-side before expiry, sha256-hashes, dedups (in-batch + DB), uploads bytes to the **private**
+  `pulse-research-reference` bucket (service role never leaves the edge), mints a durable signed URL, and
+  registers each image as REFERENCE_ONLY research media.
+
+## 54. Requirements → how each is satisfied
+1. **Reuse `product_image_assets` + `fn_persist_reference_image`** — same table; persister reuses the identical
+   rights/provenance/primary logic (additive cache columns only).
+2. **Multi-image retrieval** — `fn_kalodata_images_request` + the edge iterate the documented `images[]` array.
+3. **Cache before expiry** — the edge fetches + stores bytes server-side immediately; a durable signed URL
+   becomes the display source, so the ~5-minute provider expiry no longer matters.
+4. **Private storage + tenant-authorised delivery; never expose service-role** — private bucket; service role
+   used only inside the edge; the durable URL is only ever returned to the owner via the existing
+   `fn_product_media_state` / `fn_resolve_product_image` (auth.uid()+ownership) gates.
+5. **Preserve product identity, attribution, PROVIDER_DISCOVERY_REFERENCE** — `source_entity_id` = Kalodata
+   product id; `source_url` = original provider URL; `source_provider='KALODATA'`; rights unchanged.
+6. **Never ad/storefront/commercial-creative eligible** — verified: `fn_product_commercial_rights`
+   publishable/ai-reference gates still exclude the class; `fn_product_commercial_asset_readiness` gates on raw
+   `rights_state` (research images → terminal UNKNOWN/NONE branch).
+7. **Dedup + reuse cached to minimise credits** — content-hash dedup (signed URLs rotate per call, so URL is
+   not a stable key); `fn_kalodata_run_product_images` short-circuits to `cache_reuse` **before** any reserve,
+   so a product already cached consumes **no** Kalodata credit.
+8. **Fail safe** — failed downloads / expired URLs / partial galleries: whatever cached is kept; nothing
+   half-cached is registered; provider HTTP failure → refund; a successful API response (metadata + URLs) is a
+   legitimate settle even if some downloads fail.
+9. **Written research-display permission** — the cached copies are REFERENCE_ONLY, shown only to the owning
+   tenant. **Remaining blocker:** obtain Kalodata's written research-display permission on file before go-live.
+10. **Rights classifier** — `fn_asset_rights_class` now maps `PROVIDER_DISCOVERY_REFERENCE` + providers
+    `KALODATA`/`FASTMOSS` to `RESEARCH_REFERENCE_ONLY`, **after proving fail-closed**: the only rights gates
+    (`publishable_present`, `ai_reference_present`) exclude both research and unknown classes; no gate branches
+    on the `research_only_count`/`unknown_count` counters; `fn_product_commercial_asset_readiness` reads raw
+    `rights_state`, not the derived class. Confirmed a genuinely owned/supplier-authorised asset still yields
+    `publishable_present=true` while a co-located Kalodata image stays in `research_only_count` (non-publishable).
+
+## 55. Credits — reused, not re-architected
+`fn_kalodata_run_product_images` uses the existing `fn_kalodata_op_reserve` (now accepts `PRODUCT_IMAGES`) →
+`fn_discovery_refresh_authorize` → `fn_kalodata_op_fire`; the edge settles/refunds via
+`fn_kalodata_op_complete_from_edge`. Same `discovery_credit_ledger` + `provider_call_budget` fail-closed gate —
+no approved budget → no paid call. No new ledger or billing path.
+
+## 56. Test results (ephemeral Postgres against real production function defs; edge type-checked)
+- `fn_kalodata_product_images_selftest()` → **8/8 all_pass**: contract, caching (durable persist), dedup
+  (content hash), tenant isolation, expiry (durable copy survives an expired source URL), rights-class
+  fail-closed, Product Asset Lock (research-only product is non-publishable + non-AI), credit-reuse short-circuit.
+- `fn_kalodata_caller_lifecycle_selftest()` → **12/12** (regression — widening `op_reserve` broke nothing).
+- Publishable-path probe: owned + supplier-authorised images → `publishable_present=true`,
+  `ai_reference_present=true`, with a co-located Kalodata image counted only in `research_only_count`
+  (`unknown_count=0`) — fail-closed preserved, honest classification.
+- The standalone migration file (`BEGIN…COMMIT`) applies as a transaction on top of the Phase 9 wiring; selftest
+  8/8 after apply. Edge `tsc --strict` clean (Deno ambient shim).
+
+## 57. Remaining deployment blockers (unchanged posture: no deploy / no paid call without approval)
+1. **Approval to deploy** the images migration + edge via the canonical Supabase pipeline, and to create the
+   private `pulse-research-reference` bucket.
+2. **Approved chargeable budget** (`provider_call_budget` for `KALODATA`) + confirmation of the per-call credit
+   cost for `product/images` from the authenticated Open Center account page.
+3. **Kalodata's written research-display permission** on file (requirement 9) before any cached image is shown.
+No production records, functions, edges, or storage were modified in this phase; no chargeable Kalodata call was made.
