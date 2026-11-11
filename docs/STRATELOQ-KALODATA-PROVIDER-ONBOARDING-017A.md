@@ -747,3 +747,52 @@ unexecuted) + `supabase/drafts/migration/DEPLOYMENT_MANIFEST.md`.
 live coverage, live response shapes); detail/video **pricing** decision; **chargeable budget + production
 deploy approval**; **video media rights**. Deployment runs through the canonical Supabase CLI/MCP pipeline,
 never this repo.
+
+---
+
+# Phase 11 — Staging-readiness verification
+
+**Verdict: STAGING-READY (internal integration) — gated on external approvals + the absence of a
+schema-complete staging project.** No production change, no deploy, no chargeable call.
+
+1. **Reconcile handles the new operations.** `fn_discovery_refresh_reconcile(ttl)` (read from prod) is
+   **operation-agnostic**: it refunds **any** `RESERVED/EXECUTING` request older than the TTL purely by
+   `status`+`updated_at` (`FOR UPDATE SKIP LOCKED`), reads tenant from the row (cron-safe), sets `REFUNDED`
+   (`CANCELLED_PRE_CHARGE` / `UNRESOLVED_POST_DISPATCH`), and **never re-dispatches**. So abandoned
+   PRODUCT_DETAIL / VIDEO_RANK / VIDEO_DETAIL `EXECUTING` rows (interrupted provider calls) are refunded
+   exactly like discovery. Proven by e2e cases D + E (abandoned→refunded; a late completion is idempotent,
+   exactly one REFUND).
+2. **No incorrect refunds / duplicate calls / inconsistent usage.** `is_refund` maps outcomes; reserve is
+   idempotent by `(tenant, idempotency_key)` (function check + unique index); authorize consumes the provider
+   unit atomically (`FOR UPDATE`) only from `RESERVED`; completion + reconcile are both idempotent on terminal
+   status; reconcile never calls the provider. Tested: double_settle / double_refund = exactly one entry;
+   provider fail-closed at reserve and the authorize race; failure→refund.
+3. **Migration applies safely vs the actual (production) schema — no overwrite.** Read-only checks confirm
+   **0 function-name collisions, `kalodata_video_research` absent, `operation` column absent**, no triggers on
+   `discovery_refresh_request`, status CHECK compatible. The migration is purely additive (`CREATE OR REPLACE`
+   only on **new** names, `ALTER … ADD COLUMN IF NOT EXISTS`, `CREATE TABLE IF NOT EXISTS`) and applies in one
+   `BEGIN…COMMIT`.
+4. **Staging environment.** The only staging project (`strateloq-billing-staging`) carries **4 public tables
+   and none** of the discovery/credit/kalodata dependencies — it cannot host this migration. Rather than
+   create new infrastructure, verification used an ephemeral Postgres loaded with the **real production
+   function definitions** + real schema shapes. **Genuine limit:** no schema-complete staging exists, so a
+   true staging apply isn't possible here; first real application is production via the canonical pipeline
+   (needs deploy approval).
+5. **Native Deno validation.** Deno install is blocked by the environment proxy (`deno.land` 403); Node is
+   available, so the three edges were type-checked with `tsc --strict --lib ESNext,DOM` + a Deno ambient shim
+   (edges have no remote imports) — **3/3 clean**. Native `deno check`/`deno lint` is **not available** here.
+6. **Full lifecycle with mocked provider responses.** `fn_kalodata_e2e_mock_lifecycle_selftest` **5/5**:
+   VIDEO_RANK success (reserve→authorize→ingest mock videos→settle, row stored research-only, ledger net −1),
+   PRODUCT_DETAIL success (persist mock detail→settle), VIDEO_DETAIL provider-failure→refund (nothing
+   persisted), abandoned EXECUTING→reconcile refund, late-completion idempotent.
+7. **Video URL / playback / storage disabled.** No edge references `video/url`; the builder returns
+   `VIDEO_RIGHTS_UNCONFIRMED`/`invocation_blocked`; `kalodata_video_research` has no url/playback/media column.
+
+**Test evidence (from the applied bundle):** product_detail **8/8** · video **10/10** · caller lifecycle
+**12/12** · e2e mock lifecycle **5/5** = **35 checks**; edge type-check **3/3**.
+
+**Genuine blockers (none self-resolvable):**
+- No schema-complete staging project (a true staging apply needs one, or production-deploy approval).
+- Native Deno runtime unavailable in this environment (tsc strict used instead).
+- External: live-doc confirmation (`need_extra`, per-call credit cost, live coverage/response shapes);
+  detail/video **pricing**; **chargeable budget**; **production-deploy approval**; **video media rights**.

@@ -8,7 +8,7 @@
 -- Pre-existing in prod (do NOT recreate): fn_persist_kalodata_product_detail,
 -- fn_discovery_refresh_* , fn_provider_budget_try_consume, kalodata_invoke_nonce,
 -- discovery_provider_market_config, discovery_credit_ledger, provider_call_budget.
--- Generated 2026-11-11T13:45:31Z from supabase/drafts/*.sql; diff before apply.
+-- Generated 2026-11-11T13:54:35Z from supabase/drafts/*.sql; diff before apply.
 -- ============================================================================
 BEGIN;
 
@@ -719,5 +719,102 @@ EXCEPTION WHEN OTHERS THEN
 END; $function$;
 REVOKE ALL ON FUNCTION public.fn_kalodata_caller_lifecycle_selftest() FROM public, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_kalodata_caller_lifecycle_selftest() TO service_role;
+
+-- End-to-end lifecycle with MOCKED provider responses + reconcile (requires the full bundle:
+-- video intelligence + the product-detail persister). Proves reserve -> authorize -> ingest/persist
+-- (mock provider payload) -> settle/refund, and the operation-agnostic reconcile of abandoned EXECUTING.
+CREATE OR REPLACE FUNCTION public.fn_kalodata_e2e_mock_lifecycle_selftest()
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path TO '' AS $function$
+DECLARE
+  v jsonb := '[]'::jsonb;
+  v_a uuid := 'ca11e2e0-0000-4000-8000-00000000000e';
+  v_p uuid := 'ca11e2e0-0000-4000-8000-0000000000aa';
+  r jsonb; req uuid; req2 uuid; req3 uuid; ing jsonb; pr jsonb; done jsonb; bal0 numeric;
+  mock_videos jsonb := jsonb_build_array(jsonb_build_object('video_id','ev1','video_title','E2E',
+    'belonged_creator_id','c','belonged_creator_handle','@c','revenue',10,'views',99));
+  mock_detail jsonb := jsonb_build_object('product_id','kdp1','master_image_url','https://cdn/x.jpg',
+    'product_description',jsonb_build_array('d'),'pri_cate_id','1');
+BEGIN
+  DELETE FROM public.kalodata_video_research WHERE tenant_id=v_a;
+  DELETE FROM public.discovery_credit_ledger WHERE tenant_id=v_a;
+  DELETE FROM public.discovery_refresh_request WHERE tenant_id=v_a;
+  DELETE FROM public.provider_call_budget WHERE user_id=v_a;
+  DELETE FROM public.account_entitlement WHERE auth_user_id=v_a;
+  DELETE FROM public.commerce_products WHERE id=v_p;
+  INSERT INTO public.commerce_products(id,user_id,extended) VALUES (v_p,v_a,jsonb_build_object('kalodata_product_id','kdp1'));
+  INSERT INTO public.account_entitlement(auth_user_id,status,current_period_end) VALUES (v_a,'ACTIVE',now()+interval '30 days');
+  INSERT INTO public.provider_call_budget(provider,user_id,market,active,consumed_calls,max_calls,created_at) VALUES ('KALODATA',v_a,'US',true,0,10,now());
+  INSERT INTO public.discovery_credit_ledger(tenant_id,entry_type,credits,reason) VALUES (v_a,'GRANT',10,'e2e grant');
+  PERFORM set_config('test.uid', v_a::text, true);
+  bal0 := public.fn_discovery_credit_balance();
+
+  -- A) VIDEO_RANK happy e2e: reserve -> authorize -> ingest mock videos -> settle
+  r := public.fn_kalodata_op_reserve('VIDEO_RANK','US','e2e_v1',1); req := (r->>'request_id')::uuid;
+  PERFORM public.fn_discovery_refresh_authorize(req);
+  ing := public.fn_kalodata_ingest_video_rank(v_a, v_p, 'kdp1', 'US', mock_videos);
+  done := public.fn_kalodata_op_complete_from_edge(req,'SUCCESS');
+  v := v || jsonb_build_object('case','e2e_video_rank_mock_success','pass',
+        (ing->>'status'='ok' AND (ing->>'inserted')::int=1 AND (done->>'settled')::boolean=true
+         AND (SELECT status FROM public.discovery_refresh_request WHERE id=req)='SETTLED'
+         AND EXISTS(SELECT 1 FROM public.kalodata_video_research WHERE tenant_id=v_a AND kalodata_video_id='ev1'
+                    AND requested_product_id=v_p AND rights_state='RESEARCH_ONLY')
+         AND public.fn_discovery_credit_balance() = bal0 - 1));
+
+  -- B) PRODUCT_DETAIL happy e2e: reserve -> authorize -> persist mock detail -> settle
+  r := public.fn_kalodata_op_reserve('PRODUCT_DETAIL','US','e2e_d1',1); req2 := (r->>'request_id')::uuid;
+  PERFORM public.fn_discovery_refresh_authorize(req2);
+  pr := public.fn_persist_kalodata_product_detail(v_a, v_p, 'US', mock_detail);
+  done := public.fn_kalodata_op_complete_from_edge(req2,'SUCCESS');
+  v := v || jsonb_build_object('case','e2e_product_detail_mock_success','pass',
+        ((pr->>'ok')::boolean=true AND (done->>'settled')::boolean=true
+         AND (SELECT status FROM public.discovery_refresh_request WHERE id=req2)='SETTLED'));
+
+  -- C) VIDEO_DETAIL provider-failure e2e: reserve -> authorize -> provider fails -> refund, nothing persisted
+  r := public.fn_kalodata_op_reserve('VIDEO_DETAIL','US','e2e_f1',1); req3 := (r->>'request_id')::uuid;
+  PERFORM public.fn_discovery_refresh_authorize(req3);
+  done := public.fn_kalodata_op_complete_from_edge(req3,'PROVIDER_FAILED_POST_CHARGE');
+  v := v || jsonb_build_object('case','e2e_video_detail_mock_failure_refund','pass',
+        ((done->>'refunded')::boolean=true
+         AND (SELECT status FROM public.discovery_refresh_request WHERE id=req3)='REFUNDED'
+         AND NOT EXISTS(SELECT 1 FROM public.kalodata_video_research WHERE tenant_id=v_a AND source_endpoint='tiktok/video/detail')));
+
+  -- D) abandoned EXECUTING (interrupted provider call) reconciles to REFUNDED, operation-agnostic
+  r := public.fn_kalodata_op_reserve('VIDEO_RANK','US','e2e_abandon',1); req := (r->>'request_id')::uuid;
+  PERFORM public.fn_discovery_refresh_authorize(req);   -- EXECUTING; completion never arrives
+  UPDATE public.discovery_refresh_request SET updated_at = now() - interval '31 minutes' WHERE id=req;
+  PERFORM public.fn_discovery_refresh_reconcile(30);
+  v := v || jsonb_build_object('case','e2e_abandoned_executing_reconciled_refund','pass',
+        ((SELECT status FROM public.discovery_refresh_request WHERE id=req)='REFUNDED'
+         AND (SELECT provider_outcome FROM public.discovery_refresh_request WHERE id=req)='UNRESOLVED_POST_DISPATCH'));
+  -- E) a late completion after reconcile is idempotent (no double refund)
+  done := public.fn_kalodata_op_complete_from_edge(req,'SUCCESS');
+  v := v || jsonb_build_object('case','e2e_late_completion_after_reconcile_idempotent','pass',
+        ((done->>'idempotent_replay')::boolean=true
+         AND (SELECT count(*) FROM public.discovery_credit_ledger WHERE refresh_request_id=req AND entry_type='REFUND')=1));
+
+  DELETE FROM public.kalodata_video_research WHERE tenant_id=v_a;
+  DELETE FROM public.discovery_credit_ledger WHERE tenant_id=v_a;
+  DELETE FROM public.discovery_refresh_request WHERE tenant_id=v_a;
+  DELETE FROM public.provider_call_budget WHERE user_id=v_a;
+  DELETE FROM public.account_entitlement WHERE auth_user_id=v_a;
+  DELETE FROM public.commerce_products WHERE id=v_p;
+  RETURN jsonb_build_object('suite','kalodata_e2e_mock_lifecycle',
+    'total', jsonb_array_length(v),
+    'passed', (SELECT count(*) FROM jsonb_array_elements(v) x WHERE (x->>'pass')::boolean),
+    'failed', (SELECT count(*) FROM jsonb_array_elements(v) x WHERE NOT (x->>'pass')::boolean),
+    'all_pass', NOT EXISTS (SELECT 1 FROM jsonb_array_elements(v) x WHERE NOT (x->>'pass')::boolean),
+    'note','full lifecycle with mocked provider responses + reconcile; requires the full bundle.',
+    'results', v);
+EXCEPTION WHEN OTHERS THEN
+  DELETE FROM public.kalodata_video_research WHERE tenant_id=v_a;
+  DELETE FROM public.discovery_credit_ledger WHERE tenant_id=v_a;
+  DELETE FROM public.discovery_refresh_request WHERE tenant_id=v_a;
+  DELETE FROM public.provider_call_budget WHERE user_id=v_a;
+  DELETE FROM public.account_entitlement WHERE auth_user_id=v_a;
+  DELETE FROM public.commerce_products WHERE id=v_p;
+  RETURN jsonb_build_object('suite','kalodata_e2e_mock_lifecycle','status','error','error',SQLERRM);
+END; $function$;
+REVOKE ALL ON FUNCTION public.fn_kalodata_e2e_mock_lifecycle_selftest() FROM public, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_kalodata_e2e_mock_lifecycle_selftest() TO service_role;
 
 COMMIT;
