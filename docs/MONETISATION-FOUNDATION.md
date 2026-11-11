@@ -193,8 +193,15 @@ echoed. stripe-wallet-topup's params were probed UNCHANGED-OK (200 + URL; v4 add
 secret-free Stripe-error logging, now in both edges: type/code/param/message, no keys,
 no card data). Post-deploy regression: webhook unsigned/fake-sig 400, anon edges 401.
 Two orphaned test-mode Stripe customers from the failed attempts remain in the sandbox
-(harmless; no card, no charge). Lovable asked to harden the billing UI so any non-200
-shows a calm toast instead of a runtime overlay (preview-only).
+(harmless; no card, no charge). Lovable hardening landed as preview commit 0e7f784
+(653 tests pass incl. 8 new failure-path tests; typecheck+lint clean): any failed
+card-setup/top-up reply, network drop or odd URL -> calm toast; redirect ONLY on
+HTTP 200 + status ok + https://checkout.stripe.com/ URL; 403 PRICE_POINT_NOT_ACTIVE
+now reads as the calm "not available yet" notice (correct while prices are inactive);
+one status-only console.warn. Lovable could not reproduce an app crash even pre-fix:
+the founder's "runtime error" overlay was most likely the PREVIEW's own instrumentation
+flagging the failed 502 network call (member-facing code already toasted); with the 502
+gone and the UI hardened, both layers are covered.
 
 ## Remaining journeys (need the founder's signed-in device; everything else ready)
 - Card registration: preview app -> Workspace -> Billing & Credits -> Add payment card
