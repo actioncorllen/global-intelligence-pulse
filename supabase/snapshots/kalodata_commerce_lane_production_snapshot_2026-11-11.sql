@@ -464,6 +464,61 @@ BEGIN
     'total',jsonb_array_length(v),'failed',n_fail,'all_pass',(n_fail=0),'results',v);
 END; $function$;
 
+-- Product DETAIL persister (verbatim). NOTE (2026-11-11): this persister exists in
+-- production but has NO database caller — the product/detail FETCH path (which would
+-- call it with the detail response) is not in any DB function or deployed edge function
+-- and is either in n8n or not yet wired. It does, however, pin the VERIFIED product/detail
+-- RESPONSE schema: product_id, master_image_url, product_description (array|string),
+-- attributes[], variants[], pri_cate_id/sec_cate_id/ter_cate_id. Detail is persisted
+-- REFERENCE_ONLY into commerce_products.extended->kalodata_detail; cover via
+-- fn_persist_reference_image; tenant-isolated (owner check). Endpoint:
+-- https://www.kalodata.com/openapi/v1/tiktok/product/detail
+CREATE OR REPLACE FUNCTION public.fn_persist_kalodata_product_detail(p_tenant uuid, p_product uuid, p_market text, p_detail jsonb)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+DECLARE
+  v_mkt text := upper(btrim(coalesce(p_market,'')));
+  v_kid text := nullif(btrim(coalesce(p_detail->>'product_id','')),'');
+  v_img text := nullif(btrim(coalesce(p_detail->>'master_image_url','')),'');
+  v_desc_present boolean := false;
+  v_owns boolean;
+BEGIN
+  IF p_tenant IS NULL OR p_product IS NULL OR p_detail IS NULL OR jsonb_typeof(p_detail) <> 'object' THEN
+    RETURN jsonb_build_object('ok',false,'reason','missing_args');
+  END IF;
+  SELECT EXISTS(SELECT 1 FROM public.commerce_products WHERE id=p_product AND user_id=p_tenant) INTO v_owns;
+  IF NOT v_owns THEN RETURN jsonb_build_object('ok',false,'reason','not_owned'); END IF;
+  v_desc_present := CASE
+    WHEN jsonb_typeof(p_detail->'product_description')='array' THEN jsonb_array_length(p_detail->'product_description') > 0
+    WHEN jsonb_typeof(p_detail->'product_description')='string' THEN length(btrim(p_detail->>'product_description')) > 0
+    ELSE false END;
+  UPDATE public.commerce_products
+     SET extended = coalesce(extended,'{}'::jsonb) || jsonb_build_object(
+           'kalodata_detail', p_detail || jsonb_build_object(
+             'provenance', jsonb_build_object(
+               'provider','KALODATA','authority','PLATFORM_REPORTED_ANALYTICS_DETAIL',
+               'kalodata_product_id', coalesce(v_kid, extended->>'kalodata_product_id'),
+               'market', v_mkt, 'retrieved_at', now(),
+               'endpoint','https://www.kalodata.com/openapi/v1/tiktok/product/detail',
+               'note','analytics/commerce detail; not a product-catalog description; REFERENCE_ONLY'))),
+         updated_at = now()
+   WHERE id=p_product AND user_id=p_tenant;
+  IF v_img IS NOT NULL AND v_img ~* '^https?://' AND v_img NOT ILIKE '%/default/%' THEN
+    PERFORM public.fn_persist_reference_image(p_tenant, p_product, v_mkt, 'KALODATA', v_kid, v_img);
+  END IF;
+  RETURN jsonb_build_object(
+    'ok', true, 'product_id', p_product, 'market', v_mkt, 'kalodata_product_id', v_kid,
+    'description_present', v_desc_present,
+    'image_present', (v_img IS NOT NULL AND v_img ~* '^https?://' AND v_img NOT ILIKE '%/default/%'),
+    'attributes_present', (p_detail ? 'attributes' AND jsonb_typeof(p_detail->'attributes')='array' AND jsonb_array_length(p_detail->'attributes')>0),
+    'variants_present', (p_detail ? 'variants' AND jsonb_typeof(p_detail->'variants')='array' AND jsonb_array_length(p_detail->'variants')>0),
+    'category_ids', jsonb_build_object('l1', p_detail->>'pri_cate_id','l2', p_detail->>'sec_cate_id','l3', p_detail->>'ter_cate_id'),
+    'authority','REFERENCE_ONLY', 'contract','pulse_kalodata_product_detail_persist_v1');
+END $function$;
+
 -- ---------------------------------------------------------------------------
 -- GRANTS (as deployed, 2026-11-11)
 -- ---------------------------------------------------------------------------
@@ -476,4 +531,5 @@ GRANT EXECUTE ON FUNCTION public.fn_kalodata_consume_invoke_nonce(text)         
 GRANT EXECUTE ON FUNCTION public.fn_kalodata_record_lane_outcome(uuid,text,text,jsonb)  TO authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.fn_kalodata_record_usage(uuid,jsonb,text)              TO authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.fn_kalodata_commerce_adapter_selftest()                TO service_role;
+GRANT EXECUTE ON FUNCTION public.fn_persist_kalodata_product_detail(uuid,uuid,text,jsonb) TO service_role;  -- exact grants: verify vs production
 -- END SNAPSHOT

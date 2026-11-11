@@ -410,3 +410,76 @@ real lane is in the repo.
   question). The account's recorded Product Detail usage still needs its path identified.
 - **Broader repo drift:** many non-Kalodata production functions/migrations are also missing from this
   repo; a full reconciliation is a larger, separate effort.
+
+---
+
+# Phase 6 — Reconciliation executed + drift report + capability assessment
+
+## 26. Redundant migrations reverted (done)
+Dependency check first: `grep` confirmed **no** other repo file references the objects created by
+mig_292/293/294 (only the snapshot's own reconciliation comment + the doc). Then reverted:
+- `supabase/migrations/mig_292_kalodata_research_image_provider.sql` — removed (duplicated
+  `fn_persist_reference_image` REFERENCE_ONLY path).
+- `supabase/migrations/mig_293_kalodata_provider_registry.sql` — removed (duplicated
+  `discovery_provider_market_config`).
+- `supabase/migrations/mig_294_kalodata_cost_controls_and_video.sql` — removed (duplicated upstream
+  credit/usage accounting; `fn_kalodata_record_usage` name-collision).
+
+Kept (source of truth): `supabase/functions/kalodata-discovery/index.ts`, the reference snapshot, and this
+doc. Removing mig_292 restores `fn_ecommerce_workspace_intelligence` to its mig_273 definition (no
+research-image fields). **No production object was touched; nothing was deployed.**
+
+## 27. Authoritative deployed migration history + drift (read from production)
+`supabase_migrations.schema_migrations` on `nxaunmyihhjixxxljcqt`:
+- **507 applied migrations**, earliest `20260628233418`, latest `20261110221932`
+  (`mig_355b_webhook_reclaim`).
+- Production uses **timestamp-versioned** migrations (Supabase CLI style:
+  `20261110221932_mig_355b_webhook_reclaim`), with recent work on monetisation/PSP webhooks, onboarding
+  gates, and Stage-B discovery refresh credit/allowance.
+
+This local repo has ~95 `mig_NNN_*.sql` files (max `mig_294`, which was mine) using a **different,
+non-timestamped** naming scheme. **Conclusion: `global-intelligence-pulse` is NOT the deployment source
+for this Supabase project.** The authoritative source is a separate repo/process that applies the
+507 timestamp-versioned migrations (standard `supabase db push`/CI). 
+- **Action required (owner):** identify the canonical Supabase migrations repo / deployment pipeline.
+- **Do NOT** replay this repo's `mig_*` files against production, and **do NOT** treat the snapshot as a
+  deployable migration — both would diverge from / clobber the real 507-migration history.
+- Safe continuation needs only the Kalodata lane, which is now captured here for reference.
+
+## 28. Product Detail — already integrated (partially)
+`fn_persist_kalodata_product_detail(p_tenant, p_product, p_market, p_detail)` exists in production
+(now in the snapshot). It is tenant-isolated (owner check), persists detail REFERENCE_ONLY into
+`commerce_products.extended->kalodata_detail`, reuses `fn_persist_reference_image` for the cover, and
+pins the **verified product/detail response schema**: `product_id`, `master_image_url`,
+`product_description` (array|string), `attributes[]`, `variants[]`, `pri_cate_id`/`sec_cate_id`/
+`ter_cate_id`. Endpoint `.../tiktok/product/detail` (verified).
+
+**Gap:** the persister has **no DB caller** and there is no deployed `kalodata-*-detail` edge function —
+the product/detail **fetch/call path** is either in n8n or not yet wired, and the detail **request**
+parameter schema (how a `product_id` is passed to `product/detail`) is **not verified** from any artifact
+available here. So Product Detail is *persist-ready* but not *fetch-wired*.
+
+## 29. Video — not integrated; genuinely blocked
+No DB function references `video/rank` or `video/detail`; Kalodata's Video module is not wired. There are
+**no verified video endpoint specifications** available here, and the **video media rights are unresolved**
+(see Phase 3). Per the no-fabrication rule, video ranking / video detail / preview-playback were **not**
+implemented. (Product-level video *revenue* is already captured from `product/rank`:
+`live_revenue`/`video_revenue`/`showcase_revenue` via `fn_kalodata_ingest_candidates`.)
+
+## 30. Extension plan (reuse the existing lane; build only when unblocked, no deploy here)
+- **Product Detail enrichment:** add a `kalodata-product-detail` edge function + an RPC pair modelled on
+  `kalodata-discovery` → `fn_persist_kalodata_product_detail` (nonce/trusted-server gate, `secret-key`
+  header, `discovery_provider_market_config` market gate, upstream budget authorize/record, REFERENCE_ONLY
+  image, tenant isolation). **Blocked on:** the verified product/detail **request** param schema + the
+  owner's go-ahead to deploy + a chargeable-call approval.
+- **Video intelligence:** net-new against the lane patterns. **Blocked on:** verified Kalodata **video**
+  endpoint specs AND confirmed video media rights (preview/playback only where rights are confirmed).
+
+## 31. Files changed, tests, blockers (this phase)
+- **Removed:** `supabase/migrations/mig_292*.sql`, `mig_293*.sql`, `mig_294*.sql`.
+- **Updated:** snapshot (added `fn_persist_kalodata_product_detail`), this doc.
+- **Tests:** snapshot re-validated in ephemeral Postgres (loads clean). No Kalodata API call; no deploy;
+  no production write.
+- **Genuine external blockers:** (1) canonical migrations repo / deploy pipeline must be identified by the
+  owner; (2) verified product/detail **request** schema to wire the fetch; (3) verified **video** endpoint
+  specs + confirmed video media rights; (4) chargeable-call + deploy approval before any live run.
