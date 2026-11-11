@@ -1,44 +1,32 @@
-Strateloq DR Launcher - Syntax Validation Evidence
-Generated: 2026-11-11T22:14:38Z
-Validated file: scripts/windows/Invoke-StrateloqDR.ps1 (v2.0.0)
-Parser: System.Management.Automation.Language.Parser (PowerShell 7.7.0)
-Note: this parser is the same language engine used by Windows PowerShell 5.1;
-      an additional AST/token scan below proves no PowerShell-7-only syntax is used,
-      so the script is valid for Windows PowerShell 5.1.
+Strateloq DR Repair - Validation Evidence (v3)
+Generated: 2026-11-11T22:29:52Z
+Files: scripts/windows/Invoke-StrateloqDR.ps1 (v3.0.0), scripts/dr/strateloq-dr-repair.sh,
+       dr/runbook/WEEKLY-BACKUP-REPAIR.md
+Parser: System.Management.Automation.Language.Parser (PowerShell 7.7.0) - same language engine as Windows PowerShell 5.1
 ========================================================================
 
-## 1. Reproduction of the two reported 5.1 errors (root-cause confirmation)
----- 1a. 'Missing property name after reference operator' ----
-PARSE_ERROR: line 1 col 19  [MissingPropertyName]  Missing property name after reference operator.
-   root cause: a '.'/'::' reference operator with no property name after it
-               (building WSL paths via interpolated member access / a trailing dot).
----- 1b. 'The string is missing the terminator' ----
-PARSE_ERROR: line 1 col 6  [TerminatorExpectedAtEndOfString]  The string is missing the terminator: ".
-   root cause: an unbalanced/escaped quote (a trailing backtick before the closing
-               quote, an apostrophe inside a single-quoted string, or an unclosed quote).
+## 1. Windows PowerShell 5.1 - full-file parse (launcher)
+RESULT: PASS (0 parse errors) tokens=1042
 
-## 2. Full-file parse of the CORRECTED launcher
-RESULT: PASS (0 parse errors) tokens=1700
-
-## 3. Windows PowerShell 5.1 compatibility scan (no PS7-only syntax)
-ternary/&&/|| AST nodes : 0
-PS7-only operator tokens : 0   (??  ?.  ?[]  &&  ||  ?:)
-PS7.3+ clean{} blocks    : 0
+## 2. Windows PowerShell 5.1 compatibility scan (no PS7-only syntax)
+ternary/&&/|| : 0   PS7-only operator tokens : 0
 COMPAT: PASS - safe for Windows PowerShell 5.1
 
-## 4. Honest-reporting regression (RETRIEVED_OK only when all files present)
-===== CASE A: complete repo (expect RETRIEVED_OK, 0 fail) =====
-  verdict=RETRIEVED_OK  ok=21/21  fail=0
-===== CASE B: one required file missing (expect RETRIEVED_INCOMPLETE) =====
-  verdict=RETRIEVED_INCOMPLETE  ok=19/21  fail=2
-  missing-file note : missing (Ok=False)
-  empty-file  note  : empty (0 bytes) (Ok=False)
-HONEST_REPORTING_TEST: PASS
+## 3. Orchestrator static syntax
+bash -n: PASS
 
-## 5. WSL resolution logic
-   PASS  UTF-16/NUL cleaning of 'wsl -l -q' output -> 'Ubuntu'
-   PASS  explicit -Distro match wins
-   PASS  no preference -> first Ubuntu*
-   PASS  no Ubuntu present -> first distro
-   PASS  empty distro list -> null (caller fails closed)
-WSL_RESOLUTION_TEST: PASS
+## 4. Orchestrator full control-flow (REAL script, external tools mocked, no DB touched)
+  A diagnose           -> DIAGNOSE_OK
+  C repair (no iso)    -> BACKUP_VERIFIED_RESTORE_PREREQUISITE
+  D repair (PROD url)  -> RESTORE_REFUSED_PRODUCTION
+  E repair (iso + ack) -> RESTORE_OK
+  F repair (no secret) -> PREREQUISITE_MISSING
+  B diagnose (no orch) -> DIAGNOSE_BLOCKED
+  Expected: DIAGNOSE_OK / BACKUP_VERIFIED_RESTORE_PREREQUISITE / RESTORE_REFUSED_PRODUCTION / RESTORE_OK / PREREQUISITE_MISSING / DIAGNOSE_BLOCKED
+
+## 5. Launcher verdict relay cannot over-claim (Get-Verdict unit test)
+no VERDICT line -> null (relay falls to default, never prints RESTORE-READY): []
+RESTORE_OK only when present: [RESTORE_OK]
+
+## 6. Bootstrap one-liner (Windows PowerShell) parse
+RESULT: PASS (0 parse errors) tokens=48

@@ -1,83 +1,81 @@
-# Strateloq DR Launcher (Windows)
+# Strateloq DR — Weekly-Backup Repair (Windows)
 
-`Invoke-StrateloqDR.ps1` — a **diagnostics-first, read-only-by-default** launcher that
-resolves the Strateloq / Global-Intelligence-Pulse checkout inside **Ubuntu WSL**, verifies
-that every required Disaster-Recovery artifact is present/non-empty/readable, and (only after
-explicit approval) copies the verified artifacts into a local Windows staging folder.
+Repairs a failed `Strateloq-DR-Weekly-Backup`, takes a **fresh encrypted backup**, and
+**verifies it is restorable** — targeting the established environment:
 
-- **Target shell:** Windows PowerShell **5.1** (also runs on PowerShell 7+).
-- **Validated with a real parser:** `System.Management.Automation.Language.Parser`
-  (0 parse errors) plus an AST/token scan proving no PowerShell-7-only syntax is used.
-  See [`SYNTAX-VALIDATION.txt`](./SYNTAX-VALIDATION.txt).
+| | |
+|---|---|
+| WSL distro | `Ubuntu` |
+| WSL user | `strateloqbackup` |
+| Repository | `/home/strateloqbackup/strateloq-dr-validate` |
+| Scheduled task | `Strateloq-DR-Weekly-Backup` (inspected read-only, never changed) |
+| Drive remote | `strateloqdrive:` (destination preserved, never reconfigured) |
 
-## What it will NOT do (hard safety boundary, enforced by construction)
+Two pieces:
 
-The script contains **no code paths** for any of these:
+- `scripts/windows/Invoke-StrateloqDR.ps1` — thin **Windows PowerShell 5.1** entry point (parser-validated).
+- `scripts/dr/strateloq-dr-repair.sh` — the WSL-side orchestrator that does the real work.
+- `dr/runbook/WEEKLY-BACKUP-REPAIR.md` — the repair procedure it follows.
 
-- ❌ connect to / read / modify **any database** (production or recovery)
-- ❌ delete **any** file, backup, or artifact
-- ❌ read, write, print, or change **any credential / token / key / secret**
-- ❌ deploy anything (**Kalodata** or otherwise) or trigger any remote action
+## What it does / does not do
 
-It only (a) **reads** DR artifacts from the WSL checkout and (b), after approval, **copies**
-them into a fresh **local** folder. It never writes back into the source and refuses a WSL
-staging destination.
+**Diagnostics-first, read-only** until you approve. The repair then: applies only safe,
+reversible fixes → runs the **established** operational backup script
+`scripts/dr/dr_db_logical_backup.sh` (`pg_dump -Fc` of production, read-only → `gpg`
+encrypt → shred plaintext) → uploads to the existing `strateloqdrive:Strateloq-DR/backups`
+→ decrypts to a `0600` temp file and proves the archive is a valid restorable dump.
 
-## Retrieve + run (one Windows PowerShell command)
+It **never**: runs git checkout / branch switch / overwrites local work; modifies the
+production database (reads only); restores over production (fail-closed isolated-DB guard);
+deletes a backup; prints a secret; changes the scheduled task, credentials, or Drive
+destination; deploys Kalodata; or makes a paid API call.
 
-Run this in **Windows PowerShell** (not inside WSL). It updates the WSL checkout to the fixed
-branch, resolves the Windows path with `wslpath -w`, copies the validated launcher to your
-home folder, and runs it in **diagnostics-only** mode (nothing is changed):
+**RESTORE-READY is only claimed when an isolated `pg_restore` actually succeeds** (verdict
+`RESTORE_OK`). Without an isolated DB URL, the launcher reports the backup as *restorable*
+and names the remaining prerequisite — it does **not** claim restore-ready.
+
+## One command (run in Windows PowerShell, not inside WSL)
+
+Fetches the corrected scripts into `~/strateloq-dr-ops/` **without** checking out or touching
+your working tree (`git clone --no-checkout` into a temp dir + `git show`), then diagnoses,
+asks for approval, performs the repair, takes a fresh encrypted backup, and verifies it:
 
 ```powershell
-$w = (wsl -e bash -lc 'd="$HOME/global-intelligence-pulse"; [ -d "$d" ] || d=$(find "$HOME" -maxdepth 5 -type d -name global-intelligence-pulse 2>/dev/null | head -1); cd "$d" && git fetch -q origin claude/sleepy-bell-ff4a68 && git checkout -q claude/sleepy-bell-ff4a68 && git pull -q --ff-only origin claude/sleepy-bell-ff4a68 && wslpath -w scripts/windows/Invoke-StrateloqDR.ps1'); Copy-Item ($w | Select-Object -Last 1).Trim() "$env:USERPROFILE\Invoke-StrateloqDR.ps1" -Force; powershell -NoProfile -ExecutionPolicy Bypass -File "$env:USERPROFILE\Invoke-StrateloqDR.ps1"
+wsl -d Ubuntu -u strateloqbackup -e bash -lc 'set -e; t=$(mktemp -d); git clone -q --no-checkout --depth 1 --branch claude/sleepy-bell-ff4a68 https://github.com/actioncorllen/global-intelligence-pulse "$t"; o="$HOME/strateloq-dr-ops"; mkdir -p "$o"; for f in scripts/windows/Invoke-StrateloqDR.ps1 scripts/dr/strateloq-dr-repair.sh dr/runbook/WEEKLY-BACKUP-REPAIR.md; do git -C "$t" show "claude/sleepy-bell-ff4a68:$f" > "$o/$(basename "$f")"; done; chmod +x "$o/strateloq-dr-repair.sh"; rm -rf "$t"'; $p = (wsl -d Ubuntu -u strateloqbackup -e wslpath -w '/home/strateloqbackup/strateloq-dr-ops/Invoke-StrateloqDR.ps1'); Copy-Item ($p | Select-Object -Last 1).Trim() "$env:USERPROFILE\Invoke-StrateloqDR.ps1" -Force; powershell -NoProfile -ExecutionPolicy Bypass -File "$env:USERPROFILE\Invoke-StrateloqDR.ps1" -Approve
 ```
 
-- If your WSL distro is not the default, add `-d <DistroName>` after `wsl` (e.g. `wsl -d Ubuntu-24.04 -e bash ...`).
-- The command runs **diagnostics only**. It prints `RETRIEVED_OK` (all artifacts verified) or
-  `RETRIEVED_INCOMPLETE` (one or more missing/empty) and changes nothing.
+- To **only diagnose** (no changes, no backup), drop the trailing `-Approve`.
+- To also run a **full restore drill**, add — against an **empty, isolated** DB, never production:
+  `-IsolatedDbUrl "<isolated db url>"` after `-Approve`.
 
 ## Usage reference
 
 ```powershell
-# Diagnostics only (read-only). Auto-detects the Ubuntu WSL distro and repo.
-.\Invoke-StrateloqDR.ps1
-
-# Point at an explicit checkout (skips WSL auto-detect):
-.\Invoke-StrateloqDR.ps1 -RepoRoot "\\wsl.localhost\Ubuntu\home\you\global-intelligence-pulse"
-
-# Approve the retrieval step (prompts you to type APPROVE, then copies to a local staging folder):
-.\Invoke-StrateloqDR.ps1 -Approve
-
-# Unattended retrieval (skips the prompt); choose where to stage:
-.\Invoke-StrateloqDR.ps1 -Approve -Force -StageTo "C:\Users\DELL\Strateloq-DR-Retrieved"
+.\Invoke-StrateloqDR.ps1                       # diagnose only (read-only)
+.\Invoke-StrateloqDR.ps1 -Approve              # repair + fresh encrypted backup + verify (prompts APPROVE)
+.\Invoke-StrateloqDR.ps1 -Approve -Force       # same, unattended
+.\Invoke-StrateloqDR.ps1 -Approve -IsolatedDbUrl "postgresql://.../isolated"   # + isolated restore drill
 ```
 
-### Parameters
+| Parameter | Default | Purpose |
+|---|---|---|
+| `-Distro` | `Ubuntu` | WSL distribution |
+| `-WslUser` | `strateloqbackup` | WSL operator user |
+| `-RepoPath` | `/home/strateloqbackup/strateloq-dr-validate` | established checkout |
+| `-Orchestrator` | `/home/strateloqbackup/strateloq-dr-ops/strateloq-dr-repair.sh` | repair driver |
+| `-TaskName` | `Strateloq-DR-Weekly-Backup` | scheduled task to inspect (read-only) |
+| `-IsolatedDbUrl` | *(none)* | empty isolated DB URL for a full restore drill |
+| `-Approve` / `-Force` | off | opt in to the repair; skip the prompt |
 
-| Parameter    | Purpose |
-|--------------|---------|
-| `-RepoRoot`  | Explicit Windows/UNC path to the checkout. If omitted, auto-discovers inside WSL and resolves with `wslpath -w`. |
-| `-Distro`    | WSL distribution to use (default: auto-detect, prefers `Ubuntu*`). |
-| `-StageTo`   | Local Windows folder for the retrieval copy. Default: `%USERPROFILE%\Strateloq-DR-Retrieved\<timestamp>`. Must be local (a WSL path is refused). |
-| `-Approve`   | Opt in to the retrieval (copy) step. Without it, the launcher only diagnoses. |
-| `-Force`     | With `-Approve`, skip the interactive confirmation. |
+## Verdicts (relayed verbatim from the orchestrator)
 
-### Result codes
+| Verdict | Meaning | Restore-ready? |
+|---|---|---|
+| `DIAGNOSE_OK` / `DIAGNOSE_BLOCKED` | read-only health | — |
+| `PREREQUISITE_MISSING` | operator tool/secret needed before a backup | no |
+| `BACKUP_VERIFIED_RESTORE_PREREQUISITE` | fresh encrypted backup made + proven restorable | **no** — needs isolated DB |
+| `BACKUP_MADE_RESTORE_UNVERIFIED` | backup made; `pg_restore` unavailable to verify | no |
+| `RESTORE_REFUSED_PRODUCTION` / `RESTORE_NOT_ACKNOWLEDGED` | fail-closed restore guards | no |
+| `RESTORE_OK` | isolated restore actually succeeded | **yes** |
 
-| Output | Meaning | Exit |
-|--------|---------|------|
-| `RETRIEVED_OK` | All required artifacts present, non-empty, readable | 0 |
-| `RETRIEVED_INCOMPLETE` | One or more missing/empty/unreadable (no staging done) | 5 |
-| `STAGED_OK` | Artifacts copied + hash-verified into the local folder | 0 |
-| `STAGED_INCOMPLETE` | A copy/hash check failed | 7 |
-| `STAGE_DEST_INVALID` | Staging destination was the repo or a WSL path | 6 |
-| `ENV_UNSUPPORTED` / `WSL_UNAVAILABLE` / `REPO_NOT_FOUND` | Pre-flight failed; nothing changed | 2–4 |
-
-## Required DR artifacts verified
-
-`dr/schema/*` (tables, extensions, functions, functions_user, policies, rls_enable, triggers,
-indexes, constraints_pk_unique, constraints_fk, constraints_check, migrations_manifest),
-`dr/manifests/{storage_manifest.json,BACKUP-ARTIFACT-INDEX.md}`,
-`dr/runbook/{RECOVERY-RUNBOOK.md,DR-INVENTORY.md}`, `dr/n8n/N8N-WORKFLOW-INVENTORY.md`,
-`scripts/dr/{dr_db_logical_backup.sh,dr_storage_backup.sh,dr_git_bundle.sh,dr_n8n_export.sh}`.
+Validation evidence: [`SYNTAX-VALIDATION.txt`](./SYNTAX-VALIDATION.txt).

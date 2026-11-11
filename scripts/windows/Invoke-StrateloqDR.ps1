@@ -1,229 +1,92 @@
 #requires -Version 5.1
 <#
 .SYNOPSIS
-    Strateloq DR retrieval + verification launcher (Windows PowerShell 5.1 compatible).
+    Strateloq DR weekly-backup repair launcher (Windows PowerShell 5.1 compatible).
 
 .DESCRIPTION
-    Resolves the Strateloq / Global-Intelligence-Pulse repository checkout that lives
-    inside an Ubuntu WSL distribution, then verifies that every required Disaster-Recovery
-    artifact is present, non-empty and readable. It is DIAGNOSTICS-FIRST and READ-ONLY by
-    default: a normal run changes nothing on disk and only prints a truthful report.
+    Thin Windows entry point that drives the WSL-side repair orchestrator
+    (scripts/dr/strateloq-dr-repair.sh) against the ESTABLISHED environment:
 
-    The optional retrieval step (copying the verified artifacts to a local Windows staging
-    folder for offline safekeeping) is the ONLY action that writes anything, it writes only
-    into a fresh local folder, and it runs ONLY after explicit approval (-Approve plus an
-    interactive confirmation, or -Approve -Force for automation).
+        WSL distro : Ubuntu
+        WSL user   : strateloqbackup
+        Repository : /home/strateloqbackup/strateloq-dr-validate
+        Task       : Strateloq-DR-Weekly-Backup
+        Drive      : strateloqdrive:
 
-    HARD SAFETY BOUNDARY (enforced by construction - this script contains no code paths for
-    any of the following):
-      * It NEVER connects to, reads from, or modifies any production or recovery database.
-      * It NEVER deletes any file, backup, or artifact.
-      * It NEVER reads, writes, prints, or changes any credential, token, key, or secret.
-      * It NEVER deploys anything (Kalodata or otherwise) and triggers no remote action.
-    It only (a) reads DR artifacts from the WSL checkout and (b), after approval, copies
-    them into a local Windows folder.
+    It is DIAGNOSTICS-FIRST and READ-ONLY by default. The repair (which takes a fresh
+    encrypted backup and verifies restorability) runs ONLY after explicit approval
+    (-Approve plus an interactive confirmation, or -Approve -Force).
 
-.PARAMETER RepoRoot
-    Explicit path to the repository root (a Windows path such as a UNC WSL path
-    '\\wsl.localhost\Ubuntu\home\you\global-intelligence-pulse' or a drive path). If omitted,
-    the launcher auto-discovers the checkout inside WSL and resolves it with 'wslpath -w'.
+    This launcher does NOT run git (no fetch here, no checkout, no branch switch, no
+    overwrite of local work), does NOT change the scheduled task, credentials, or the Drive
+    destination (it only reads their presence), and NEVER claims RESTORE-READY unless the
+    orchestrator actually completed an isolated restore (verdict RESTORE_OK).
 
-.PARAMETER Distro
-    WSL distribution to search (default: auto-detect, preferring a distro whose name starts
-    with 'Ubuntu').
-
-.PARAMETER StageTo
-    Local Windows folder to copy verified artifacts into when -Approve is supplied.
-    Default: "$env:USERPROFILE\Strateloq-DR-Retrieved\<timestamp>". Must be a local Windows
-    path (not the repo itself and not a WSL path).
-
-.PARAMETER Approve
-    Opt in to the retrieval (staging) step. Without it, the launcher only diagnoses/reports.
-
-.PARAMETER Force
-    With -Approve, skip the interactive "type APPROVE" confirmation (for unattended runs).
-
-.EXAMPLE
-    .\Invoke-StrateloqDR.ps1
-    Diagnostics only. Resolves the WSL repo, verifies all DR artifacts, prints RETRIEVED_OK
-    or RETRIEVED_INCOMPLETE. Nothing is written.
-
-.EXAMPLE
-    .\Invoke-StrateloqDR.ps1 -Approve
-    Diagnoses, and only if everything verifies and you type APPROVE, copies the artifacts to
-    a local staging folder.
+.PARAMETER Distro        WSL distribution (default: Ubuntu).
+.PARAMETER WslUser       WSL operator user (default: strateloqbackup).
+.PARAMETER RepoPath      Linux path to the established checkout.
+.PARAMETER Orchestrator  Linux path to strateloq-dr-repair.sh (placed by the bootstrap command).
+.PARAMETER TaskName      Windows scheduled task to inspect read-only.
+.PARAMETER IsolatedDbUrl Empty, isolated DB URL for a full restore drill (never production).
+.PARAMETER Approve       Opt in to the repair (mutating) path.
+.PARAMETER Force         With -Approve, skip the interactive confirmation.
 
 .NOTES
-    Version : 2.0.0  (2026-11-11 rebuild - parser-validated)
-    Target  : Windows PowerShell 5.1 (and PowerShell 7+).
+    Version : 3.0.0  (2026-11-11)  Target: Windows PowerShell 5.1 (also runs on 7+).
 #>
 
 [CmdletBinding()]
 param(
-    [string] $RepoRoot,
-    [string] $Distro,
-    [string] $StageTo,
+    [string] $Distro        = 'Ubuntu',
+    [string] $WslUser       = 'strateloqbackup',
+    [string] $RepoPath      = '/home/strateloqbackup/strateloq-dr-validate',
+    [string] $Orchestrator  = '/home/strateloqbackup/strateloq-dr-ops/strateloq-dr-repair.sh',
+    [string] $TaskName      = 'Strateloq-DR-Weekly-Backup',
+    [string] $IsolatedDbUrl = '',
     [switch] $Approve,
     [switch] $Force
 )
 
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
+$script:LauncherVersion = '3.0.0'
 
-$script:LauncherVersion = '2.0.0'
-
-# ---- required DR artifacts (relative paths, backslash form for Join-Path) ------------------
-$script:RequiredArtifacts = @(
-    'dr\schema\tables.sql',
-    'dr\schema\extensions.sql',
-    'dr\schema\functions.sql',
-    'dr\schema\functions_user.sql',
-    'dr\schema\policies.sql',
-    'dr\schema\rls_enable.sql',
-    'dr\schema\triggers.sql',
-    'dr\schema\indexes.sql',
-    'dr\schema\constraints_pk_unique.sql',
-    'dr\schema\constraints_fk.sql',
-    'dr\schema\constraints_check.sql',
-    'dr\schema\migrations_manifest.txt',
-    'dr\manifests\storage_manifest.json',
-    'dr\manifests\BACKUP-ARTIFACT-INDEX.md',
-    'dr\runbook\RECOVERY-RUNBOOK.md',
-    'dr\runbook\DR-INVENTORY.md',
-    'dr\n8n\N8N-WORKFLOW-INVENTORY.md',
-    'scripts\dr\dr_db_logical_backup.sh',
-    'scripts\dr\dr_storage_backup.sh',
-    'scripts\dr\dr_git_bundle.sh',
-    'scripts\dr\dr_n8n_export.sh'
-)
-
-# ---- small helpers -------------------------------------------------------------------------
-
-function Write-Section {
-    param([string] $Title)
-    Write-Host ''
-    Write-Host ('=== {0} ===' -f $Title) -ForegroundColor Cyan
-}
-
+function Write-Section { param([string] $Title) Write-Host ''; Write-Host ('=== {0} ===' -f $Title) -ForegroundColor Cyan }
 function Write-Info  { param([string] $Message) Write-Host ('  {0}' -f $Message) }
 function Write-Good  { param([string] $Message) Write-Host ('  [OK]   {0}' -f $Message) -ForegroundColor Green }
 function Write-Bad   { param([string] $Message) Write-Host ('  [FAIL] {0}' -f $Message) -ForegroundColor Red }
 function Write-Warn2 { param([string] $Message) Write-Host ('  [WARN] {0}' -f $Message) -ForegroundColor Yellow }
 
 function Test-IsWindows {
-    # 5.1 is always Windows; on 7+ check the automatic variable.
     if (Test-Path -Path 'variable:IsWindows') { return [bool] (Get-Variable -Name 'IsWindows' -ValueOnly) }
     return $true
 }
 
-function Get-WslDistros {
-    # Returns an array of distro names, or @() if wsl.exe is unavailable.
-    $wsl = Get-Command -Name 'wsl.exe' -ErrorAction SilentlyContinue
-    if (-not $wsl) { return @() }
-    $prev = $env:WSL_UTF8
-    try {
-        $env:WSL_UTF8 = '1'
-        $raw = & wsl.exe --list --quiet 2>$null
-    } catch {
-        $raw = $null
-    } finally {
-        if ($null -eq $prev) { Remove-Item -Path 'env:WSL_UTF8' -ErrorAction SilentlyContinue }
-        else { $env:WSL_UTF8 = $prev }
-    }
-    if (-not $raw) { return @() }
-    $names = @()
-    foreach ($line in @($raw)) {
-        $clean = ($line -replace "`0", '').Trim()
-        if ($clean.Length -gt 0) { $names += $clean }
-    }
-    return $names
+function Invoke-Wsl {
+    # Runs a bash command in the target distro as the operator user; returns captured lines.
+    param([string] $BashCommand)
+    $out = & wsl.exe -d $Distro -u $WslUser -e bash -lc $BashCommand 2>&1
+    return @($out)
 }
 
-function Select-Distro {
-    param([string[]] $Names, [string] $Preferred)
-    if ($Preferred) {
-        foreach ($n in $Names) { if ($n -eq $Preferred) { return $n } }
-        Write-Warn2 ('Requested distro "{0}" not found; falling back to auto-detect.' -f $Preferred)
+function Get-Verdict {
+    param([string[]] $Lines)
+    $v = $null
+    foreach ($ln in $Lines) {
+        $s = ($ln -replace "`0", '').Trim()
+        if ($s -like 'VERDICT: *') { $v = $s.Substring(9).Trim() }
     }
-    foreach ($n in $Names) { if ($n -like 'Ubuntu*') { return $n } }
-    if ($Names.Count -gt 0) { return $Names[0] }
-    return $null
+    return $v
 }
-
-function Resolve-RepoFromWsl {
-    param([string] $DistroName)
-    # Discover the checkout inside the distro and resolve it to a Windows path with wslpath.
-    $finder = 'd="$HOME/global-intelligence-pulse"; ' +
-              'if [ ! -d "$d" ]; then d=$(find "$HOME" -maxdepth 5 -type d -name global-intelligence-pulse 2>/dev/null | head -1); fi; ' +
-              'if [ -z "$d" ]; then exit 3; fi; ' +
-              'wslpath -w "$d"'
-    try {
-        $winPath = & wsl.exe -d $DistroName -e bash -lc $finder 2>$null
-    } catch {
-        return $null
-    }
-    if ($LASTEXITCODE -ne 0) { return $null }
-    if (-not $winPath) { return $null }
-    return (($winPath -join '') -replace "`0", '').Trim()
-}
-
-# ---- diagnostics report object -------------------------------------------------------------
-
-function Get-ArtifactReport {
-    param([string] $Root)
-    $rows = @()
-    foreach ($rel in $script:RequiredArtifacts) {
-        $full = Join-Path -Path $Root -ChildPath $rel
-        $exists   = $false
-        $size     = 0
-        $readable = $false
-        $note     = ''
-        if (Test-Path -LiteralPath $full -PathType Leaf) {
-            $exists = $true
-            try {
-                $item = Get-Item -LiteralPath $full
-                $size = [int64] $item.Length
-            } catch {
-                $note = 'stat failed'
-            }
-            if ($size -gt 0) {
-                try {
-                    $stream = [System.IO.File]::OpenRead($full)
-                    $stream.Close()
-                    $readable = $true
-                } catch {
-                    $note = 'not readable'
-                }
-            } else {
-                $note = 'empty (0 bytes)'
-            }
-        } else {
-            $note = 'missing'
-        }
-        $ok = ($exists -and ($size -gt 0) -and $readable)
-        $rows += [pscustomobject]@{
-            Relative = $rel
-            Full     = $full
-            Exists   = $exists
-            Size     = $size
-            Readable = $readable
-            Ok       = $ok
-            Note     = $note
-        }
-    }
-    return $rows
-}
-
-# ---- main ----------------------------------------------------------------------------------
 
 Write-Host ''
 Write-Host '############################################################' -ForegroundColor Cyan
-Write-Host ('#  Strateloq DR Launcher  v{0}' -f $script:LauncherVersion) -ForegroundColor Cyan
+Write-Host ('#  Strateloq DR Repair Launcher  v{0}' -f $script:LauncherVersion) -ForegroundColor Cyan
 Write-Host '#  Diagnostics-first  |  read-only unless approved' -ForegroundColor Cyan
 Write-Host '############################################################' -ForegroundColor Cyan
 Write-Host ''
-Write-Host 'This launcher will NOT: touch any database, delete any backup, read or'   -ForegroundColor DarkGray
-Write-Host 'change any credential/secret, or deploy anything (Kalodata or otherwise).' -ForegroundColor DarkGray
+Write-Host 'Targets the established WSL install; does NOT run git, change the scheduled'   -ForegroundColor DarkGray
+Write-Host 'task/credentials/Drive destination, modify production, or deploy anything.'    -ForegroundColor DarkGray
 
 # --- environment guard ---
 Write-Section 'Environment'
@@ -234,164 +97,131 @@ if (-not (Test-IsWindows)) {
 }
 Write-Good ('PowerShell {0} on Windows.' -f $PSVersionTable.PSVersion.ToString())
 
-# --- resolve repository root ---
-Write-Section 'Resolve repository (Ubuntu WSL checkout)'
-$resolvedRoot = $null
+$wsl = Get-Command -Name 'wsl.exe' -ErrorAction SilentlyContinue
+if (-not $wsl) {
+    Write-Bad 'wsl.exe not found. Install/enable WSL (Ubuntu) and retry.'
+    Write-Host 'LAUNCHER_RESULT: WSL_UNAVAILABLE' -ForegroundColor Red
+    exit 3
+}
+Write-Good ('WSL target: distro={0}  user={1}' -f $Distro, $WslUser)
+Write-Info  ('Repo      : {0}' -f $RepoPath)
 
-if ($RepoRoot) {
-    Write-Info ('Using explicit -RepoRoot: {0}' -f $RepoRoot)
-    $resolvedRoot = $RepoRoot
+# --- read-only inspection of the scheduled task (never modified) ---
+Write-Section 'Scheduled task (read-only)'
+$task = $null
+try { $task = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue } catch { $task = $null }
+if ($task) {
+    Write-Good ('task "{0}" exists; state={1}' -f $TaskName, $task.State)
+    foreach ($act in @($task.Actions)) {
+        $exe = ''
+        $arg = ''
+        try { $exe = [string] $act.Execute } catch { $exe = '' }
+        try { $arg = [string] $act.Arguments } catch { $arg = '' }
+        Write-Info ('  runs: {0} {1}' -f $exe, $arg)
+    }
+    try {
+        $info = Get-ScheduledTaskInfo -TaskName $TaskName -ErrorAction SilentlyContinue
+        if ($info) { Write-Info ('  last run: {0}  last result: 0x{1:X}' -f $info.LastRunTime, [int]$info.LastTaskResult) }
+    } catch { }
+    Write-Info '  (configuration left unchanged)'
 } else {
-    $distros = Get-WslDistros
-    if ($distros.Count -eq 0) {
-        Write-Bad 'wsl.exe not available or no WSL distributions are installed.'
-        Write-Info 'Re-run with -RepoRoot pointing at the checkout, e.g.'
-        Write-Info '  -RepoRoot "\\wsl.localhost\Ubuntu\home\you\global-intelligence-pulse"'
-        Write-Host 'LAUNCHER_RESULT: WSL_UNAVAILABLE' -ForegroundColor Red
-        exit 3
-    }
-    Write-Info ('WSL distributions: {0}' -f ($distros -join ', '))
-    $chosen = Select-Distro -Names $distros -Preferred $Distro
-    if (-not $chosen) {
-        Write-Bad 'Could not select a WSL distribution.'
-        Write-Host 'LAUNCHER_RESULT: WSL_NO_DISTRO' -ForegroundColor Red
-        exit 3
-    }
-    Write-Info ('Selected distribution: {0}' -f $chosen)
-    $resolvedRoot = Resolve-RepoFromWsl -DistroName $chosen
-    if (-not $resolvedRoot) {
-        Write-Bad ('Repository checkout not found inside distribution "{0}".' -f $chosen)
-        Write-Info 'Expected at ~/global-intelligence-pulse. Clone/pull it, or pass -RepoRoot.'
-        Write-Host 'LAUNCHER_RESULT: REPO_NOT_FOUND' -ForegroundColor Red
-        exit 4
-    }
-    Write-Good ('Resolved via wslpath: {0}' -f $resolvedRoot)
+    Write-Warn2 ('scheduled task "{0}" not found via Get-ScheduledTask (continuing; not modifying it).' -f $TaskName)
 }
 
-if (-not (Test-Path -LiteralPath $resolvedRoot -PathType Container)) {
-    Write-Bad ('Repository root is not a readable directory: {0}' -f $resolvedRoot)
-    Write-Host 'LAUNCHER_RESULT: REPO_UNREADABLE' -ForegroundColor Red
+# --- ensure the orchestrator is present (placed by the bootstrap command) ---
+Write-Section 'Orchestrator'
+$present = (Invoke-Wsl ('test -s "{0}" && echo PRESENT || echo MISSING' -f $Orchestrator))
+if ((@($present) -join '') -notmatch 'PRESENT') {
+    Write-Bad ('repair orchestrator not found in WSL at {0}' -f $Orchestrator)
+    Write-Info 'Run the one-line bootstrap command from scripts/windows/README.md first.'
+    Write-Host 'LAUNCHER_RESULT: ORCHESTRATOR_MISSING' -ForegroundColor Red
     exit 4
 }
-Write-Good ('Repository root is accessible: {0}' -f $resolvedRoot)
+Write-Good ('repair orchestrator present: {0}' -f $Orchestrator)
 
-# --- verify required artifacts (read-only) ---
-Write-Section 'Verify required DR artifacts (read-only)'
-$report = Get-ArtifactReport -Root $resolvedRoot
+# --- DIAGNOSE (read-only) ---
+Write-Section 'Diagnose (read-only)'
+$diagCmd = ("'{0}' --diagnose --repo '{1}'" -f $Orchestrator, $RepoPath)
+$diagOut = Invoke-Wsl $diagCmd
+foreach ($ln in $diagOut) { Write-Host ('  ' + (($ln -replace "`0", ''))) }
+$diagVerdict = Get-Verdict -Lines $diagOut
 
-$okCount   = 0
-$failCount = 0
-foreach ($row in $report) {
-    if ($row.Ok) {
-        $okCount++
-        Write-Good ('{0,9} bytes  {1}' -f $row.Size, $row.Relative)
-    } else {
-        $failCount++
-        Write-Bad ('{0,-14}  {1}' -f $row.Note, $row.Relative)
-    }
-}
-
-Write-Section 'Verdict'
-$total = $report.Count
-Write-Info ('Artifacts verified: {0}/{1} present, non-empty and readable.' -f $okCount, $total)
-
-if ($failCount -gt 0) {
-    # Honest reporting: never claim success when required files are missing/empty/unreadable.
-    Write-Bad ('{0} required artifact(s) are missing, empty, or unreadable.' -f $failCount)
-    Write-Host ''
-    Write-Host 'RETRIEVED_INCOMPLETE' -ForegroundColor Red
-    Write-Host ('LAUNCHER_RESULT: RETRIEVED_INCOMPLETE ({0}/{1} ok)' -f $okCount, $total) -ForegroundColor Red
-    Write-Host 'No retrieval/staging performed (diagnostics failed). Nothing was changed.' -ForegroundColor Red
+if ($diagVerdict -eq 'DIAGNOSE_BLOCKED') {
+    Write-Section 'Verdict'
+    Write-Bad 'Diagnostics found blocking issues. No repair attempted. Nothing changed.'
+    Write-Host 'LAUNCHER_RESULT: DIAGNOSE_BLOCKED' -ForegroundColor Red
     exit 5
 }
+if ($diagVerdict -ne 'DIAGNOSE_OK') {
+    Write-Warn2 ('Unexpected diagnose verdict: {0}' -f $diagVerdict)
+}
 
-Write-Good 'All required DR artifacts verified.'
-Write-Host ''
-Write-Host 'RETRIEVED_OK' -ForegroundColor Green
-Write-Host ('LAUNCHER_RESULT: RETRIEVED_OK ({0}/{1} ok)' -f $okCount, $total) -ForegroundColor Green
-
-# --- approval-gated retrieval (the only step that writes anything) ---
+# --- approval gate ---
 if (-not $Approve) {
-    Write-Host ''
-    Write-Section 'Retrieval (staging) - NOT performed'
-    Write-Info 'Diagnostics passed. No changes were made (read-only run).'
-    Write-Info 'To copy the verified artifacts to a local offline staging folder, re-run with:'
+    Write-Section 'Repair - NOT performed'
+    Write-Info 'Diagnostics complete (read-only). No changes were made.'
+    Write-Info 'To repair + take a fresh encrypted backup + verify, re-run with:'
     Write-Info '    -Approve            (prompts you to type APPROVE first)'
     Write-Info '    -Approve -Force     (unattended; skips the prompt)'
+    Write-Info 'Add -IsolatedDbUrl "<empty isolated DB url>" to also run a full restore drill.'
+    Write-Host 'LAUNCHER_RESULT: DIAGNOSE_OK (read-only; repair not approved)' -ForegroundColor Green
     exit 0
 }
 
-Write-Host ''
-Write-Section 'Retrieval (staging) - approval required'
-
-# default + validate staging destination (must be a local Windows path, not repo/WSL)
-if (-not $StageTo) {
-    $stamp   = Get-Date -Format 'yyyyMMdd-HHmmss'
-    $StageTo = Join-Path -Path $env:USERPROFILE -ChildPath ('Strateloq-DR-Retrieved\' + $stamp)
-}
-if ($StageTo -like '\\wsl*' -or $StageTo -like '\\wsl.localhost*') {
-    Write-Bad 'StageTo must be a LOCAL Windows folder, not a WSL path (refusing to write back into the source).'
-    Write-Host 'LAUNCHER_RESULT: STAGE_DEST_INVALID' -ForegroundColor Red
-    exit 6
-}
-$rootFull = (Resolve-Path -LiteralPath $resolvedRoot).Path
-if ($StageTo.TrimEnd('\') -ieq $rootFull.TrimEnd('\')) {
-    Write-Bad 'StageTo must not be the repository root.'
-    Write-Host 'LAUNCHER_RESULT: STAGE_DEST_INVALID' -ForegroundColor Red
-    exit 6
-}
-
-Write-Info ('Staging destination: {0}' -f $StageTo)
-Write-Info ('Files to copy      : {0}' -f $total)
-Write-Info 'Action             : COPY only (read from WSL -> write to local folder). No deletes.'
-
+Write-Section 'Repair - approval required'
+Write-Info 'This will: apply safe fixes, take a FRESH encrypted backup (read-only pg_dump of'
+Write-Info 'production), upload to the existing Drive destination, and verify restorability.'
+Write-Info 'It will NOT modify production, delete backups, change credentials/task/Drive, or deploy.'
 if (-not $Force) {
     Write-Host ''
-    Write-Host 'Type APPROVE (all caps) to copy the verified artifacts, anything else to abort:' -ForegroundColor Yellow
+    Write-Host 'Type APPROVE (all caps) to proceed, anything else to abort:' -ForegroundColor Yellow
     $answer = Read-Host 'Confirm'
     if ($answer -cne 'APPROVE') {
         Write-Warn2 'Approval not given. Aborting without changes.'
-        Write-Host 'LAUNCHER_RESULT: STAGE_ABORTED_BY_USER' -ForegroundColor Yellow
+        Write-Host 'LAUNCHER_RESULT: ABORTED_BY_USER' -ForegroundColor Yellow
         exit 0
     }
 }
 
-# perform the copy (create fresh staging dir; never delete)
-if (-not (Test-Path -LiteralPath $StageTo)) {
-    New-Item -ItemType Directory -Path $StageTo -Force | Out-Null
+# --- REPAIR (mutating; delegated to the validated orchestrator) ---
+Write-Section 'Repair + fresh encrypted backup + verify'
+$repairCmd = ("'{0}' --repair --approve --repo '{1}'" -f $Orchestrator, $RepoPath)
+if ($IsolatedDbUrl) {
+    $repairCmd = $repairCmd + (" --isolated-db-url '{0}' --i-understand-isolated" -f $IsolatedDbUrl)
 }
+$repairOut = Invoke-Wsl $repairCmd
+foreach ($ln in $repairOut) { Write-Host ('  ' + (($ln -replace "`0", ''))) }
+$verdict = Get-Verdict -Lines $repairOut
 
-$copied = 0
-$copyFail = 0
-foreach ($row in $report) {
-    $destFile = Join-Path -Path $StageTo -ChildPath $row.Relative
-    $destDir  = Split-Path -Path $destFile -Parent
-    if (-not (Test-Path -LiteralPath $destDir)) {
-        New-Item -ItemType Directory -Path $destDir -Force | Out-Null
+# --- relay the orchestrator verdict verbatim (never upgrade it) ---
+Write-Section 'Result'
+switch ($verdict) {
+    'RESTORE_OK' {
+        Write-Good 'Isolated restore succeeded.'
+        Write-Host 'RESTORE-READY: a fresh encrypted backup was taken AND restored into an isolated DB.' -ForegroundColor Green
+        Write-Host 'LAUNCHER_RESULT: RESTORE_OK' -ForegroundColor Green
+        exit 0
     }
-    try {
-        Copy-Item -LiteralPath $row.Full -Destination $destFile -Force
-        $srcHash = (Get-FileHash -LiteralPath $row.Full    -Algorithm SHA256).Hash
-        $dstHash = (Get-FileHash -LiteralPath $destFile     -Algorithm SHA256).Hash
-        if ($srcHash -eq $dstHash) {
-            $copied++
-            Write-Good ('copied + hash-verified  {0}' -f $row.Relative)
-        } else {
-            $copyFail++
-            Write-Bad ('hash mismatch after copy  {0}' -f $row.Relative)
-        }
-    } catch {
-        $copyFail++
-        Write-Bad ('copy failed  {0}  ({1})' -f $row.Relative, $_.Exception.Message)
+    'BACKUP_VERIFIED_RESTORE_PREREQUISITE' {
+        Write-Good 'Fresh encrypted backup taken and proven RESTORABLE (archive integrity + TOC).'
+        Write-Warn2 'NOT restore-ready yet: a full isolated restore needs an empty isolated DB URL.'
+        Write-Info  'Re-run with -IsolatedDbUrl "<empty isolated DB url>" to complete the restore drill.'
+        Write-Host 'LAUNCHER_RESULT: BACKUP_VERIFIED_RESTORE_PREREQUISITE' -ForegroundColor Yellow
+        exit 0
+    }
+    'BACKUP_MADE_RESTORE_UNVERIFIED' {
+        Write-Warn2 'Backup made but pg_restore was unavailable to verify restorability.'
+        Write-Host 'LAUNCHER_RESULT: BACKUP_MADE_RESTORE_UNVERIFIED' -ForegroundColor Yellow
+        exit 0
+    }
+    'PREREQUISITE_MISSING' {
+        Write-Bad 'Cannot take a backup: an operator prerequisite (tool/secret) is missing (see above).'
+        Write-Host 'LAUNCHER_RESULT: PREREQUISITE_MISSING' -ForegroundColor Red
+        exit 7
+    }
+    default {
+        Write-Bad ('Repair did not complete cleanly. Orchestrator verdict: {0}' -f $verdict)
+        Write-Host ('LAUNCHER_RESULT: {0}' -f $verdict) -ForegroundColor Red
+        exit 8
     }
 }
-
-Write-Section 'Retrieval result'
-if ($copyFail -gt 0) {
-    Write-Bad ('{0} file(s) failed to stage.' -f $copyFail)
-    Write-Host ('LAUNCHER_RESULT: STAGED_INCOMPLETE ({0}/{1} copied) -> {2}' -f $copied, $total, $StageTo) -ForegroundColor Red
-    exit 7
-}
-Write-Good ('All {0} artifacts staged and hash-verified into: {1}' -f $copied, $StageTo)
-Write-Host ('LAUNCHER_RESULT: STAGED_OK ({0}/{1} copied) -> {2}' -f $copied, $total, $StageTo) -ForegroundColor Green
-exit 0
