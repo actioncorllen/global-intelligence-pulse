@@ -122,6 +122,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
           p_pm_ref: String(pm.id ?? ""),
           p_brand: String(card.brand ?? ""), p_last4: String(card.last4 ?? ""),
           p_exp_month: Number(card.exp_month ?? 0) || null, p_exp_year: Number(card.exp_year ?? 0) || null,
+          p_livemode: livemode,  // record whether this is a LIVE or TEST payment method
         })) as Record<string, unknown>;
         await finish(`card_registered:${r?.status}`);
         return json(200, { ok: true, handled: "card_setup" });

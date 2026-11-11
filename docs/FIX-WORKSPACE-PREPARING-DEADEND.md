@@ -114,7 +114,70 @@ state for a READY member with no research (no spinner/blank/crash); READY routes
 workspace; card onboarding step (CARD_SETUP_REQUIRED) UNCHANGED. 680/680 tests pass; typecheck/
 lint/build clean; browser-verified 360px + 1280px, no overflow/errors. Preview-only.
 
+## REAL-CUSTOMER / LIVE-CARD ACCEPTANCE (2026-11-11) — Stripe Live Mode NOT configured (external blocker)
+Goal: establish whether surpyjabu (COMP founding member) can complete the SAME production-grade
+onboarding a future paying customer would, including registering their OWN genuine card via the
+secure Stripe-hosted interface (no charge). Finding + preparation:
+
+LIVE MODE READINESS = NOT AVAILABLE (hard external blocker, verified against the live Stripe API):
+- Stripe account (acct, IE): charges_enabled=false, payouts_enabled=false, details_submitted=false
+  => the account is NOT activated with Stripe (business/identity verification not submitted).
+- Only a TEST secret key (sk_test_) is configured; no sk_live_ key present.
+- STRIPE_LIVE_ALLOWED is unset; both webhook endpoints are livemode=false.
+=> A genuine LIVE card CANNOT be collected until the founder completes Stripe activation. The webhook
+   already ignores livemode events unless STRIPE_LIVE_ALLOWED='true' (separate approval), so no live
+   event could be processed even if one arrived.
+
+EXACT FOUNDER ACTIONS to enable genuine live-card collection (all external to this project, in order):
+1. Complete Stripe account activation (business details + identity) until details_submitted=true and
+   charges_enabled=true in the Stripe Dashboard.
+2. Provide the LIVE secret key (sk_live_...) as the STRIPE_SECRET_KEY edge secret (replacing/adding a
+   live-keyed function or a live-scoped deployment — NOT a blind swap of the test key; see migration).
+3. Create a LIVE-mode webhook endpoint in Stripe pointing at stripe-webhook and set its LIVE signing
+   secret as STRIPE_WEBHOOK_SECRET for the live path.
+4. Set STRIPE_LIVE_ALLOWED='true' only after 1-3 are verified.
+Until all four are done, surpyjabu MUST NOT be asked to enter a real card.
+
+CONTROLLED LIVE-CARD INFRASTRUCTURE PREPARED (mig_359, applied; webhook redeployed) — NOTHING ACTIVE:
+- payment_method_registry gains livemode boolean (DEFAULT false). The registry now distinguishes a
+  TEST card from a LIVE card. Existing founder sandbox card is correctly livemode=false.
+- onboarding_policy gains require_live_card boolean (DEFAULT false). When ON, the card gate counts a
+  stored card only if pm.livemode=true => a sandbox test card can NEVER satisfy a live-card requirement.
+- fn_psp_card_registered captures p_livemode; stripe-webhook passes event.livemode so real
+  registrations record LIVE vs TEST. Idempotent upsert updates livemode on conflict.
+- SAFETY (no lockout): require_live_card defaults FALSE, so TODAY nothing changes — the founder's test
+  card still satisfies card_enforcement; surpyjabu is still CARD_SETUP_REQUIRED exactly as before.
+  Enabling require_live_card is a SEPARATE founder decision that must come AFTER live mode is configured
+  AND the member has registered a LIVE card (otherwise they would be locked out).
+
+ROLLED-BACK SIMULATION (zero residue, auto-rollback via RAISE EXCEPTION) proving the separation:
+- require_live_card=TRUE + founder's TEST card  -> CARD_SETUP_REQUIRED (would lock out a test-only card:
+  confirms the flag must wait for a real live card).
+- require_live_card=TRUE + surpyjabu TEST card  -> CARD_SETUP_REQUIRED (sandbox card cannot satisfy live).
+- require_live_card=TRUE + surpyjabu LIVE card   -> READY (a genuine live card is accepted).
+Verified afterwards: require_live_card=false live; founder card livemode=false; no rows changed.
+
+CARD SETUP CANNOT CHARGE / TOP-UP / SUBSCRIBE (verified): stripe-card-setup is mode=setup (EUR 0, no
+PaymentIntent); stripe-wallet-topup requires an ACTIVE wallet price (none active => inert) and is
+onboarding-gated; there is NO subscription code anywhere. Registering a card never moves money.
+
+FOUNDING-MEMBER PRIVILEGE vs FUTURE PAYING CUSTOMER:
+- Identical flow: invitation -> email verify -> Business name+Industry (website optional) -> billing
+  contact -> secure Stripe-hosted card registration -> signed webhook binds customer/payment-method ->
+  membership confirmation -> workspace. Same gates, same RLS/tenant isolation, same card enforcement.
+- COMP difference ONLY: EUR 0 membership, no subscription charge, no card charge, no auto research-credit
+  purchase. No bypass of identity/billing/security and no artificial shortcut to READY.
+- A PAID-MEMBERSHIP TRANSACTION PATH IS NOT BUILT OR TESTED in this project. This EUR 0 founder test is
+  NOT proof that paid-membership collection works; a paid membership must be explicitly authorised and
+  independently verified before any paid entitlement is granted.
+
+SAFE NEXT ACTION for surpyjabu: continue the existing TEST-mode card step if desired (register the
+Stripe TEST card on the preview URL -> becomes READY) — this is NOT the genuine-card acceptance. The
+genuine live-card test is DEFERRED until the four founder actions above are complete and verified.
+
 ## Guardrails preserved
-Mandatory onboarding ON; invitation-only; COMP x3 at EUR 0 unchanged; card enforcement OFF;
-trial autogrant OFF; wallet prices + provider budgets inactive; live Stripe OFF. Kalodata
-imagery not started pending this member's access resolution.
+Mandatory onboarding ON; invitation-only; COMP x3 at EUR 0 unchanged; card enforcement ON (TEST mode,
+server-side, founder-approved); require_live_card OFF; live Stripe OFF (account not activated);
+trial autogrant OFF; wallet prices + provider budgets inactive. Kalodata imagery not started pending
+this live-card work being resolved or externally blocked (it is now externally blocked on Stripe
+activation).
