@@ -141,3 +141,51 @@ plan cost figure, VAT treatment decision.
    wallet_price_point.active=true.
 3. Later, separately: trial_autogrant_active, card_enforcement_active (after the
    test-mode run + Lovable publish), and any live-mode switch (STRIPE_LIVE_ALLOWED).
+
+---
+
+# STRIPE TEST-MODE ACCEPTANCE (2026-11-11) — WEBHOOK VERIFIED LIVE
+
+Founder configured STRIPE_SECRET_KEY (test) + STRIPE_WEBHOOK_SECRET as edge secrets
+(values never read or printed by tooling; presence proven by behaviour only).
+
+## Configuration validation (Stage 1) — PASS
+- Edges ACTIVE: stripe-webhook (signature-gated, verify_jwt=false), stripe-card-setup,
+  stripe-wallet-topup (both verify_jwt=true; anon probes still 401).
+- Secret present: unsigned POST now 400 invalid_signature (was 424 webhook_not_configured);
+  fake signature 400. Unauthenticated Stripe delivery accepted, signature mandatory.
+- Same test sandbox: account acct_1UXq... (IE), key mode test; destination
+  .../functions/v1/stripe-webhook enabled with exactly checkout.session.completed +
+  payment_method.detached (api_version 2026-10-28.endive, livemode=false). No further
+  event subscriptions needed (card registration reads the setup_intent on
+  checkout.session.completed; setup_intent.succeeded not required).
+- NOTE for founder: the same sandbox carries a second destination
+  nlfkwrjmhxbubtlwepwx.supabase.co/.../billing-webhook (subscription events) — presumed
+  another project of yours; per-destination secrets, no interference, please confirm.
+
+## Real signed-delivery suite (Stage 2) — PASS (method: temporary zz-stripe-diag edge
+function used the configured key INSIDE the edge runtime to attach+detach Stripe's
+shared test card on a throwaway customer; Stripe then fired its own signed event;
+replays were REAL events fetched from Stripe and signed with the real secret in-runtime;
+the diag function was neutralised (410 stub) and its n8n driver archived afterwards)
+- Stripe's own delivery landed ~3 s after detach: evt_1UaaAH... payment_method.detached,
+  livemode=false, signature verified, outcome card_detached:ok (graceful detached:0 —
+  no member card existed). Repeated across two runs (also evt_1UaZuw...).
+- Duplicate delivery of the same real event: 200 {duplicate:true}; row unchanged;
+  no side effects (dedupe on event id via fn_psp_webhook_begin).
+- Tampered signature: 400 invalid_signature. Stale timestamp (t-400 s > 300 s
+  tolerance): 400 invalid_signature.
+- Unknown-but-real event type (customer.created): 200 ignored; outcome ignored_type.
+- End state: payment_method_registry 0 rows, PURCHASE ledger 0 rows, no member/
+  entitlement/flag changed; 3 test event rows in psp_webhook_event are the audit trail.
+- Edge logs show exactly the expected deliveries (two 200s per run window).
+
+## Remaining journeys (need the founder's signed-in device; everything else ready)
+- Card registration: preview app -> Workspace -> Billing & Credits -> Add payment card
+  -> Stripe-hosted page -> test card 4242 4242 4242 4242 (any future expiry/CVC).
+  Then verify: registry row bound to the correct member, no charge, cancel path leaves
+  no row. UI = Lovable commit 14f2c3f (preview only, unpublished).
+- Wallet top-up: requires a founder-approved timed test boundary (activate one price
+  point briefly in test mode, purchase, verify single-funding, deactivate, reverse).
+Production flags unchanged: enforcement ON, card enforcement OFF, trial autogrant OFF,
+prices inactive, budgets inactive, COMP x3 (2 founding + support demo) intact.
