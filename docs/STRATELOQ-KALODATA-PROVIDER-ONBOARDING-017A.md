@@ -796,3 +796,73 @@ schema-complete staging project.** No production change, no deploy, no chargeabl
 - Native Deno runtime unavailable in this environment (tsc strict used instead).
 - External: live-doc confirmation (`need_extra`, per-call credit cost, live coverage/response shapes);
   detail/video **pricing**; **chargeable budget**; **production-deploy approval**; **video media rights**.
+
+---
+
+# Phase 12 — Product Imagery Integration: already built; verified; one blocked gap
+
+Per "first determine whether changes are necessary / do not duplicate the image architecture," I inspected
+production (read-only) before building. **The research-image handling is already built and production-tested**
+— no new architecture is needed or appropriate. No production change, deploy, or chargeable call was made.
+
+## 47. What already exists in production (reuse, do not rebuild)
+- `fn_persist_reference_image(tenant, product, market, provider, source_entity_id, url)` writes the Kalodata
+  cover into the **existing** `product_image_assets` with `rights_state='PROVIDER_DISCOVERY_REFERENCE'`,
+  provenance `authority=REFERENCE_ONLY` ("never unlocks store/ad/creative/publishing"), first image
+  `is_primary`, idempotent on `(product_id, image_url)`. Called by `fn_kalodata_ingest_candidates`
+  (product/rank cover via `fn_extract_cover_url`) and `fn_persist_kalodata_product_detail`
+  (`master_image_url`, `need_image`).
+- Display: `fn_product_media_state` (tenant-isolated; surfaces `source_provider` for attribution) +
+  `fn_resolve_product_image` (serves reference images).
+- Rights separation: `fn_asset_rights_class` / `fn_product_commercial_rights` classify Kalodata research
+  images as **non-publishable**; `fn_resolve_storefront_assets` gates storefront/ad by rights_state.
+- Already tested in prod by `fn_discovery_media_integrity_selftest` (extractor genuineness, idempotency,
+  rights-state, asset-lock separation) — for the identical FastMoss path.
+
+## 48. Verification (ephemeral Postgres, REAL production functions) — 6/6
+`extract_genuine_vs_default` (accepts genuine cover, rejects `/default/`) · `persist_reference_primary_attrib`
+(Kalodata → `PROVIDER_DISCOVERY_REFERENCE` primary, `authority=REFERENCE_ONLY`, provider `KALODATA`) ·
+`duplicate_idempotent` (second persist = same id, one row) · `kalodata_not_publishable`
+(`publishable_present=false` → never unlocks ad/storefront) · `research_and_commercial_separate`
+(CJ `SUPPLIER_PROVIDED`→`SUPPLIER_AUTHORIZED` publishable; Kalodata stays non-publishable) ·
+`tenant_recorded`.
+
+## 49. Requirements status
+| Req | Status |
+|---|---|
+| 1 reuse `REFERENCE_ONLY` / `fn_persist_reference_image` | ✅ already the path |
+| 2 Product Rank main image + Kalodata attribution | ✅ built (provider surfaced); **0 Kalodata rows today** — needs a live product/rank call (budget) to populate |
+| 5 reuse tenant isolation / identity / provenance / storage / credit controls | ✅ existing |
+| 6 keep research separate from commercial | ✅ `rights_state` + rights class |
+| 7 never let research unlock ad/storefront | ✅ non-publishable (verified) |
+| 9 preserve CJ / FastMoss / DataForSEO / Product Ranking | ✅ untouched |
+| 3 separate **Product Images API** (multiple images) | ⛔ **blocked — no documented contract** |
+| 4 five-minute URL expiry secure caching | ⛔ **blocked** (ties to the Product Images API; no `storage_ref`/`cache_state` exists) |
+| 8 avoid unnecessary calls via caching | ⛔ depends on (4) |
+
+## 50. Genuine blocker + the one safe design (not built)
+The **Product Images API** (multi-image) contract was **not** in `kalodata_official_api_contracts_2026-11-11.md`
+(it covers product/detail + video only), and `kalodata.com` is unreachable from this build — so its endpoint,
+response shape and 5-minute-expiry semantics are **unverified**. Building it (and the caching) would fabricate
+a contract, so it is **blocked pending the Product Images API docs**.
+- Note: the main image via `need_image=1` is a TikTok CDN URL (e.g. `s.500fd.com/…~tplv…`), which is stable;
+  the 5-minute expiry is specific to the Product Images API.
+- **Proposed caching (when unblocked), reusing — not duplicating — the architecture:** add additive
+  `storage_ref` + `cache_state` + `source_url_expires_at` columns to `product_image_assets`; a secure
+  server-side cache edge (same private-bucket + signed-URL pattern as `product-image-import` /
+  `pulse-generated-media`) that fetches the expiring image once and stores it; `fn_product_media_state` /
+  `fn_resolve_product_image` prefer the cached `storage_ref` when the source has expired. Reuse the Kalodata
+  credit workflow (the Product Images API is billable) + the existing nonce/tenant controls.
+
+## 51. Minor observation (safe; recommend, don't change unilaterally)
+`fn_asset_rights_class` maps `PROVIDER_DISCOVERY_REFERENCE` to `RIGHTS_UNKNOWN` (correctly **non-publishable**),
+not to `RESEARCH_REFERENCE_ONLY`. It's safe for req 7 either way, but adding `PROVIDER_DISCOVERY_REFERENCE`
+(and providers `KALODATA`/`FASTMOSS`) to the `RESEARCH_REFERENCE_ONLY` branch would classify them precisely
+as research rather than "unknown."
+
+## 52. Deployment readiness
+The main-image integration is **already live and verified** (needs only a populated run). Nothing to deploy
+for it. The multi-image + caching piece is **not deployable** until the Product Images API docs are provided;
+then the additive caching above goes through the canonical Supabase pipeline with chargeable-call approval.
+**Files changed this phase:** this doc (verification + findings). No new production code — the feature exists;
+a second image pipeline would violate "do not introduce a duplicate image architecture."
