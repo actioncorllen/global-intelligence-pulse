@@ -93,18 +93,25 @@ Deno.serve(async (req) => {
   const userId = String(payload.user_id ?? payload.userId ?? "").trim();
   const productId = String(payload.product_id ?? "").trim();              // Strateloq commerce_products.id
   const kalodataProductId = String(payload.kalodata_product_id ?? "").trim();
+  // Credit lifecycle: when invoked via the caller wiring, settle/refund the reserved request.
+  const refreshRequestId: string | null = String(payload.refresh_request_id ?? "").trim() || null;
+  const settle = async (outcome: string): Promise<void> => {
+    if (!refreshRequestId) return;
+    try { await rpc("fn_kalodata_op_complete_from_edge", { p_request_id: refreshRequestId, p_outcome: outcome }); } catch (_e) { /* reconcile sweep is the backstop */ }
+  };
   if (!market) return jsonResponse(400, { ok: false, error: "missing_market" });
   if (!userId) return jsonResponse(400, { ok: false, error: "missing_user_id" });
   if (!productId) return jsonResponse(400, { ok: false, error: "missing_product_id" });
   if (!kalodataProductId) return jsonResponse(400, { ok: false, error: "missing_kalodata_product_id" });
-  if (!secret) return jsonResponse(424, { ok: false, provider: "KALODATA", market, lane_status: "AUTH_FAILED", error: "server_secret_unavailable", note: "Set the KALODATA_SECRET_KEY Edge Function secret." });
+  if (!secret) { await settle("PROVIDER_FAILED_PRE_CHARGE"); return jsonResponse(424, { ok: false, provider: "KALODATA", market, lane_status: "AUTH_FAILED", error: "server_secret_unavailable", note: "Set the KALODATA_SECRET_KEY Edge Function secret." }); }
 
   // 1) market-gated, secret-free request (reuses discovery_provider_market_config).
   const reqBuild = await rpc("fn_kalodata_detail_request", { p_market: market, p_kalodata_product_id: kalodataProductId });
   const rb: any = reqBuild.body;
   if (!reqBuild.ok || !rb || rb.ok !== true) {
     const reason = rb?.reason ?? "request_builder_failed";
-    return jsonResponse(reason === "UNSUPPORTED_MARKET" ? 200 : 502, { ok: reason === "UNSUPPORTED_MARKET" ? false : false, provider: "KALODATA", market, lane_status: reason });
+    await settle("PROVIDER_FAILED_PRE_CHARGE");
+    return jsonResponse(reason === "UNSUPPORTED_MARKET" ? 200 : 502, { ok: false, provider: "KALODATA", market, lane_status: reason });
   }
 
   const endpoint = (Deno.env.get(DETAIL_BASE_ENV) || DEFAULT_DETAIL_ENDPOINT).trim();
@@ -116,20 +123,23 @@ Deno.serve(async (req) => {
     provider = await fetch(endpoint, { method: "POST", headers: { "content-type": "application/json", [secretHeader]: secret }, body: JSON.stringify(rb.request_body ?? {}) });
     providerBody = await provider.json().catch(() => ({}));
   } catch (e) {
+    await settle("PROVIDER_FAILED_POST_CHARGE");
     return jsonResponse(502, { ok: false, provider: "KALODATA", market, lane_status: "PROVIDER_UNAVAILABLE", error: redact((e as Error).message) });
   }
   if (!provider.ok) {
     const laneStatus = provider.status === 401 || provider.status === 403 ? "AUTH_FAILED" : provider.status === 402 ? "PAYMENT_REQUIRED" : provider.status === 429 ? "RATE_LIMITED" : provider.status >= 500 ? "PROVIDER_UNAVAILABLE" : "FAILED";
+    await settle("PROVIDER_FAILED_POST_CHARGE");
     return jsonResponse(provider.status === 402 ? 402 : 502, { ok: false, provider: "KALODATA", market, lane_status: laneStatus, http_status: provider.status, error: redact(providerBody?.message ?? providerBody?.error ?? "provider_error") });
   }
 
   const detail = extractDetail(providerBody);
-  if (!detail) return jsonResponse(502, { ok: false, provider: "KALODATA", market, lane_status: "EMPTY_DETAIL" });
+  if (!detail) { await settle("PROVIDER_FAILED_POST_CHARGE"); return jsonResponse(502, { ok: false, provider: "KALODATA", market, lane_status: "EMPTY_DETAIL" }); }
 
   // 3) persist via the EXISTING persister (REFERENCE_ONLY; tenant-isolated). No duplicate persistence.
   const persist = await rpc("fn_persist_kalodata_product_detail", { p_tenant: userId, p_product: productId, p_market: market, p_detail: detail });
   const pb: any = persist.body;
   if (!persist.ok || !pb || pb.ok !== true) {
+    await settle("PROVIDER_FAILED_POST_CHARGE");
     return jsonResponse(502, { ok: false, provider: "KALODATA", market, lane_status: "PERSIST_FAILED", error: redact(pb ?? "persist_failed") });
   }
 
@@ -142,5 +152,6 @@ Deno.serve(async (req) => {
     }
   } catch (_e) { /* usage telemetry is best-effort */ }
 
+  await settle("SUCCESS");
   return jsonResponse(200, { ok: true, provider: "KALODATA", market, lane_status: "SUCCESS_DETAIL", product_id: productId, persist: pb });
 });

@@ -69,14 +69,20 @@ Deno.serve(async (req) => {
   const productId = String(payload.product_id ?? "").trim();              // Strateloq commerce_products.id (optional)
   const kalodataProductId = String(payload.kalodata_product_id ?? "").trim(); // optional rank filter
   const pageNumber = Math.max(1, Number(payload.page_number ?? 1) || 1);
+  const refreshRequestId: string | null = String(payload.refresh_request_id ?? "").trim() || null;
+  const settle = async (outcome: string): Promise<void> => {
+    if (!refreshRequestId) return;
+    try { await rpc("fn_kalodata_op_complete_from_edge", { p_request_id: refreshRequestId, p_outcome: outcome }); } catch (_e) { /* reconcile sweep is the backstop */ }
+  };
   if (!market) return jsonResponse(400, { ok: false, error: "missing_market" });
   if (!userId) return jsonResponse(400, { ok: false, error: "missing_user_id" });
-  if (!secret) return jsonResponse(424, { ok: false, provider: "KALODATA", market, lane_status: "AUTH_FAILED", error: "server_secret_unavailable" });
+  if (!secret) { await settle("PROVIDER_FAILED_PRE_CHARGE"); return jsonResponse(424, { ok: false, provider: "KALODATA", market, lane_status: "AUTH_FAILED", error: "server_secret_unavailable" }); }
 
   const reqBuild = await rpc("fn_kalodata_video_rank_request", { p_market: market, p_kalodata_product_id: kalodataProductId || null, p_page_number: pageNumber });
   const rb: any = reqBuild.body;
   if (!reqBuild.ok || !rb || rb.ok !== true) {
     const reason = rb?.reason ?? "request_builder_failed";
+    await settle("PROVIDER_FAILED_PRE_CHARGE");
     return jsonResponse(reason === "UNSUPPORTED_MARKET" ? 200 : 502, { ok: false, provider: "KALODATA", market, lane_status: reason });
   }
   const endpoint = (Deno.env.get(RANK_BASE_ENV) || DEFAULT_ENDPOINT).trim();
@@ -84,9 +90,10 @@ Deno.serve(async (req) => {
 
   let provider: Response; let providerBody: any = {};
   try { provider = await fetch(endpoint, { method: "POST", headers: { "content-type": "application/json", [secretHeader]: secret }, body: JSON.stringify(rb.request_body ?? {}) }); providerBody = await provider.json().catch(() => ({})); }
-  catch (e) { return jsonResponse(502, { ok: false, provider: "KALODATA", market, lane_status: "PROVIDER_UNAVAILABLE", error: redact((e as Error).message) }); }
+  catch (e) { await settle("PROVIDER_FAILED_POST_CHARGE"); return jsonResponse(502, { ok: false, provider: "KALODATA", market, lane_status: "PROVIDER_UNAVAILABLE", error: redact((e as Error).message) }); }
   if (!provider.ok) {
     const laneStatus = provider.status === 401 || provider.status === 403 ? "AUTH_FAILED" : provider.status === 402 ? "PAYMENT_REQUIRED" : provider.status === 429 ? "RATE_LIMITED" : provider.status >= 500 ? "PROVIDER_UNAVAILABLE" : "FAILED";
+    await settle("PROVIDER_FAILED_POST_CHARGE");
     return jsonResponse(provider.status === 402 ? 402 : 502, { ok: false, provider: "KALODATA", market, lane_status: laneStatus, http_status: provider.status, error: redact(providerBody?.message ?? providerBody?.error ?? "provider_error") });
   }
 
@@ -94,6 +101,7 @@ Deno.serve(async (req) => {
   const ingest = await rpc("fn_kalodata_ingest_video_rank", { p_tenant: userId, p_requested_product_id: productId || null, p_requested_kalodata_product_id: kalodataProductId || null, p_market: market, p_videos: videos });
   const ib: any = ingest.body;
   if (!ingest.ok || !ib || (ib.status && ib.status !== "ok")) {
+    await settle("PROVIDER_FAILED_POST_CHARGE");
     return jsonResponse(502, { ok: false, provider: "KALODATA", market, lane_status: ib?.status ?? "INGEST_FAILED", error: redact(ib ?? "ingest_failed") });
   }
 
@@ -103,5 +111,6 @@ Deno.serve(async (req) => {
     if (runId) await rpc("fn_kalodata_record_usage", { p_run_id: runId, p_usage: { provider: "KALODATA", operation: "tiktok/video/rank", tenant_id: userId, country: market, call_count: 1, http_status: provider.status, recorded_by: "kalodata-video-rank-edge", recorded_at: new Date().toISOString() }, p_endpoint: endpoint });
   } catch (_e) { /* best-effort */ }
 
+  await settle("SUCCESS");
   return jsonResponse(200, { ok: true, provider: "KALODATA", market, lane_status: "SUCCESS_VIDEO_RANK", raw_video_count: videos.length, inserted: ib.inserted ?? 0, skipped: ib.skipped ?? 0, rights_state: "RESEARCH_ONLY" });
 });

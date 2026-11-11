@@ -67,15 +67,21 @@ Deno.serve(async (req) => {
   const market = String(payload.market ?? "").trim().toUpperCase();
   const userId = String(payload.user_id ?? payload.userId ?? "").trim();
   const videoId = String(payload.video_id ?? "").trim();
+  const refreshRequestId: string | null = String(payload.refresh_request_id ?? "").trim() || null;
+  const settle = async (outcome: string): Promise<void> => {
+    if (!refreshRequestId) return;
+    try { await rpc("fn_kalodata_op_complete_from_edge", { p_request_id: refreshRequestId, p_outcome: outcome }); } catch (_e) { /* reconcile sweep is the backstop */ }
+  };
   if (!market) return jsonResponse(400, { ok: false, error: "missing_market" });
   if (!userId) return jsonResponse(400, { ok: false, error: "missing_user_id" });
   if (!videoId) return jsonResponse(400, { ok: false, error: "missing_video_id" });
-  if (!secret) return jsonResponse(424, { ok: false, provider: "KALODATA", market, lane_status: "AUTH_FAILED", error: "server_secret_unavailable" });
+  if (!secret) { await settle("PROVIDER_FAILED_PRE_CHARGE"); return jsonResponse(424, { ok: false, provider: "KALODATA", market, lane_status: "AUTH_FAILED", error: "server_secret_unavailable" }); }
 
   const reqBuild = await rpc("fn_kalodata_video_detail_request", { p_market: market, p_video_id: videoId });
   const rb: any = reqBuild.body;
   if (!reqBuild.ok || !rb || rb.ok !== true) {
     const reason = rb?.reason ?? "request_builder_failed";
+    await settle("PROVIDER_FAILED_PRE_CHARGE");
     return jsonResponse(reason === "UNSUPPORTED_MARKET" ? 200 : 502, { ok: false, provider: "KALODATA", market, lane_status: reason });
   }
   const endpoint = (Deno.env.get(DETAIL_BASE_ENV) || DEFAULT_ENDPOINT).trim();
@@ -83,18 +89,19 @@ Deno.serve(async (req) => {
 
   let provider: Response; let providerBody: any = {};
   try { provider = await fetch(endpoint, { method: "POST", headers: { "content-type": "application/json", [secretHeader]: secret }, body: JSON.stringify(rb.request_body ?? {}) }); providerBody = await provider.json().catch(() => ({})); }
-  catch (e) { return jsonResponse(502, { ok: false, provider: "KALODATA", market, lane_status: "PROVIDER_UNAVAILABLE", error: redact((e as Error).message) }); }
+  catch (e) { await settle("PROVIDER_FAILED_POST_CHARGE"); return jsonResponse(502, { ok: false, provider: "KALODATA", market, lane_status: "PROVIDER_UNAVAILABLE", error: redact((e as Error).message) }); }
   if (!provider.ok) {
     const laneStatus = provider.status === 401 || provider.status === 403 ? "AUTH_FAILED" : provider.status === 402 ? "PAYMENT_REQUIRED" : provider.status === 429 ? "RATE_LIMITED" : provider.status >= 500 ? "PROVIDER_UNAVAILABLE" : "FAILED";
+    await settle("PROVIDER_FAILED_POST_CHARGE");
     return jsonResponse(provider.status === 402 ? 402 : 502, { ok: false, provider: "KALODATA", market, lane_status: laneStatus, http_status: provider.status, error: redact(providerBody?.message ?? providerBody?.error ?? "provider_error") });
   }
 
   const detail = extractDetail(providerBody);
-  if (!detail) return jsonResponse(502, { ok: false, provider: "KALODATA", market, lane_status: "EMPTY_DETAIL" });
+  if (!detail) { await settle("PROVIDER_FAILED_POST_CHARGE"); return jsonResponse(502, { ok: false, provider: "KALODATA", market, lane_status: "EMPTY_DETAIL" }); }
 
   const persist = await rpc("fn_persist_kalodata_video_detail", { p_tenant: userId, p_market: market, p_detail: detail });
   const pb: any = persist.body;
-  if (!persist.ok || !pb || pb.ok !== true) return jsonResponse(502, { ok: false, provider: "KALODATA", market, lane_status: "PERSIST_FAILED", error: redact(pb ?? "persist_failed") });
+  if (!persist.ok || !pb || pb.ok !== true) { await settle("PROVIDER_FAILED_POST_CHARGE"); return jsonResponse(502, { ok: false, provider: "KALODATA", market, lane_status: "PERSIST_FAILED", error: redact(pb ?? "persist_failed") }); }
 
   try {
     const lane = await rpc("fn_kalodata_record_lane_outcome", { p_user_id: userId, p_market: market, p_lane_status: "SUCCESS_VIDEO_DETAIL", p_detail: { operation: "tiktok/video/detail", video_id: videoId } });
@@ -102,5 +109,6 @@ Deno.serve(async (req) => {
     if (runId) await rpc("fn_kalodata_record_usage", { p_run_id: runId, p_usage: { provider: "KALODATA", operation: "tiktok/video/detail", tenant_id: userId, country: market, call_count: 1, http_status: provider.status, recorded_by: "kalodata-video-detail-edge", recorded_at: new Date().toISOString() }, p_endpoint: endpoint });
   } catch (_e) { /* best-effort */ }
 
+  await settle("SUCCESS");
   return jsonResponse(200, { ok: true, provider: "KALODATA", market, lane_status: "SUCCESS_VIDEO_DETAIL", video_id: videoId, rights_state: "RESEARCH_ONLY", persist: pb });
 });

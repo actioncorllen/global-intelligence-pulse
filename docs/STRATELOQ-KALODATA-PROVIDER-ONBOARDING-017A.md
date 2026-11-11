@@ -627,3 +627,81 @@ download, permanent media storage, or advertising reuse.
 - Confirm contracts against live docs; **chargeable-call + production-deploy approval**; **video media
   rights** confirmation (for `video/url`/playback); caller↔budget wiring (step 4, production-only functions).
 - Everything implementable without a paid call or deployment is complete and green (8/8 + 10/10).
+
+---
+
+# Phase 9 — Caller wiring + full lifecycle tests + deployment plan
+
+## 41. Production-compatible caller wiring (Part 1) — reuses the credit workflow, no new ledger
+Inspected the live workflow: `fn_discovery_refresh_quote → reserve → authorize → fire → settle/refund`
+over `discovery_credit_ledger` + `provider_call_budget` (`fn_provider_budget_try_consume`, KALODATA
+**fail-closed**). `authorize`/`settle`/`is_refund`/`quote`/`try_consume` are **operation-agnostic**, so they
+are reused unchanged. `supabase/drafts/kalodata_caller_wiring.sql` adds only the thin operation-generic
+pieces:
+- `ALTER discovery_refresh_request ADD COLUMN operation` (additive; default `DISCOVERY_REFRESH` keeps
+  discovery byte-for-byte).
+- `fn_kalodata_op_reserve(operation, market, idempotency_key)` — 9-market gate + reuse `fn_discovery_refresh_quote`
+  + ledger `RESERVE` (same table, same credit math). Idempotent by `(tenant, idempotency_key)`.
+- `fn_kalodata_op_complete_from_edge(request_id, outcome)` — service-role-safe settle/refund (tenant from
+  the row, like the discovery edge's complete_from_edge); same `is_refund` logic + same ledger.
+- `fn_kalodata_op_fire` (nonce + `net.http_post`) and `fn_kalodata_run_product_detail / _video_rank /
+  _video_detail` (reserve → **reuse** `fn_discovery_refresh_authorize` → fire).
+- The three edges now thread `refresh_request_id` and call the completion: **SUCCESS settles, any failure
+  refunds** (`PROVIDER_FAILED_PRE_CHARGE` before the provider call, `..._POST_CHARGE` after) — mirroring the
+  discovery edge. One-time nonce, tenant isolation, the 9-market gate and fail-closed budget are inherited.
+
+## 42. Integration tests (Part 4) — mocks, no paid calls
+`fn_kalodata_caller_lifecycle_selftest` drives the full internal lifecycle against the **real** production
+credit functions (loaded into ephemeral Postgres with mocked tables): **10/10** —
+`happy(reserve→authorize→settle)`, `duplicate(idempotent)`, `malformed/failure→refund`,
+`credit_exhaustion→denied`, `unsupported_market→denied`, `provider_budget exhausted at reserve→denied`,
+`provider_budget race at authorize→fail-closed+auto-refund→REFUNDED`, `cross_tenant→REQUEST_NOT_FOUND`,
+`expired_nonce→rejected / fresh→accepted`, `run_* dry-run→authorized`. All three drafts also load together
+and pass: product_detail **8/8**, video **10/10**, caller **10/10** (28 checks). No Kalodata API call, no
+production write, no deploy.
+
+## 43. Contract validation (Part 2) — live docs not reachable from this environment
+The live Open Center pages remain **unreachable from this build** (`ENOTFOUND www.kalodata.com`; the docs
+are also login-gated), so a live diff could not be performed here. Implemented strictly from the supplied
+`kalodata_official_api_contracts_2026-11-11.md`, which is itself "from indexed copies… confirm against live
+docs before production deployment." **Remaining unverified items to confirm against live docs before go-live:**
+- **`need_extra` (product/detail):** shown in the docs' debug example but **absent from the param table** —
+  treated as unsupported; our request does **not** send it. Confirm.
+- **Per-call credit cost:** documented rate limits are request limits, **not** prices. The real per-endpoint
+  credit cost must be read from the account pricing/consumption page (affects `discovery_credit_price`).
+- **Live market coverage:** the API region list is not proof of live coverage — the 9-market gate is kept.
+- **Response shapes under real data:** the docs' Mock Responses show `success:false`; a passing mock test
+  does **not** prove live compatibility. First live smoke call per operation must be verified.
+- `sales_volumn` spelling, `product_number` as a count, and no per-video `product_id` are handled as documented.
+
+## 44. Media rights (Part 3) — unchanged
+`video/url` stays hard-blocked (no edge invokes it); no playback/download/permanent media storage/ad reuse.
+Video research metrics + attribution are prepared independently (research-only).
+
+## 45. Exact minimal deployment sequence (Part 5) — via the canonical Supabase CLI/MCP, not this repo
+Deployment is **direct-to-project via Supabase CLI (`supabase db push`) / Management API (MCP
+`apply_migration`)** — the authority is `supabase_migrations.schema_migrations`. **Do not** replay this
+repo's `mig_*` or the DR snapshot. Minimal controlled sequence:
+1. **Confirm** the four contracts against the live authenticated Open Center pages.
+2. **One new timestamp-versioned migration** (authored in the canonical repo/pipeline), applied in order:
+   `fn_kalodata_detail_request` → `ALTER discovery_refresh_request ADD operation` → `kalodata_video_research`
+   (+RLS/indexes) → video request builders → `fn_kalodata_ingest_video_rank` / `fn_persist_kalodata_video_detail`
+   → `fn_kalodata_op_reserve/op_fire/op_complete_from_edge` → `fn_kalodata_run_product_detail/_video_rank/_video_detail`
+   → self-tests → grants. (`fn_persist_kalodata_product_detail` already exists in prod — do not recreate.)
+3. **Deploy edges** `kalodata-product-detail`, `kalodata-video-rank`, `kalodata-video-detail`
+   (`supabase functions deploy <slug>`). **Not** `video/url`. Secret `KALODATA_SECRET_KEY` already set.
+4. **Pricing + budget:** confirm/add `discovery_credit_price` for detail/video (may differ from the discovery
+   "refresh" price), and provision `provider_call_budget` (KALODATA, per tenant/market, approved `max_calls`)
+   — this budget IS the chargeable approval gate; without it `authorize` fails closed (no paid call).
+5. **Run self-tests on prod:** `fn_kalodata_product_detail_selftest` (8/8), `fn_kalodata_video_selftest`
+   (10/10), `fn_kalodata_caller_lifecycle_selftest` (10/10 — writes+cleans sentinel rows).
+6. **Smoke:** one authorized call per operation for one market (budget approved), verify reserve→settle and
+   the real per-call credit cost; keep the 9-market gate.
+7. **Video rights:** keep `video/url` uninvoked and playback/storage disabled until Kalodata confirms rights.
+
+## 46. Remaining contractual uncertainties + approvals outstanding
+- Confirm contracts live (esp. `need_extra`, per-call credit cost, live coverage).
+- **Pricing decision:** detail/video credit cost vs the discovery refresh price.
+- **Chargeable budget + production deploy approval.**
+- **Video media rights** (for `video/url`/playback).
+- Deployment executes through the canonical CLI/MCP pipeline (this repo is DR/docs only).
