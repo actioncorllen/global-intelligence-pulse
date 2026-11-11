@@ -483,3 +483,84 @@ implemented. (Product-level video *revenue* is already captured from `product/ra
 - **Genuine external blockers:** (1) canonical migrations repo / deploy pipeline must be identified by the
   owner; (2) verified product/detail **request** schema to wire the fetch; (3) verified **video** endpoint
   specs + confirmed video media rights; (4) chargeable-call + deploy approval before any live run.
+
+---
+
+# Phase 7 — Deployment source identified · Product Detail fetch built · Video scoped
+
+## 32. Authoritative deployment source (Part 1)
+Evidence (read-only, from this repo + production):
+- `supabase/billing-staging/README.md`: *"Production (`nxaunmyihhjixxxljcqt`) is a separate project and is
+  **never** deployed from here,"* and the phase-08 migrations *"were applied directly to the project via
+  the **Supabase Management API / MCP** and were **not** version-controlled in this repo."*
+- This repo's only CI is `billing-staging-security-gate.yml` (scoped to `supabase/billing-staging/` +
+  `scripts/security/`); there is **no** production deploy workflow. The repo carries `dr/` runbooks and
+  security remediation — it is a **DR / security / documentation** repo.
+- Production `supabase_migrations.schema_migrations` = **507** timestamp-versioned migrations (latest
+  `20261110221932 mig_355b_webhook_reclaim`); the DR runbook deploys Edge Functions via
+  `supabase functions deploy`. Frontend = separate **Lovable** project; automation = **n8n cloud**.
+
+**Conclusion:** there is no single git "deployment repo" that this project is pushed from. Production is
+changed **directly against the project via the Supabase CLI / Management API (MCP)**, with
+`schema_migrations` as the authority — which is itself the root cause of the drift (direct-to-project
+changes not fully version-controlled). *Unresolved:* whether a canonical app repo holds the 507 timestamp
+migrations in source control (not visible here). **Recommendation:** adopt version-controlled
+`supabase/migrations` applied via `supabase db push` from one canonical repo; treat this repo's `mig_*`
+and the snapshot as reference only. **Safe-continuation requirement:** apply any new change through that
+pipeline — never replay this repo's files or deploy the snapshot.
+
+## 33. Product Detail — fetch did NOT exist; now built (non-deploying) (Part 2)
+Inspection: no DB caller of `fn_persist_kalodata_product_detail`; no `kalodata-*-detail` edge function;
+**n8n has 85 workflows, none matching "kalodata"**. So the recorded Product Detail API usage was a
+dev/manual probe — **automated Product Detail fetching does not exist.**
+
+Built (PROPOSED, not deployed), reusing existing infra only — **no duplicate provider / ledger / image
+pipeline / persistence**:
+- `supabase/drafts/kalodata_product_detail_fetch.sql`:
+  - `fn_kalodata_detail_request(market, kalodata_product_id)` — market-gated via
+    `discovery_provider_market_config`, secret-free; request assembled from **verified** field names
+    (region/language/currency as product/rank; `product_id` = Kalodata's own verified id field); flagged
+    `request_params_verified=false`.
+  - `fn_kalodata_product_detail_selftest` — **7/7 pass** (ephemeral Postgres): request gating (enabled /
+    disabled / uncovered market, missing id), secret never in request body, persister tenant-isolation
+    guard, non-object rejection. Plus an ephemeral harness proved the verified detail response maps
+    correctly through the existing persister (REFERENCE_ONLY; category ids; attributes/variants/desc).
+- `supabase/functions/kalodata-product-detail/index.ts` — edge broker mirroring `kalodata-discovery`
+  (secret-key auth, service_role/nonce gate, `fn_kalodata_detail_request` → provider call →
+  `fn_persist_kalodata_product_detail` → `fn_kalodata_record_lane_outcome`+`fn_kalodata_record_usage`).
+  **Fail-closed:** refuses the chargeable call unless `KALODATA_DETAIL_REQUEST_CONFIRMED=true` is set,
+  so a guessed request can never be sent. Includes a non-exposing `probe` mode.
+
+**Still blocked for go-live:** confirm the exact product/detail **request** params against Open Center
+(then set the env flag), chargeable-call approval, and deploy via the canonical pipeline.
+
+## 34. Video Intelligence — contracts not officially verifiable; nothing built (Part 3)
+Only **third-party** sources describe the Video module; Kalodata's own field schema was not obtainable
+(kalodata.com unreachable here; Open Center gated). Reported-but-**unverified** shapes:
+- `POST /openapi/v1/tiktok/video/rank` — up to 100 videos for a product; filters region/dateRange/
+  language/currency/sortField; rate limit ~10 req/10s.
+- `POST /openapi/v1/tiktok/video/detail` — full metrics for one video; rate limit ~100 req/10s.
+- Reported field *areas* (not names): identity, engagement, revenue, ad-performance, creator (rank);
+  engagement, monetization, advertising, creator identity, region, duration, linked-product count (detail).
+
+Per "build only where sufficient documentation exists" + "stop for genuine inaccessible contracts" +
+"unresolved media rights," **no video code or field mapping was written** (that would be fabrication).
+Research-only treatment stands: when built, video metrics follow the REFERENCE_ONLY research posture;
+**no** customer-facing playback, **no** permanent video storage, **no** advertising reuse until rights
+are confirmed. Playback URLs, if ever stored, are expiring and must be cached under confirmed rights only.
+**Blocked on:** official Kalodata Video API field/param schemas **and** confirmed video media rights.
+
+## 35. Files changed, tests, blockers (Part 5)
+- **Added:** `supabase/drafts/README.md`, `supabase/drafts/kalodata_product_detail_fetch.sql`,
+  `supabase/functions/kalodata-product-detail/index.ts`. **Updated:** this doc.
+- **Preserved (untouched):** product/rank lane, 9 enabled markets, cost controls, country isolation,
+  Product Identity Resolution, Product Asset Lock, FastMoss/DataForSEO/CJ and all other providers.
+- **Tests:** product-detail draft self-test **7/7** + persist-mapping proof in ephemeral Postgres. No
+  Kalodata API call, no production write, no deploy.
+- **Genuine external blockers / approvals outstanding:**
+  1. **Deployment pipeline:** identify/confirm the canonical versioned-migrations repo + `supabase db
+     push` process (this repo is not it).
+  2. **Product Detail request params:** confirm against Open Center, then set
+     `KALODATA_DETAIL_REQUEST_CONFIRMED=true`.
+  3. **Video:** official video endpoint/field specs + confirmed media rights.
+  4. **Approvals:** chargeable-call approval and production deploy approval before any live run.
