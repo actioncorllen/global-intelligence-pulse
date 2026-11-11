@@ -203,6 +203,16 @@ the founder's "runtime error" overlay was most likely the PREVIEW's own instrume
 flagging the failed 502 network call (member-facing code already toasted); with the 502
 gone and the UI hardened, both layers are covered.
 
+## Embedded-preview hand-off (preview commit 4e1996a; follow-up to the blank pane)
+Founder retest inside the Lovable EDITOR pane: card-setup returned 200 with a valid
+hosted URL (fix confirmed live), but Stripe's hosted page refuses to display inside an
+embedded pane, so the pane went blank. UI change: when the app detects it is framed,
+"Add payment card" (billing + onboarding step) and the top-up confirm show a
+"Continue to secure Stripe page" button that opens Stripe in a NEW TAB (stays open for
+blocked-popup retry; closing re-reads the card/balance or re-checks onboarding). A
+normal tab keeps direct navigation. URL guards unchanged (200 + ok +
+checkout.stripe.com only). 661 tests pass (8 new), typecheck + lint clean.
+
 ## Remaining journeys (need the founder's signed-in device; everything else ready)
 - Card registration: preview app -> Workspace -> Billing & Credits -> Add payment card
   -> Stripe-hosted page -> test card 4242 4242 4242 4242 (any future expiry/CVC).
