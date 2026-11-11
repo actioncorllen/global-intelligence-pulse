@@ -1,21 +1,23 @@
 // STRATELOQ — stripe-webhook (signature-verified, idempotent PSP event ingestion)
 // ----------------------------------------------------------------------------
-// The ONLY writer of card registrations and wallet credits. Every request must carry
-// a valid Stripe-Signature (HMAC-SHA256 over `${t}.${rawBody}` with STRIPE_WEBHOOK_SECRET,
-// 5-minute tolerance, timing-safe compare) — otherwise 400, nothing processed.
-// Event idempotency: fn_psp_webhook_begin (PK on event id) — a replayed event is
-// acknowledged 200 but has NO effect; wallet credits are ALSO idempotent per
-// payment reference (fn_wallet_credit_purchase), so duplicates can never double-fund.
-// Member binding: client_reference_id, set SERVER-SIDE by stripe-card-setup /
-// stripe-wallet-topup from the authenticated user — never trusted from the browser.
-// FAIL-CLOSED: no STRIPE_WEBHOOK_SECRET -> 424 (verify_jwt=false is safe: nothing
-// can be processed without the signature). LIVE events are ignored unless
-// STRIPE_LIVE_ALLOWED='true' (separate founder approval).
+// The ONLY writer of card registrations and wallet credits. Every request must carry a valid
+// Stripe-Signature (HMAC-SHA256 over `${t}.${rawBody}`, 5-minute tolerance, timing-safe compare)
+// that validates against the TEST secret (STRIPE_WEBHOOK_SECRET) OR the LIVE secret
+// (STRIPE_WEBHOOK_SECRET_LIVE) — otherwise 400, nothing processed. Supporting BOTH secrets lets a
+// separate TEST endpoint and a separate LIVE endpoint (each with its own signing secret) deliver to
+// this one function without mixing secrets. Test and live are never confused: a live event is
+// processed only if STRIPE_LIVE_ALLOWED='true', and the Stripe API key used to expand the event is
+// selected by event.livemode (live key for live events, test key for test events).
+// Event idempotency: fn_psp_webhook_begin (PK on event id). Wallet credits are also idempotent per
+// payment reference. Member binding: client_reference_id, set server-side by the initiating edge.
+// FAIL-CLOSED: no webhook secret at all -> 424. LIVE events ignored unless STRIPE_LIVE_ALLOWED='true'.
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const STRIPE_KEY = Deno.env.get("STRIPE_SECRET_KEY") ?? "";
+const STRIPE_KEY_LIVE = Deno.env.get("STRIPE_SECRET_KEY_LIVE") ?? "";
 const WEBHOOK_SECRET = Deno.env.get("STRIPE_WEBHOOK_SECRET") ?? "";
+const WEBHOOK_SECRET_LIVE = Deno.env.get("STRIPE_WEBHOOK_SECRET_LIVE") ?? "";
 const LIVE_ALLOWED = (Deno.env.get("STRIPE_LIVE_ALLOWED") ?? "") === "true";
 const TOLERANCE_SEC = 300;
 
@@ -36,7 +38,7 @@ async function hmacHex(secret: string, message: string): Promise<string> {
   return Array.from(new Uint8Array(sig)).map((x) => x.toString(16).padStart(2, "0")).join("");
 }
 
-/** Verify a Stripe-Signature header against the raw body. Exported shape kept pure for unit testing. */
+/** Verify a Stripe-Signature header against a single secret. Exported shape kept pure for testing. */
 export async function verifyStripeSignature(
   header: string | null, rawBody: string, secret: string, nowEpochSec: number, toleranceSec: number,
 ): Promise<boolean> {
@@ -56,6 +58,13 @@ export async function verifyStripeSignature(
   return ok;
 }
 
+/** True if the signature validates against EITHER the live or the test secret (whichever present). */
+async function verifyAnySecret(header: string | null, rawBody: string, nowSec: number): Promise<boolean> {
+  if (WEBHOOK_SECRET_LIVE && await verifyStripeSignature(header, rawBody, WEBHOOK_SECRET_LIVE, nowSec, TOLERANCE_SEC)) return true;
+  if (WEBHOOK_SECRET && await verifyStripeSignature(header, rawBody, WEBHOOK_SECRET, nowSec, TOLERANCE_SEC)) return true;
+  return false;
+}
+
 async function rpc(fn: string, args: Record<string, unknown>): Promise<unknown> {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${fn}`, {
     method: "POST",
@@ -68,9 +77,9 @@ async function rpc(fn: string, args: Record<string, unknown>): Promise<unknown> 
   return parsed;
 }
 
-async function stripeGet(path: string): Promise<Record<string, unknown>> {
+async function stripeGet(apiKey: string, path: string): Promise<Record<string, unknown>> {
   const res = await fetch(`https://api.stripe.com/v1/${path}`, {
-    headers: { Authorization: `Bearer ${STRIPE_KEY}` },
+    headers: { Authorization: `Bearer ${apiKey}` },
   });
   const txt = await res.text();
   try { return txt ? JSON.parse(txt) : {}; } catch { return {}; }
@@ -79,11 +88,11 @@ async function stripeGet(path: string): Promise<Record<string, unknown>> {
 Deno.serve(async (req: Request): Promise<Response> => {
   if (req.method !== "POST") return json(405, { ok: false });
   if (!SUPABASE_URL || !SERVICE_ROLE) return json(500, { ok: false, error: "server_not_configured" });
-  if (!WEBHOOK_SECRET) return json(424, { ok: false, error: "webhook_not_configured" });
+  if (!WEBHOOK_SECRET && !WEBHOOK_SECRET_LIVE) return json(424, { ok: false, error: "webhook_not_configured" });
 
   const rawBody = await req.text();
   const nowSec = Math.floor(Date.now() / 1000);
-  const valid = await verifyStripeSignature(req.headers.get("stripe-signature"), rawBody, WEBHOOK_SECRET, nowSec, TOLERANCE_SEC);
+  const valid = await verifyAnySecret(req.headers.get("stripe-signature"), rawBody, nowSec);
   if (!valid) return json(400, { ok: false, error: "invalid_signature" });
 
   let event: Record<string, unknown>;
@@ -93,9 +102,11 @@ Deno.serve(async (req: Request): Promise<Response> => {
   const livemode = event.livemode === true;
   if (!eventId) return json(400, { ok: false, error: "no_event_id" });
 
+  // Live events are processed only under explicit approval. Also select the matching Stripe API key.
   if (livemode && !LIVE_ALLOWED) {
     return json(200, { ok: true, ignored: "livemode_not_approved" });
   }
+  const apiKey = livemode ? STRIPE_KEY_LIVE : STRIPE_KEY;
 
   // Idempotency: first claim wins; replays acknowledge without effect.
   try {
@@ -113,7 +124,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
       if (mode === "setup" && uid) {
         const siId = String(obj.setup_intent ?? "");
         if (!siId) { await finish("setup_missing_intent"); return json(200, { ok: true }); }
-        const si = await stripeGet(`setup_intents/${siId}?expand[]=payment_method`);
+        const si = await stripeGet(apiKey, `setup_intents/${siId}?expand[]=payment_method`);
         const pm = (si.payment_method ?? {}) as Record<string, unknown>;
         const card = (pm.card ?? {}) as Record<string, unknown>;
         const r = (await rpc("fn_psp_card_registered", {
@@ -150,9 +161,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
     return json(200, { ok: true, ignored: eventType });
   } catch (e) {
     await finish(`error:${(e as Error).message.slice(0, 120)}`);
-    // Non-2xx so Stripe retries; the event-claim row stays, so a retry that reaches a
-    // healthy database is acknowledged as duplicate WITHOUT re-processing side effects
-    // that already happened (card upsert + purchase are themselves idempotent anyway).
+    // Non-2xx so Stripe retries; the event-claim row stays, so a retry that reaches a healthy
+    // database is acknowledged as duplicate WITHOUT re-processing side effects that already
+    // happened (card upsert + purchase are themselves idempotent anyway).
     return json(500, { ok: false, error: "processing_failed" });
   }
 });

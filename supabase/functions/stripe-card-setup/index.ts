@@ -6,24 +6,28 @@
 // Card data NEVER touches Strateloq/Supabase/n8n. Registration lands via the
 // signature-verified stripe-webhook (fn_psp_card_registered).
 //
-// FAIL-CLOSED / INERT: without STRIPE_SECRET_KEY this returns 424. A LIVE-mode key
-// (sk_live_) is refused unless STRIPE_LIVE_ALLOWED='true' (separate founder approval).
-// This function is intentionally NOT onboarding-gated: card setup is itself an
-// onboarding step (CARD_SETUP_REQUIRED) and must be reachable by incomplete members.
+// TEST / LIVE SEPARATION (pilot-scoped):
+//   - TEST is the default for every member, using STRIPE_SECRET_KEY (sk_test_).
+//   - LIVE is used ONLY for a member on the live_card_pilot allowlist (mig_361), and ONLY when
+//     STRIPE_LIVE_ALLOWED='true' AND a live key STRIPE_SECRET_KEY_LIVE (sk_live_) is configured.
+//   - The two keys are NEVER mixed: the live path uses the live key + live customer; the test path
+//     uses the test key + test customer. Customer reuse is filtered by livemode so a test customer
+//     id can never be used with the live key (or vice versa).
+// INERT until the founder adds the live key AND a separate approval sets STRIPE_LIVE_ALLOWED='true':
+// with either absent, useLive is false for everyone and behaviour is byte-identical to test today.
+//
+// FAIL CLOSED: no STRIPE_SECRET_KEY -> 424. A non-test key without STRIPE_LIVE_ALLOWED -> 424. If
+// policy require_live_card is set but this member cannot do live (not pilot / live not ready) ->
+// 424 with guidance (never a dead-end sandbox checkout that can't satisfy a live requirement).
+// Not onboarding-gated: card setup is itself the CARD_SETUP_REQUIRED step.
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const STRIPE_KEY = Deno.env.get("STRIPE_SECRET_KEY") ?? "";
+const STRIPE_KEY_LIVE = Deno.env.get("STRIPE_SECRET_KEY_LIVE") ?? "";
 const LIVE_ALLOWED = (Deno.env.get("STRIPE_LIVE_ALLOWED") ?? "") === "true";
-// Canonical production origin (founder-confirmed). The browser return URL is cosmetic —
-// a card is registered ONLY by the signature-verified webhook, never by the return param —
-// but it must land on a live origin.
+
 const PROD_ORIGIN = "https://strateloq.com";
-// EXACT authorised return origins only — production plus the single Strateloq preview host.
-// No wildcard: other Lovable projects' *.lovable.app / *.lovableproject.com hosts are NOT
-// trusted. A client-proposed origin is honoured only on an exact, case-normalised match;
-// anything else (legacy domain, another project's preview, an attacker URL) falls back to
-// production. Never an open redirect.
 const ALLOWED_RETURN_ORIGINS = new Set<string>([
   PROD_ORIGIN,
   "https://www.strateloq.com",
@@ -48,10 +52,10 @@ const CORS: Record<string, string> = {
 const json = (s: number, b: unknown) =>
   new Response(JSON.stringify(b), { status: s, headers: { ...CORS, "content-type": "application/json", "cache-control": "no-store" } });
 
-async function stripe(path: string, params: Record<string, string>): Promise<{ ok: boolean; status: number; data: Record<string, unknown> }> {
+async function stripe(key: string, path: string, params: Record<string, string>): Promise<{ ok: boolean; status: number; data: Record<string, unknown> }> {
   const res = await fetch(`https://api.stripe.com/v1/${path}`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${STRIPE_KEY}`, "content-type": "application/x-www-form-urlencoded" },
+    headers: { Authorization: `Bearer ${key}`, "content-type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams(params).toString(),
   });
   const txt = await res.text();
@@ -67,6 +71,13 @@ async function stripe(path: string, params: Record<string, string>): Promise<{ o
   return { ok: res.ok, status: res.status, data };
 }
 
+async function svcGet(pathAndQuery: string): Promise<unknown> {
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/${pathAndQuery}`,
+    { headers: { apikey: SERVICE_ROLE, authorization: `Bearer ${SERVICE_ROLE}` } });
+  if (!r.ok) throw new Error(`svc ${r.status}`);
+  return await r.json();
+}
+
 Deno.serve(async (req: Request): Promise<Response> => {
   if (req.method === "OPTIONS") return new Response("ok", { status: 200, headers: CORS });
   if (req.method !== "POST") return json(405, { status: "METHOD_NOT_ALLOWED" });
@@ -74,31 +85,6 @@ Deno.serve(async (req: Request): Promise<Response> => {
   if (!STRIPE_KEY) return json(424, { status: "PAYMENTS_NOT_CONFIGURED", message: "Card setup is not available yet." });
   if (!STRIPE_KEY.startsWith("sk_test_") && !LIVE_ALLOWED) {
     return json(424, { status: "LIVE_MODE_NOT_APPROVED", message: "Live payments are not enabled." });
-  }
-
-  // FAIL CLOSED for the live-card requirement: if policy requires a genuine LIVE card
-  // (onboarding_policy.require_live_card) but live mode is not available (no sk_live_ key, or
-  // live not approved), DO NOT hand the customer a sandbox checkout — a test card could never
-  // satisfy the requirement, leaving them stuck in a loop. Return clear guidance instead.
-  // Read fails open to current behaviour (require_live_card defaults FALSE => no-op today).
-  const liveReady = STRIPE_KEY.startsWith("sk_live_") && LIVE_ALLOWED;
-  if (!liveReady) {
-    let requireLive = false;
-    try {
-      const pr = await fetch(
-        `${SUPABASE_URL}/rest/v1/onboarding_policy?select=require_live_card&limit=1`,
-        { headers: { apikey: SERVICE_ROLE, authorization: `Bearer ${SERVICE_ROLE}` } });
-      if (pr.ok) {
-        const rows = (await pr.json()) as Array<{ require_live_card?: boolean }>;
-        requireLive = rows?.[0]?.require_live_card === true;
-      }
-    } catch { requireLive = false; }
-    if (requireLive) {
-      return json(424, {
-        status: "LIVE_CARD_REQUIRED_NOT_AVAILABLE",
-        message: "A verified live payment card is required, but live card setup is not available yet. Please check back shortly — no sandbox card can be used here.",
-      });
-    }
   }
 
   // Authenticate the member (server-side)
@@ -112,9 +98,38 @@ Deno.serve(async (req: Request): Promise<Response> => {
   } catch { return json(401, { status: "UNAUTHENTICATED" }); }
   if (!userId) return json(401, { status: "UNAUTHENTICATED" });
 
-  // Optional body: { context?: "billing", origin?: string }. "billing" returns to the
-  // Billing & Credits panel instead of onboarding; origin is validated server-side
-  // (allowlist above) — a legacy or arbitrary origin is ignored in favour of production.
+  // Decide TEST vs LIVE for THIS member. LIVE requires: approval flag ON, a live key configured,
+  // and this member on the live_card_pilot allowlist. Otherwise TEST. Pilot check fails safe to
+  // false (test) on any error, so a DB hiccup can never accidentally route a member to live.
+  const liveConfigured = LIVE_ALLOWED && STRIPE_KEY_LIVE.startsWith("sk_live_");
+  let isPilot = false;
+  if (liveConfigured) {
+    try {
+      const rows = (await svcGet(`live_card_pilot?auth_user_id=eq.${userId}&enabled=is.true&select=auth_user_id&limit=1`)) as unknown[];
+      isPilot = Array.isArray(rows) && rows.length > 0;
+    } catch { isPilot = false; }
+  }
+  const useLive = liveConfigured && isPilot;
+  const activeKey = useLive ? STRIPE_KEY_LIVE : STRIPE_KEY;
+
+  // FAIL CLOSED for a live-card requirement: if policy requires a genuine LIVE card but this member
+  // cannot do live (not pilot, or live not ready), DO NOT hand out a sandbox checkout that could
+  // never satisfy the requirement. Read fails open to current behaviour (require_live_card=FALSE => no-op).
+  if (!useLive) {
+    let requireLive = false;
+    try {
+      const rows = (await svcGet(`onboarding_policy?select=require_live_card&limit=1`)) as Array<{ require_live_card?: boolean }>;
+      requireLive = rows?.[0]?.require_live_card === true;
+    } catch { requireLive = false; }
+    if (requireLive) {
+      return json(424, {
+        status: "LIVE_CARD_REQUIRED_NOT_AVAILABLE",
+        message: "A verified live payment card is required, but live card setup is not available for your account yet. Please check back shortly — no sandbox card can be used here.",
+      });
+    }
+  }
+
+  // Optional body: { context?: "billing", origin?: string }.
   let context = "", reqOrigin = "";
   try {
     const b = (await req.json()) as { context?: string; origin?: string };
@@ -126,25 +141,22 @@ Deno.serve(async (req: Request): Promise<Response> => {
   const successUrl = `${origin}${returnPath}?card=success`;
   const cancelUrl = `${origin}${returnPath}?card=cancelled`;
 
-  // Reuse the member's existing Stripe customer where one is on record (any status)
+  // Reuse the member's Stripe customer of the SAME mode only (livemode must match the key),
+  // so a test customer id is never used with the live key or vice versa.
   let customer = "";
   try {
-    const r = await fetch(
-      `${SUPABASE_URL}/rest/v1/payment_method_registry?auth_user_id=eq.${userId}&select=provider_customer_ref&order=created_at.desc&limit=1`,
-      { headers: { apikey: SERVICE_ROLE, authorization: `Bearer ${SERVICE_ROLE}` } });
-    const arr = (await r.json()) as Array<{ provider_customer_ref?: string }>;
+    const arr = (await svcGet(
+      `payment_method_registry?auth_user_id=eq.${userId}&livemode=eq.${useLive}&select=provider_customer_ref&order=created_at.desc&limit=1`)) as Array<{ provider_customer_ref?: string }>;
     customer = String(arr?.[0]?.provider_customer_ref ?? "");
   } catch { /* fall through to create */ }
   if (!customer) {
-    const c = await stripe("customers", { "metadata[auth_user_id]": userId });
+    const c = await stripe(activeKey, "customers", { "metadata[auth_user_id]": userId });
     if (!c.ok || !c.data.id) return json(502, { status: "CUSTOMER_CREATE_FAILED" });
     customer = String(c.data.id);
   }
 
-  // Hosted Checkout Session, mode=setup. Binding: client_reference_id = authenticated uid.
-  // No payment_method_types: current Stripe API versions (2026-10-28.endive) refuse it on
-  // Checkout Sessions (methods are Dashboard-managed); mode=setup instead requires currency.
-  const s = await stripe("checkout/sessions", {
+  // Hosted Checkout Session, mode=setup (€0, no PaymentIntent). Binding: client_reference_id = uid.
+  const s = await stripe(activeKey, "checkout/sessions", {
     mode: "setup",
     customer,
     client_reference_id: userId,
@@ -153,5 +165,5 @@ Deno.serve(async (req: Request): Promise<Response> => {
     cancel_url: cancelUrl,
   });
   if (!s.ok || !s.data.url) return json(502, { status: "SESSION_CREATE_FAILED" });
-  return json(200, { status: "ok", url: String(s.data.url), session_id: String(s.data.id ?? "") });
+  return json(200, { status: "ok", mode: useLive ? "live" : "test", url: String(s.data.url), session_id: String(s.data.id ?? "") });
 });
