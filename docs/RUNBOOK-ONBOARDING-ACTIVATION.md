@@ -212,3 +212,10 @@ configuration untouched (one-line founder dashboard glance recommended at GO).
   fabricated or impersonated.
 - Monitoring: first self check-in armed ~50 min post-activation; rollback
   (`enforcement_active=false`) standing by per §5.
+
+## PILOT ACCEPTANCE — PASS (2026-11-11 10:18 UTC)
+surpyjabu@gmail.com completed the full mandatory journey on a real device over hosted
+production: simplified business form -> billing (COMP, amount 0, card-free) -> membership
+confirmed 10:18:54 UTC -> WORKSPACE_PREPARING (the accepted endpoint; analysis deliberately
+not run). COMP entitlement preserved; server-side gates already grant API access; the UI
+holds at Preparing until the founder authorises the business-discovery analysis run.
