@@ -30,13 +30,21 @@ header in that file for flags such as `-DiagnoseOnly` / `-NoBackup` / `-NoDrill`
 
 ### One-command repair from Windows (no manual Git, no copying scripts)
 
-`Invoke-StrateloqDR.ps1` is a Windows launcher that retrieves the committed repair files into
-your existing Ubuntu-WSL repo **non-destructively** (`git fetch` + `git show <ref>:path > file`
-— no branch switch, no checkout of the tree, nothing deleted), runs the diagnosis first, reports
-exactly what it intends to change (derived from the evidence, not from an assumption about the
-cause), gates the repair behind its safety checks, then repairs and verifies a fresh backup +
-encrypted archive + isolated restore. It preserves rclone auth, gpg keys, Google Drive
-destinations, existing archives and the Task Scheduler schedule.
+`Invoke-StrateloqDR.ps1` is a Windows PowerShell 5.1 launcher that retrieves the committed repair
+files into your existing Ubuntu-WSL repo **non-destructively** (`git fetch` + `git show <ref>:path
+> file` — no branch switch, no checkout of the tree, nothing deleted), runs the diagnosis first,
+reports exactly what it intends to change (derived from the evidence, not from an assumption about
+the cause), **requests approval before any change to local configuration**, then repairs and
+proves the fix with **real operations**: it runs the actual `Strateloq-DR-Weekly-Backup` Windows
+scheduled task and reads its real `LastTaskResult`, confirms the fresh encrypted archive is in
+Google Drive, verifies SHA-256 + decryptability + `pg_restore -l`, and performs an **actual
+isolated restore** into a throwaway local Postgres. It prints **`RESTORE_OK` only when every one
+of those real checks passes** — never from a skipped or mock drill. It preserves rclone auth, gpg
+keys, Google Drive destinations, existing archives and the Task Scheduler schedule, and the
+PowerShell↔WSL bridge is base64-encoded so it is robust under Windows PowerShell 5.1.
+
+The scheduled task is pointed at the **durable** repo-tracked `dr_weekly_backup.sh` (not a
+temporary repair script), so the weekly run keeps working after this procedure exits.
 
 Paste this single command into **Windows PowerShell** (adjust the four variables only if your
 distro/user/clone/branch differ):

@@ -14,18 +14,21 @@
             NOT from an assumption that the wrapper was the sole cause.
     STEP 5  Safety gate: stop on any hard blocker; otherwise confirm.
     STEP 6  Repair only after the gate passes.
-    STEP 7  Verify a fresh backup, its encrypted archive, and an isolated restore.
+    STEP 7  Run the REAL Windows scheduled task, verify the fresh archive in Google
+            Drive (sha256 + decrypt), and perform an actual isolated restore. The
+            repair prints RESTORE_OK only when every one of those real checks passes.
 
   Preserved and never touched: rclone auth, gpg keys, Google Drive destinations,
-  existing backup archives. The Task Scheduler job is changed only if the evidence
-  shows its exit-code handling is broken. Production DB is read-only (pg_dump).
-  Kalodata is not deployed or modified.
+  existing backup archives. The Task Scheduler job is pointed at the durable
+  repo-tracked script with correct exit-code handling. Production DB is read-only
+  (pg_dump). Kalodata is not deployed or modified.
 
   Run it through the one-line bootstrap (see scripts/dr/README.md), or directly:
     powershell -NoProfile -ExecutionPolicy Bypass -File .\Invoke-StrateloqDR.ps1
   Flags: -AutoApprove (skip the confirm prompt), -NoBackup, -NoDrill.
   =============================================================================
 #>
+#Requires -Version 5.1
 [CmdletBinding()]
 param(
   [string]$Distro          = 'Ubuntu',
@@ -40,13 +43,16 @@ param(
   [switch]$NoDrill
 )
 $ErrorActionPreference = 'Stop'
+try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
 function Head { param($m) Write-Host "`n==================== $m ====================" -ForegroundColor Cyan }
 function Pass { param($m) Write-Host "[PASS] $m" -ForegroundColor Green }
 function Info { param($m) Write-Host "[INFO] $m" }
 function Warn { param($m) Write-Host "[WARN] $m" -ForegroundColor Yellow }
 function Bad  { param($m) Write-Host "[FAIL] $m" -ForegroundColor Red }
-function Wsl  { param([string]$Cmd)
-  $o = & wsl.exe -d $Distro -u $WslUser -- bash -lc $Cmd 2>&1
+# base64 bridge: the bash script passes through PowerShell 5.1 -> wsl -> bash unmangled.
+function Wsl  { param([Parameter(Mandatory)][string]$Script)
+  $b64 = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($Script))
+  $o = & wsl.exe -d $Distro -u $WslUser -- bash -lc "echo $b64 | base64 -d | bash" 2>&1
   [pscustomobject]@{ Out = ($o -join "`n"); Code = $LASTEXITCODE }
 }
 # Resolve the Windows UNC path to a POSIX dir inside the distro, with \\wsl$ fallback.
@@ -141,10 +147,11 @@ if ($diagFails -gt 0) {
   Bad "Diagnose reported $diagFails hard blocker(s) (e.g. WSL unreachable / rclone remote missing). Not proceeding. Resolve those and re-run."
   exit 6
 }
-Pass "No hard blockers. Preservation guarantees stated above."
+Pass "No hard blockers. So far ONLY repo-tracked script files were refreshed (STEP 1); your scheduled task, env file and installed wrapper are UNCHANGED."
 if (-not $AutoApprove) {
-  $ans = Read-Host "Proceed with repair + verified backup$(if(-not $NoDrill){' + isolated restore drill'})? [y/N]"
-  if ($ans -notmatch '^(y|yes)$') { Info "Declined — nothing changed. Re-run with -AutoApprove to skip this prompt."; exit 0 }
+  Info "Approval is requested BEFORE any change to local configuration (scheduled task / env file / installed wrapper)."
+  $ans = Read-Host "Proceed to REPAIR + run the REAL scheduled task + verify archive + REAL isolated restore? [y/N]"
+  if ($ans -notmatch '^(y|yes)$') { Info "Declined — no local configuration changed. Re-run with -AutoApprove to skip this prompt."; exit 0 }
 }
 
 # =============================================================================
@@ -160,12 +167,11 @@ Write-Host $outText
 # =============================================================================
 Head 'LAUNCHER VERDICT'
 # =============================================================================
-$summary = ($outText -split "`n") | Where-Object { $_ -match '^\[(PASS|FAIL)\].*(RESTORE-READY|NOT yet verified|restore-drilled|RESTORE-READY\.)' } | Select-Object -Last 1
-if ($outText -match 'Backup is RESTORE-READY' -and $outText -notmatch 'NOT yet verified') {
-  Pass "Complete. Fresh encrypted production backup produced, uploaded, verified (decrypt + pg_restore -l)$(if(-not $NoDrill){' and restore-drilled'}). RESTORE-READY."
+if ($outText -match 'RESTORE_OK' -and $outText -notmatch 'NOT RESTORE_OK') {
+  Pass "RESTORE_OK — the repair verified ALL required evidence from real operations: Windows scheduled task succeeded, a fresh encrypted archive is in Google Drive, SHA-256 + decryptability passed, and an actual isolated restore loaded the schema and data."
   Write-Host "Kalodata remains on hold for its separate deployment/approval gate (not touched here)." -ForegroundColor White
   exit 0
 } else {
-  Bad "Repair did not reach RESTORE-READY. Review the [FAIL] lines above. Keep Kalodata ON HOLD."
+  Bad "NOT RESTORE_OK — one or more required evidence items did not pass. Review the SUMMARY checklist and [FAIL] lines above. Keep Kalodata ON HOLD."
   exit 1
 }
