@@ -214,6 +214,12 @@ BEGIN
          AND (r_auth->>'authorized')::boolean=true AND (r_done->>'settled')::boolean=true
          AND bal_after_settle = bal0 - 1));
 
+  -- 1b) double settlement is idempotent: second complete is a replay, no second SETTLE, no balance change
+  r_done := public.fn_kalodata_op_complete_from_edge(req1,'SUCCESS');
+  v := v || jsonb_build_object('case','double_settle_idempotent','pass',
+        ((r_done->>'idempotent_replay')::boolean=true AND public.fn_discovery_credit_balance() = bal_after_settle
+         AND (SELECT count(*) FROM public.discovery_credit_ledger WHERE refresh_request_id=req1 AND entry_type='SETTLE')=1));
+
   -- 2) duplicate idempotency: same key -> replay, no extra charge
   r_dup := public.fn_kalodata_op_reserve('PRODUCT_DETAIL','US','idem1',1);
   v := v || jsonb_build_object('case','duplicate_request_idempotent','pass',
@@ -227,6 +233,12 @@ BEGIN
   bal_after_refund := public.fn_discovery_credit_balance();
   v := v || jsonb_build_object('case','malformed_or_failure_refund','pass',
         ((r_done->>'refunded')::boolean=true AND bal_after_refund = bal_after_settle));  -- reserve(-1)+refund(+1)=net 0
+
+  -- 3b) double refund is idempotent: second complete is a replay, no second REFUND, no balance change
+  r_done := public.fn_kalodata_op_complete_from_edge(req2,'PROVIDER_FAILED_POST_CHARGE');
+  v := v || jsonb_build_object('case','double_refund_idempotent','pass',
+        ((r_done->>'idempotent_replay')::boolean=true AND public.fn_discovery_credit_balance() = bal_after_refund
+         AND (SELECT count(*) FROM public.discovery_credit_ledger WHERE refresh_request_id=req2 AND entry_type='REFUND')=1));
 
   -- 4) credit exhaustion: drain balance below price -> reserve denied
   INSERT INTO public.discovery_credit_ledger(tenant_id,entry_type,credits,reason) VALUES (v_a,'ADJUST', -public.fn_discovery_credit_balance(), 'drain for test');

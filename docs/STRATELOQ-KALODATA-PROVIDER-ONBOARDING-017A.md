@@ -705,3 +705,45 @@ repo's `mig_*` or the DR snapshot. Minimal controlled sequence:
 - **Chargeable budget + production deploy approval.**
 - **Video media rights** (for `video/url`/playback).
 - Deployment executes through the canonical CLI/MCP pipeline (this repo is DR/docs only).
+
+---
+
+# Phase 10 — Final deployment-readiness gate
+
+1. **Edge type-check (Deno-compatible):** Deno install is blocked by the proxy (`deno.land` 403), but Node
+   is available; type-checked all three edges with `tsc --strict --lib ESNext,DOM` + a Deno ambient shim
+   (edges have no remote imports, so this is complete): **all three clean, 0 errors** → nothing to fix.
+2. **`operation` column safety (read-only prod inspection):** `discovery_refresh_request` has **no triggers**,
+   the status CHECK only permits `RESERVED/EXECUTING/SETTLED/REFUNDED/FAILED` (all our values), `page_number`
+   is nullable, the unique `(tenant_id, idempotency_key)` index is intact, and **no existing function reads
+   `operation`**. The additive `NOT NULL DEFAULT 'DISCOVERY_REFRESH'` column changes nothing; existing
+   discovery reserve inserts get the default. Verified in the bundle: default is `DISCOVERY_REFRESH`.
+3. **Ledger reuse — no double settle/charge/missing refund:** `fn_kalodata_op_complete_from_edge` is
+   idempotent on `SETTLED/REFUNDED`; reserve is idempotent by `(tenant, idempotency_key)` (function check +
+   DB unique index); authorize consumes the provider unit atomically (`FOR UPDATE`) and only from `RESERVED`.
+   Tests prove **exactly one SETTLE and one REFUND per request** under repeated completion (double_settle /
+   double_refund idempotent cases).
+4. **Atomicity / failure handling:** reserve (ledger RESERVE + request row) and fire (nonce insert + queued
+   `net.http_post` + `dispatched_at`) are each single transactions under a per-tenant advisory lock; the
+   edge settles on SUCCESS / refunds on any failure (PRE/POST-charge); a dropped completion leaves the row
+   `EXECUTING` for the existing `fn_discovery_refresh_reconcile` sweep (goodwill refund) — never a missing
+   refund or a duplicate provider call.
+5. **Product Ranking unaffected (Part 6):** no `fn_discovery_*` function was redefined; the `kalodata-discovery`
+   edge and `fn_kalodata_run_discovery` are untouched; only new `fn_kalodata_op_*/run_*` were added.
+6. **Isolation / limits (Part 7):** cross-tenant rejection, 9-market gate, and provider-budget fail-closed
+   (at reserve and the authorize race) are enforced and tested.
+7. **Video URL hard block (Part 8):** no edge references `video/url`; the builder returns
+   `VIDEO_RIGHTS_UNCONFIRMED` / `invocation_blocked`; `kalodata_video_research` has no url/playback/media
+   column. Playback, downloads, permanent media storage and ad reuse remain disabled.
+
+**Test evidence:** edge type-check 3/3 clean; the bundled production migration applies in one transaction
+and self-tests from it pass **product_detail 8/8 · video 10/10 · caller 12/12 (30 checks)**. No Kalodata API
+call, no production write, no deploy.
+
+**Deliverables:** `supabase/drafts/migration/20261111000000_kalodata_detail_video_caller.sql` (proposed,
+unexecuted) + `supabase/drafts/migration/DEPLOYMENT_MANIFEST.md`.
+
+**Unresolved risks / approvals (unchanged):** confirm contracts live (`need_extra`, per-call credit cost,
+live coverage, live response shapes); detail/video **pricing** decision; **chargeable budget + production
+deploy approval**; **video media rights**. Deployment runs through the canonical Supabase CLI/MCP pipeline,
+never this repo.
