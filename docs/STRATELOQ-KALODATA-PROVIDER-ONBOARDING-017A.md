@@ -291,3 +291,73 @@ No longer a blocker: Enterprise subscription / new account purchase (account is 
 **Nothing deployed.** All Phase-3 changes are additive, verified-only, make no API call, and pass their
 self-tests. The live client (edge function + n8n fetch + field mapping) is unblocked only when §17 items
 1–2 are supplied.
+
+---
+
+# Phase 4 — CRITICAL: a complete Kalodata client already exists in production (repo drift)
+
+> Found by **read-only** inspection of the Strateloq Technologies Supabase project
+> (`nxaunmyihhjixxxljcqt`) — Edge Function source + `pg_proc`/`information_schema` introspection. No API
+> call, no write, no deploy.
+
+## 18. The integration is already built and deployed — and absent from this git repo
+- **Edge function `kalodata-discovery`** (v14, `verify_jwt`, trusted-server **or** nonce gated): makes the
+  single chargeable `product/rank` call and ingests candidates.
+- **DB functions (9):** `fn_kalodata_discovery_request(market,page)`,
+  `fn_kalodata_ingest_candidates(user,market,run,limit,products,dry_run,suppress_auto_research)`,
+  `fn_kalodata_record_usage(p_run_id uuid, p_usage jsonb, p_endpoint text)`,
+  `fn_kalodata_record_lane_outcome(user,market,lane_status,detail)`,
+  `fn_kalodata_consume_invoke_nonce(token)`, `fn_kalodata_run_discovery(...)`,
+  `fn_kalodata_next_page(...)`, `fn_kalodata_advance_page(...)`, `fn_kalodata_commerce_adapter_selftest()`.
+- **Tables:** `kalodata_discovery_cursor`, `kalodata_invoke_nonce`.
+
+**This git repo is NOT the source of truth for the production Kalodata integration.** It mirrors only a
+subset of deployed functions/migrations.
+
+## 19. Confirmed from the deployed client (authoritative — supersedes earlier unverified items)
+- **Auth header:** `secret-key: <key>` (default; overridable via `KALODATA_SECRET_HEADER`). POST + JSON.
+- **Secret env var:** **`KALODATA_SECRET_KEY`** (not `KALODATA_API_KEY`); also `KALODATA_SECRET_HEADER`,
+  `KALODATA_BASE_URL`.
+- **Endpoint:** `https://www.kalodata.com/openapi/v1/tiktok/product/rank`; request body built server-side
+  by `fn_kalodata_discovery_request` (market-gated — `UNSUPPORTED_MARKET` short-circuit).
+- **Non-exposing presence check:** `POST {probe:true}` → `{secret_present: boolean}` (no provider call,
+  no charge) — this is the §1 "verify accessible without exposing" mechanism, already built in.
+- **Cost controls already exist upstream:** exactly one paid call per request (authorize/reserve, set
+  `dispatched_at` once), usage recorded via `fn_kalodata_record_usage`, nonce-gated invocation, beta
+  refund on failure, reconcile sweep for lost callbacks.
+- **Key validity: CONFIRMED** by the account's recorded `product/rank` usage — the function returns
+  `424 server_secret_unavailable` without a valid secret, so recorded usage proves `KALODATA_SECRET_KEY`
+  is set and valid. **Not re-tested here** (a fresh `product/rank` call is chargeable and unapproved).
+
+## 20. Secret-name discrepancy to resolve
+Your update referenced `KALODATA_API_KEY`; the deployed function reads **`KALODATA_SECRET_KEY`**. Since
+production has recorded usage, `KALODATA_SECRET_KEY` is the one that is set and working. Confirm whether
+`KALODATA_API_KEY` is a separate/stale secret — the function will not read it.
+
+## 21. Phases 1–3 (mig_292/293/294) DUPLICATE the existing architecture — DO NOT DEPLOY as-is
+Authored before the deployed code was visible; now superseded by what actually exists:
+- `fn_kalodata_record_usage` (mig_294) **name-collides** with production
+  `fn_kalodata_record_usage(p_run_id,p_usage,p_endpoint)` (different signature).
+- `kalodata_cost_policy` + `fn_kalodata_budget_precheck` + `kalodata_api_usage_ledger` (mig_294)
+  **duplicate** the existing upstream credit/budget/refund system.
+- `provider_capability_registry` KALODATA rows (mig_293) are a **parallel** market gate; production gates
+  markets inside `fn_kalodata_discovery_request`.
+- `product_research_images` lane (mig_292) likely overlaps the existing image path
+  (`product_image_assets` + `fn_kalodata_ingest_candidates` + `product-image-import`).
+None are deployed, so there is no production harm yet — but they must be reconciled (revised or withdrawn)
+before any deploy.
+
+## 22. What was tested this phase, and remaining blockers
+**Tested (read-only):** listed projects + Edge Functions, read `kalodata-discovery` source, introspected
+Kalodata DB functions/tables + `provider_capability_registry`. **No** provider call, **no** write, **no**
+deploy. The non-chargeable `probe` was **not** invoked (needs a trusted-server/service-role call).
+
+**Remaining blockers / open items:**
+1. **Repo ↔ production drift** — export the deployed Kalodata client + DB functions into this repo so it
+   reflects reality (needed before any safe change).
+2. **Reconcile mig_292/293/294** — withdraw or revise the duplicative/colliding parts.
+3. **Confirm `KALODATA_SECRET_KEY` vs `KALODATA_API_KEY`** in Supabase secrets.
+4. **`product/detail` + Video module** — not present among the deployed functions (only `product/rank`);
+   the account's recorded Product Detail usage needs its path identified before planning those.
+5. **Live billable test** — unnecessary for validity (already proven) and still requires explicit
+   approval + a confirmed per-call cost if ever run.
