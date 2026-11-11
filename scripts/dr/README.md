@@ -27,3 +27,23 @@ backup architecture, and it still reads every secret from the operator environme
 
 To repair a broken install, run `Repair-StrateloqDR.ps1` from Windows PowerShell (see the
 header in that file for flags such as `-DiagnoseOnly` / `-NoBackup` / `-NoDrill`).
+
+### One-command repair from Windows (no manual Git, no copying scripts)
+
+`Invoke-StrateloqDR.ps1` is a Windows launcher that retrieves the committed repair files into
+your existing Ubuntu-WSL repo **non-destructively** (`git fetch` + `git show <ref>:path > file`
+— no branch switch, no checkout of the tree, nothing deleted), runs the diagnosis first, reports
+exactly what it intends to change (derived from the evidence, not from an assumption about the
+cause), gates the repair behind its safety checks, then repairs and verifies a fresh backup +
+encrypted archive + isolated restore. It preserves rclone auth, gpg keys, Google Drive
+destinations, existing archives and the Task Scheduler schedule.
+
+Paste this single command into **Windows PowerShell** (adjust the four variables only if your
+distro/user/clone/branch differ):
+
+```powershell
+$ErrorActionPreference='Stop'; $D='Ubuntu'; $U='strateloqbackup'; $C='/home/strateloqbackup/strateloq-dr-validate'; $B='claude/nifty-ritchie-lwbak6'; wsl.exe -d $D -u $U -- bash -lc "cd '$C' && git fetch origin '$B' -q && for f in Invoke-StrateloqDR.ps1 Repair-StrateloqDR.ps1 dr_weekly_backup.sh README.md; do git show origin/'$B':scripts/dr/`$f > scripts/dr/.`$f.tmp 2>/dev/null && [ -s scripts/dr/.`$f.tmp ] && mv scripts/dr/.`$f.tmp scripts/dr/`$f || rm -f scripts/dr/.`$f.tmp; done && chmod +x scripts/dr/*.ps1 scripts/dr/*.sh 2>/dev/null && echo RETRIEVED_OK"; $rel=$C.TrimStart('/').Replace('/','\'); $L="\\wsl.localhost\$D\$rel\scripts\dr\Invoke-StrateloqDR.ps1"; if(!(Test-Path $L)){ $L="\\wsl`$\$D\$rel\scripts\dr\Invoke-StrateloqDR.ps1" }; powershell -NoProfile -ExecutionPolicy Bypass -File $L -Distro $D -WslUser $U -CloneDir $C -Branch $B
+```
+
+Add `-AutoApprove` (skip the confirm prompt), `-NoBackup`, or `-NoDrill` to the final
+`powershell ... -File $L ...` segment if needed.
