@@ -137,7 +137,12 @@ Deno.serve(async (req: Request): Promise<Response> => {
         }
         const gate = liveCardRegistrationDecision(livemode, pilot);
         if (!gate.register) {
-          await finish(gate.outcome);
+          // A RETRYABLE (5xx) refusal (e.g. the pilot lookup transiently failed) must be persisted
+          // so fn_psp_webhook_begin RECLAIMS the event on the next Stripe retry — it reclaims only
+          // outcomes LIKE 'error:%'. A DETERMINISTIC (2xx) refusal (not a pilot) is terminal and is
+          // persisted as-is so retries are correctly treated as duplicates. The card registration
+          // itself is idempotent, so a reclaimed reprocess can never double-register.
+          await finish(gate.httpStatus >= 500 ? `error:${gate.outcome}` : gate.outcome);
           return json(gate.httpStatus, { ok: gate.httpStatus < 400, handled: "card_setup", refused: gate.outcome });
         }
         const siId = String(obj.setup_intent ?? "");
