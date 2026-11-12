@@ -1,11 +1,13 @@
 # STRATELOQ-REBRAND-GITHUB-REPO-001
 
-**VERDICT: `VERIFIED — RENAME AWAITING FOUNDER APPROVAL`.** The source/documentation and public-domain
+**VERDICT: `COMPLETED — RENAME EXECUTED & VERIFIED (2026-11-12)`.** The source/documentation and public-domain
 rebrand from *Global Intelligence Pulse / Global Intelligence Actions* to **Strateloq Technologies** is, in
-this repository, **already complete**. The one remaining consequential step — renaming the GitHub repository
-`actioncorllen/global-intelligence-pulse` → `strateloq-technologies` — is **prepared, documented and gated on
-explicit founder approval**. No production rename, no merge of consequential changes, and no DR status change
-were performed by this unit. €0 spent; no secrets exposed; no security rule weakened.
+this repository, **complete**. The founder renamed the GitHub repository
+`actioncorllen/global-intelligence-pulse` → **`actioncorllen/strateloq-technologies`**; history, branches, PRs
+and the protected integration branch `claude/pulse-crash-recovery-b6ngey` were verified intact, and the single
+documented GitHub path in `dr/runbook/DR-INVENTORY.md` was updated to match (§4.4 item 1). No production
+Supabase / Stripe / DNS / DR configuration was changed; no DR status was altered (DR **not** marked
+RESTORE-READY); no secrets exposed; no security rule weakened. €0 spent.
 
 Date: 2026-11-12 · Branch: `claude/funny-cori-gpsgwq` · Canonical site: <https://www.strateloq.com>
 
@@ -57,7 +59,11 @@ status") are **internal historical identifiers**, not public product branding �
 source-level dependency is the single documented GitHub path in `dr/runbook/DR-INVENTORY.md`, which is a
 *post-rename* follow-up (§4.4).
 
-## 4. GitHub repository rename — prepared, gated on approval
+## 4. GitHub repository rename — EXECUTED & verified (2026-11-12)
+
+> **Status: DONE.** Founder renamed the repo in GitHub Settings. Post-rename follow-up §4.4 item 1 applied in
+> this PR; Lovable (ID-bound) and the `billing-staging security gate` verified under the new name. Sections
+> 4.1–4.5 below are retained as the executed plan / rollback record.
 
 ### 4.1 Target and availability
 - **Old:** `https://github.com/actioncorllen/global-intelligence-pulse` (public)
