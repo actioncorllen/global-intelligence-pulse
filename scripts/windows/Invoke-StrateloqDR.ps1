@@ -44,7 +44,7 @@ param(
 
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
-$script:LauncherVersion = '3.1.0'
+$script:LauncherVersion = '3.2.0'
 
 function Write-Section { param([string] $Title) Write-Host ''; Write-Host ('=== {0} ===' -f $Title) -ForegroundColor Cyan }
 function Write-Info  { param([string] $Message) Write-Host ('  {0}' -f $Message) }
@@ -105,6 +105,7 @@ Write-Host '############################################################' -Foreg
 Write-Host ''
 Write-Host 'Targets the established WSL install; runs no git; reuses existing creds/keys/Drive;' -ForegroundColor DarkGray
 Write-Host 'never modifies production or the scheduled task; never deploys Kalodata.'            -ForegroundColor DarkGray
+if ($PSCommandPath) { Write-Host ('Running file: {0}' -f $PSCommandPath) -ForegroundColor DarkGray }
 
 # --- environment guard ---
 Write-Section 'Environment'

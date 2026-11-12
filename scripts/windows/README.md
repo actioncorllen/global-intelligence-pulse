@@ -44,17 +44,38 @@ destination; deploys Kalodata; or makes a paid API call.
 propagation, backup integrity, and the actual isolated restore. Otherwise the launcher relays
 the exact blocker — it cannot fabricate `RESTORE_OK`.
 
-## One command (run in Windows PowerShell, not inside WSL)
+## Setup (two short Windows PowerShell commands — paste one at a time)
 
-Fetches the corrected scripts into `~/strateloq-dr-ops/` **without** checkout/branch-switch or
-touching your working tree, then diagnoses → asks approval → repairs → fresh encrypted backup →
-verified Drive upload → integrity → **real local isolated restore**:
+The old single mega-line was fragile: when a paste broke it, PowerShell dropped into `>>`
+continuation, `wslpath` returned nothing, `Copy-Item` failed with a null value, and an **old
+broken copy** of the launcher was left in place (that is the real source of the "line 67 / 169"
+errors — the corrected file never landed). These two commands fix that: each is short, uses only
+simple quoting, stops on the first failure, and uses a **static** WSL path (no `wslpath`, no
+null `Copy-Item`).
+
+**Step 1 — fetch the corrected scripts into WSL** (run; wait for `FETCH_OK`):
 
 ```powershell
-wsl -d Ubuntu -u strateloqbackup -e bash -lc 'set -e; t=$(mktemp -d); git clone -q --no-checkout --depth 1 --branch claude/sleepy-bell-ff4a68 https://github.com/actioncorllen/global-intelligence-pulse "$t"; o="$HOME/strateloq-dr-ops"; mkdir -p "$o"; for f in scripts/windows/Invoke-StrateloqDR.ps1 scripts/dr/strateloq-dr-repair.sh dr/runbook/WEEKLY-BACKUP-REPAIR.md; do git -C "$t" show "claude/sleepy-bell-ff4a68:$f" > "$o/$(basename "$f")"; done; chmod +x "$o/strateloq-dr-repair.sh"; rm -rf "$t"'; $p = (wsl -d Ubuntu -u strateloqbackup -e wslpath -w '/home/strateloqbackup/strateloq-dr-ops/Invoke-StrateloqDR.ps1'); Copy-Item ($p | Select-Object -Last 1).Trim() "$env:USERPROFILE\Invoke-StrateloqDR.ps1" -Force; powershell -NoProfile -ExecutionPolicy Bypass -File "$env:USERPROFILE\Invoke-StrateloqDR.ps1" -Approve
+wsl -d Ubuntu -u strateloqbackup -- bash -lc 'set -e; cd ~; rm -rf .dr-fetch; git clone -q --no-checkout --depth 1 --filter=blob:none --branch claude/sleepy-bell-ff4a68 https://github.com/actioncorllen/global-intelligence-pulse .dr-fetch; mkdir -p strateloq-dr-ops; git -C .dr-fetch show claude/sleepy-bell-ff4a68:scripts/windows/Invoke-StrateloqDR.ps1 > strateloq-dr-ops/Invoke-StrateloqDR.ps1; git -C .dr-fetch show claude/sleepy-bell-ff4a68:scripts/dr/strateloq-dr-repair.sh > strateloq-dr-ops/strateloq-dr-repair.sh; chmod +x strateloq-dr-ops/strateloq-dr-repair.sh; rm -rf .dr-fetch; echo FETCH_OK'
 ```
 
-- Drop the trailing `-Approve` to **only diagnose** (zero changes, no backup).
+**Step 2 — copy the corrected launcher over the old one and run DIAGNOSTICS ONLY** (no backup,
+no restore — only runs if Step 1 succeeded and the file is present):
+
+```powershell
+$src='\\wsl.localhost\Ubuntu\home\strateloqbackup\strateloq-dr-ops\Invoke-StrateloqDR.ps1'; if(-not (Test-Path $src)){$src='\\wsl$\Ubuntu\home\strateloqbackup\strateloq-dr-ops\Invoke-StrateloqDR.ps1'}; if((Test-Path $src) -and ((Get-Item $src).Length -gt 0)){Copy-Item $src "$env:USERPROFILE\Invoke-StrateloqDR.ps1" -Force; powershell -NoProfile -ExecutionPolicy Bypass -File "$env:USERPROFILE\Invoke-StrateloqDR.ps1"} else {Write-Host 'Launcher missing/empty in WSL - run Step 1 first (expect FETCH_OK).'}
+```
+
+The launcher prints its version and running-file path at the top — confirm it says **v3.2.0**;
+if you still see the old errors, you are running a stale file (re-run Step 1, then Step 2).
+
+**Only after** you have reviewed the diagnostics, run the repair (fresh encrypted backup +
+verified upload + integrity + real isolated local restore) by adding `-Approve`:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File "$env:USERPROFILE\Invoke-StrateloqDR.ps1" -Approve
+```
+
 - The isolated restore needs PostgreSQL **server** tools (`initdb`, `pg_ctl`) in WSL. If they
   are absent the launcher reports `BACKUP_OK_RESTORE_PREREQUISITE`; install with
   `sudo apt-get install -y postgresql` in the WSL distro, then re-run.

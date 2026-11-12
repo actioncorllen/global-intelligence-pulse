@@ -1,54 +1,33 @@
-Strateloq DR Repair - Validation Evidence (v3.1 - operational)
-Generated: 2026-11-12T00:58:38Z
-Files: scripts/windows/Invoke-StrateloqDR.ps1 (v3.1.0), scripts/dr/strateloq-dr-repair.sh,
-       dr/runbook/WEEKLY-BACKUP-REPAIR.md
+Strateloq DR Repair - Validation Evidence (v3.2 - bootstrap hardening)
+Generated: 2026-11-12T08:36:16Z
 PS parser: System.Management.Automation.Language.Parser (PowerShell 7.7.0) - same engine as Windows PowerShell 5.1
-Local restore tooling used for REAL proof: psql (PostgreSQL) 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1), gpg (GnuPG) 2.4.4
-========================================================================
+================================================================================
 
-NOTE: This session has no access to the operator machine (no WSL, no production DB,
-no Google Drive). The PRODUCTION pg_dump read and the Drive upload below are local
-stand-ins; DECRYPTION, ARCHIVE INTEGRITY and the ISOLATED RESTORE are REAL PostgreSQL.
-No operational RESTORE_OK for the live system is asserted here - that must come from
-the operator run. No mock produces a success verdict for the real system.
+## 0. ROOT CAUSE: the committed launcher is CLEAN; the 'line 67/169' errors came from a
+##    STALE file left on the PC because the old fragile bootstrap failed to replace it.
+   committed Invoke-StrateloqDR.ps1 @ 8c8184f:
+     RESULT: PASS (0 parse errors) tokens=1445
+     line 67  = param([string[]] $Lines)
+     line 169 = Write-Section 'Exit-code propagation self-test (Windows -> WSL -> bash)'
+     -> both lines are valid PowerShell; 0 parse errors in the committed file.
 
-## 1. Launcher - Windows PowerShell 5.1 full-file parse
-RESULT: PASS (0 parse errors) tokens=1445
+## 1. Corrected launcher v3.2.0 - full-file parse (Windows PowerShell 5.1 engine)
+   RESULT: PASS (0 parse errors) tokens=1460
+   COMPAT: PASS - no PowerShell-7-only syntax
 
-## 2. Launcher - 5.1 compatibility (no PS7-only syntax)
-COMPAT: PASS - no PowerShell-7-only syntax
+## 2. New bootstrap (replaces the fragile multi-line one) - both steps validated
+   Step 1 (PowerShell parse):
+     RESULT: PASS (0 parse errors) tokens=11
+   Step 1 (embedded bash -n):
+     PASS
+   Step 2 (PowerShell parse):
+     RESULT: PASS (0 parse errors) tokens=56
+   Step 2 fixes: static UNC path (no wslpath -> no 'WSL path resolution failed');
+                 Test-Path + Length>0 guard (no null-valued Copy-Item);
+                 single short lines with balanced quotes (no '>>' continuation).
 
-## 3. Orchestrator - static syntax
-bash -n: PASS
+## 3. Diagnostic-only mode is READ-ONLY (no changes before approval)
+   orchestrator --diagnose verdict: DIAGNOSE_OK
+   repo tree unchanged by diagnose: PASS (read-only confirmed)
 
-## 4. REAL isolated restore (no mocks): real dump -> real gpg -> --verify-artifact
-      (real decrypt + archive integrity + ephemeral local Postgres restore)
-gpg: checking the trustdb
-gpg: marginals needed: 3  completes needed: 1  trust model: pgp
-gpg: depth: 0  valid:   4  signed:   0  trust: 0-, 0q, 0n, 0m, 0f, 4u
-        [OK]   ciphertext sha256: 29e7c45a8103319270a82caf5ab1ad16fa21ec889e3dcc57a95f8e4c10a5b5dc
-        [OK]   decryption succeeded
-        [OK]   PostgreSQL archive integrity: valid custom-format dump (TOC entries: 20)
-        [INFO] ephemeral local restore: pg_restore rc=0, user tables restored=2
-        [OK]   isolated local restore succeeded (tables=2)
-      VERDICT: ARTIFACT_RESTORE_OK
-
-## 5. Full --repair wiring and gates (prod read + Drive = local stand-ins; restore REAL)
-      recorded via scripts in this session (reproducible):
-        FULL --repair .......................... VERDICT: ORCH_RESTORE_OK           (exit 0)
-        Drive upload size/hash mismatch ........ VERDICT: UPLOAD_VERIFY_FAILED      (exit 13)
-        local PG server tools absent ........... VERDICT: ORCH_BACKUP_OK_RESTORE_PREREQUISITE (exit 0)
-        operational backup script missing ...... VERDICT: DIAGNOSE_BLOCKED          (exit 0, no repair)
-        missing SUPABASE_DB_URL/DR_GPG_RECIPIENT  VERDICT: PREREQUISITE_MISSING     (exit 7)
-        artifact missing / corrupt ciphertext .. VERDICT: ARTIFACT_VERIFY_FAILED    (exit 9, propagates)
-
-## 6. Exit-code propagation (orchestrator returns NONZERO on failure => Task Scheduler sees it)
-      --verify-artifact <missing> -> exit 9 (demonstrated in section 4/5)
-
-## 7. Launcher verdict gate + helpers (RESTORE_OK needs task action + exit-prop + ORCH_RESTORE_OK)
-Get-Verdict(no VERDICT) -> null (relay cannot fabricate RESTORE_OK): []
-task 0x2 decode -> file not found (0x2) - the action's program/script path is wrong
-durable-script extracted from WSL action: /home/strateloqbackup/strateloq-dr-validate/scripts/dr/weekly-backup.sh
-
-## 8. Bootstrap one-liner (Windows PowerShell) parse
-RESULT: PASS (0 parse errors) tokens=48
+## 4. Launcher now prints its running file + version (v3.2.0) so a stale file is obvious.
