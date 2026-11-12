@@ -9,7 +9,7 @@
 // TEST / LIVE SEPARATION (pilot-scoped):
 //   - TEST is the default for every member, using STRIPE_SECRET_KEY (sk_test_).
 //   - LIVE is used ONLY for a member on the live_card_pilot allowlist (mig_361), and ONLY when
-//     STRIPE_LIVE_ALLOWED='true' AND a live key STRIPE_SECRET_KEY_LIVE (sk_live_) is configured.
+//     STRIPE_LIVE_ALLOWED='true' AND a live key STRIPE_SECRET_KEY_LIVE (sk_live_ or rk_live_) is configured.
 //   - The two keys are NEVER mixed: the live path uses the live key + live customer; the test path
 //     uses the test key + test customer. Customer reuse is filtered by livemode so a test customer
 //     id can never be used with the live key (or vice versa).
@@ -20,6 +20,7 @@
 // policy require_live_card is set but this member cannot do live (not pilot / live not ready) ->
 // 424 with guidance (never a dead-end sandbox checkout that can't satisfy a live requirement).
 // Not onboarding-gated: card setup is itself the CARD_SETUP_REQUIRED step.
+import { isLiveKey, liveRoutingDecision } from "./routing.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
@@ -101,7 +102,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
   // Decide TEST vs LIVE for THIS member. LIVE requires: approval flag ON, a live key configured,
   // and this member on the live_card_pilot allowlist. Otherwise TEST. Pilot check fails safe to
   // false (test) on any error, so a DB hiccup can never accidentally route a member to live.
-  const liveConfigured = LIVE_ALLOWED && STRIPE_KEY_LIVE.startsWith("sk_live_");
+  const liveConfigured = LIVE_ALLOWED && isLiveKey(STRIPE_KEY_LIVE);
   let isPilot = false;
   if (liveConfigured) {
     try {
@@ -109,8 +110,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
       isPilot = Array.isArray(rows) && rows.length > 0;
     } catch { isPilot = false; }
   }
-  const useLive = liveConfigured && isPilot;
-  const activeKey = useLive ? STRIPE_KEY_LIVE : STRIPE_KEY;
+  // Pure, unit-tested decision: live key (sk_live_ OR rk_live_) only for an allowlisted pilot
+  // while the flag is on; non-pilot members always get the test key.
+  const { useLive, activeKey } = liveRoutingDecision(LIVE_ALLOWED, STRIPE_KEY, STRIPE_KEY_LIVE, isPilot);
 
   // FAIL CLOSED for a live-card requirement: if policy requires a genuine LIVE card but this member
   // cannot do live (not pilot, or live not ready), DO NOT hand out a sandbox checkout that could
