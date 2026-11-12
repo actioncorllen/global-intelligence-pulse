@@ -44,6 +44,7 @@ while [ "$#" -gt 0 ]; do
     --diagnose) MODE="diagnose" ;;
     --repair)   MODE="repair" ;;
     --verify-artifact) MODE="verify-artifact"; ARTIFACT="$2"; shift ;;
+    --gpg-doctor) MODE="gpg-doctor"; ARTIFACT="$2"; shift ;;
     --approve)  APPROVE="yes" ;;
     --repo)     REPO="$2"; shift ;;
     --durable-script) DURABLE_SCRIPT="$2"; shift ;;
@@ -126,9 +127,10 @@ trap cleanup EXIT
 WORK="$(mktemp -d)"
 
 # --- GPG diagnosis helpers (public key IDENTIFIERS only; never print secret material) -------
-_gpg_msg_keyids()  { gpg --list-packets "$1" 2>/dev/null | sed -nE 's/.*keyid[: ]+(0x)?([0-9A-Fa-f]{8,}).*/\2/p' | tr 'a-f' 'A-F' | sort -u; }
-_gpg_sec_keyids()  { gpg --list-secret-keys --with-colons 2>/dev/null | awk -F: '$1=="sec"||$1=="ssb"{print $5}' | tr 'a-f' 'A-F' | sort -u; }
-_gpg_rcpt_keyids() { gpg --list-keys --with-colons "$1" 2>/dev/null | awk -F: '$1=="pub"||$1=="sub"{print $5}' | tr 'a-f' 'A-F' | sort -u; }
+# NOTE: each ends with `|| true` so a non-zero gpg exit (e.g. no secret key) never aborts under set -e/pipefail.
+_gpg_msg_keyids()  { { gpg --list-packets "$1" 2>/dev/null | sed -nE 's/.*keyid[: ]+(0x)?([0-9A-Fa-f]{8,}).*/\2/p' | tr 'a-f' 'A-F' | sort -u; } || true; }
+_gpg_sec_keyids()  { { gpg --list-secret-keys --with-colons 2>/dev/null | awk -F: '$1=="sec"||$1=="ssb"{print $5}' | tr 'a-f' 'A-F' | sort -u; } || true; }
+_gpg_rcpt_keyids() { { gpg --list-keys --with-colons "$1" 2>/dev/null | awk -F: '$1=="pub"||$1=="sub"{print $5}' | tr 'a-f' 'A-F' | sort -u; } || true; }
 
 # gpg_diagnose <enc> : prints findings, sets DECRYPT_CAUSE (attempts no decryption).
 gpg_diagnose() {
@@ -180,7 +182,7 @@ verify_integrity() {
     ( umask 077; gpg --batch --yes --pinentry-mode loopback -o "$DEC_PATH" -d "$enc" ) 2>"$err"; rc=$?
   fi
   if [ "${rc:-1}" -ne 0 ]; then
-    if   grep -qiE 'passphrase|batchmode|can.t get input|cancel' "$err"; then DECRYPT_CAUSE="passphrase"; note "[FAIL] decrypt failed: the private key is passphrase-protected and no valid passphrase was supplied (set DR_GPG_PASSPHRASE in the DR env file, or run where the gpg-agent is unlocked)"; return 42
+    if   grep -qiE 'passphrase|batchmode|can.t get input|cancel' "$err"; then DECRYPT_CAUSE="passphrase"; note "[FAIL] decrypt failed: the private key is passphrase-protected and no valid passphrase was supplied (provide it transiently for one command, e.g. read -rs DR_GPG_PASSPHRASE; or run where the gpg-agent is unlocked - do NOT store it in a persistent env file)"; return 42
     elif grep -qiE 'agent|pinentry|ioctl'                        "$err"; then DECRYPT_CAUSE="agent"; note "[FAIL] decrypt failed: gpg-agent/pinentry could not run in batch/no-tty mode"; return 43
     elif grep -qiE 'no secret key'                               "$err"; then DECRYPT_CAUSE="no_secret_key"; note "[FAIL] decrypt failed: no usable secret key"; return 40
     else DECRYPT_CAUSE="other"; note "[FAIL] decrypt failed: $(head -1 "$err" 2>/dev/null)"; return 32; fi
@@ -232,6 +234,54 @@ local_restore() {
 # verify-artifact mode: verify an EXISTING encrypted backup end to end
 # (sha256 + decrypt + archive integrity + real local restore). No prod read.
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# gpg-doctor mode: READ-ONLY GPG recovery diagnostic on an EXISTING archive.
+# No decryption is attempted unless a matching secret key is actually present;
+# no backup, no restore, no archive/key/config change. Never prints secret material.
+# ---------------------------------------------------------------------------
+if [ "$MODE" = "gpg-doctor" ]; then
+  echo "== GPG recovery diagnostic (READ-ONLY; no backup, no restore, nothing changed) =="
+  [ -s "$ARTIFACT" ] || { note "[FAIL] archive missing/empty: $ARTIFACT"; verdict "GPG_DOCTOR_NO_ARTIFACT"; exit 30; }
+  note "[OK]   archive: $ARTIFACT ($(wc -c < "$ARTIFACT" | tr -d ' ') bytes)"
+  note "[INFO] ciphertext sha256: $(sha256sum "$ARTIFACT" | awk '{print $1}')"
+  have gpg || { note "[FAIL] gpg not available"; verdict "GPG_DOCTOR_NO_GPG"; exit 31; }
+  gpg_diagnose "$ARTIFACT"     # recipient keyid + secret keyids + GNUPGHOME + user (public IDs only)
+  case "$DECRYPT_CAUSE" in
+    no_secret_key)
+      note "RESULT: the private key for this archive is NOT in this keyring. No decryption was attempted."
+      note "        (keyring inspected: no secret key matches the archive's recipient key id.)"
+      verdict "GPG_DOCTOR_NO_SECRET_KEY"; exit 0 ;;
+    recipient_mismatch)
+      note "RESULT: the archive is encrypted to a key that DR_GPG_RECIPIENT does not resolve to."
+      verdict "GPG_DOCTOR_RECIPIENT_MISMATCH"; exit 0 ;;
+    unreadable)
+      note "RESULT: could not read the archive's recipient key id (not an OpenPGP message?)."
+      verdict "GPG_DOCTOR_UNREADABLE"; exit 0 ;;
+    secret_present)
+      note "[INFO] a matching secret key IS present - probing decryptability (output discarded; no plaintext kept)..."
+      GD_ERR="$WORK/doctor.err"; GD_RC=0
+      if [ -n "${DR_GPG_PASSPHRASE:-}" ]; then
+        printf '%s' "$DR_GPG_PASSPHRASE" | gpg --batch --yes --pinentry-mode loopback --passphrase-fd 0 -o /dev/null -d "$ARTIFACT" 2>"$GD_ERR" || GD_RC=$?
+      else
+        gpg --batch --yes --pinentry-mode loopback -o /dev/null -d "$ARTIFACT" 2>"$GD_ERR" || GD_RC=$?
+      fi
+      if [ "${GD_RC:-1}" -eq 0 ]; then
+        note "RESULT: DECRYPTABLE here - the private key is present and usable. Proceed to --verify-artifact for the real restore."
+        verdict "GPG_DOCTOR_DECRYPTABLE"; exit 0
+      elif grep -qiE 'passphrase|batchmode|can.t get input|cancel' "$GD_ERR"; then
+        note "RESULT: secret key present but PASSPHRASE-PROTECTED and no passphrase available in this session."
+        note "        Supply it transiently for one command or use an unlocked gpg-agent - do NOT persist it."
+        verdict "GPG_DOCTOR_PASSPHRASE_REQUIRED"; exit 0
+      elif grep -qiE 'agent|pinentry|ioctl' "$GD_ERR"; then
+        note "RESULT: gpg-agent/pinentry could not run in batch/no-tty mode."
+        verdict "GPG_DOCTOR_AGENT_ERROR"; exit 0
+      else
+        note "RESULT: decryption probe failed: $(head -1 "$GD_ERR" 2>/dev/null)"
+        verdict "GPG_DOCTOR_DECRYPT_ERROR"; exit 0
+      fi ;;
+  esac
+fi
+
 if [ "$MODE" = "verify-artifact" ]; then
   echo "== Verify artifact (existing backup; no new backup taken) =="
   note "artifact: $ARTIFACT"

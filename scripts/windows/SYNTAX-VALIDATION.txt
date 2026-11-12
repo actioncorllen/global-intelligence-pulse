@@ -1,40 +1,36 @@
-Strateloq DR Repair - Validation Evidence (v3.4 - GPG decryption diagnosis)
-Generated: 2026-11-12T18:15:19Z
-xargs: {}/psql: No such file or directory
+Strateloq DR Repair - Validation Evidence (v3.4.1 - read-only GPG doctor)
+Generated: 2026-11-12T18:25:43Z
 PS parser: PowerShell 7.7.0 (== Windows PowerShell 5.1 engine); crypto/db: gpg (GnuPG) 2.4.4, psql (PostgreSQL) 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)
 ================================================================================
 
-## 0. CAUSE of your VERIFY_FAILED: the weekly backup encrypts to DR_GPG_RECIPIENT's PUBLIC
-##    key; decryption needs the PRIVATE key, which this DR design keeps OFFLINE. On the
-##    strateloqbackup machine there is no secret key -> 'GPG decryption FAILED' is EXPECTED.
-##    The archive is valid; the decrypt+restore check belongs on the private-key machine.
-
-## 1. Launcher v3.4.0 - full-file parse + 5.1 compatibility
+## 1. Launcher v3.4.1 - full-file parse + 5.1 compatibility
    RESULT: PASS (0 parse errors) tokens=1699
    COMPAT: PASS - no PS7-only syntax
 
 ## 2. Orchestrator - static syntax
    bash -n: PASS
 
-## 3. GPG decrypt-failure classification - validated against REAL GnuPG (no secret material printed):
-   ----- 1 NO SECRET KEY (pub-only keyring, private offline) -----  ->  VERDICT: ARTIFACT_DECRYPT_NO_SECRET_KEY
-   ----- 2 SUCCESS via --gnupghome pointing at the private-key keyring -----  ->  VERDICT: ARTIFACT_INTEGRITY_OK
-   ----- 3 PASSPHRASE REQUIRED (secret present, no passphrase) -----  ->  VERDICT: ARTIFACT_DECRYPT_PASSPHRASE_REQUIRED
-   ----- 4 PASSPHRASE SUPPLIED via DR_GPG_PASSPHRASE -> decrypt OK -----  ->  VERDICT: ARTIFACT_INTEGRITY_OK
-   ----- 5 RECIPIENT MISMATCH (msg->B, DR_GPG_RECIPIENT=A, no secret for B) -----  ->  VERDICT: ARTIFACT_DECRYPT_RECIPIENT_MISMATCH
-   ----- 6 FULL SUCCESS + real isolated restore -----  ->  VERDICT: ARTIFACT_RESTORE_OK
+## 3. --gpg-doctor READ-ONLY diagnostic (real GnuPG; no secret material printed):
+   ----- 1 NO SECRET KEY (read-only; must NOT probe/decrypt) -----  ->    RESULT: the private key for this archive is NOT in this keyring. No decryption was attempted.
+   VERDICT: GPG_DOCTOR_NO_SECRET_KEY  ->  ----- 2 DECRYPTABLE (secret present via --gnupghome) -----
+     RESULT: DECRYPTABLE here - the private key is present and usable. Proceed to --verify-artifact for the real restore.  ->  VERDICT: GPG_DOCTOR_DECRYPTABLE
+   ----- 3 PASSPHRASE REQUIRED -----  ->    RESULT: secret key present but PASSPHRASE-PROTECTED and no passphrase available in this session.
+   VERDICT: GPG_DOCTOR_PASSPHRASE_REQUIRED  ->  ----- 4 RECIPIENT MISMATCH -----
+     RESULT: the archive is encrypted to a key that DR_GPG_RECIPIENT does not resolve to.  ->  VERDICT: GPG_DOCTOR_RECIPIENT_MISMATCH
+   ----- read-only check: archive unchanged -----
+   read-only invariants:
+       [INFO] a matching secret key IS present - probing decryptability (output discarded; no plaintext kept)...
+       [INFO] a matching secret key IS present - probing decryptability (output discarded; no plaintext kept)...
+     ----- read-only check: archive unchanged -----
+     archive sha256 unchanged: PASS
+     no plaintext file left in home:
+   note: with NO secret key, NO decryption is attempted at all (truly read-only on the backup account).
 
-## 4. End-to-end on a backup machine with ONLY the public key (private key offline):
-     [OK]   encrypted backup produced: strateloq-db-20261112T181527Z.dump.gpg (1009 bytes)
-     [OK]   Google Drive upload verified (object present, size + hash match)
-     [INFO] gpg diagnosis: no_secret_key
-   VERDICT: ORCH_BACKUP_OK_DECRYPT_PREREQUISITE
-     [OK]   decryption succeeded (private key present and usable)
-     [OK]   PostgreSQL archive integrity: valid custom-format dump (TOC entries: 18)
-     [INFO] ephemeral local restore: pg_restore rc=0, user tables restored=1
-   VERDICT: ARTIFACT_RESTORE_OK
+## 4. Real decrypt + genuine isolated restore (private-key keyring), no regression:
+   verify-artifact branches: NO_SECRET_KEY / (gnupghome)->OK / PASSPHRASE_REQUIRED / (passphrase)->OK / RECIPIENT_MISMATCH / RESTORE_OK
+     repair+verify: VERDICT: ORCH_BACKUP_OK_DECRYPT_PREREQUISITE
+     repair+verify: VERDICT: ARTIFACT_RESTORE_OK
 
-## 5. Smallest safe correction: run the decrypt+restore where the private key lives -
-      strateloq-dr-repair.sh --verify-artifact <archive.gpg> --gnupghome <private-key GNUPGHOME>
-      (reuses the existing backup + keys + Drive; no new backup, no key rotation; secrets never printed).
-      For the missing initdb/pg_ctl, the operator runs: sudo apt-get install -y postgresql (WSL).
+## 5. Safety: diagnostic prints only public key IDs, GNUPGHOME and user - never private material.
+   The passphrase is NOT persisted: supply it transiently for one command or via an unlocked gpg-agent.
+   No new backup is taken; archives, keys and Drive config are untouched; no production change.

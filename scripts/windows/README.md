@@ -99,18 +99,30 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "$env:USERPROFILE\Invoke-Str
 
 The weekly backup encrypts to `DR_GPG_RECIPIENT`'s **public** key; decrypting needs the
 **private** key, which this DR design keeps **offline**. So on the `strateloqbackup` machine
-decryption normally cannot run — that is **not** a broken backup. The verify step diagnoses
-the exact cause (printing only public key IDs, never secret material):
+decryption normally cannot run — that is **not** a broken backup.
 
-- `BACKUP_OK_DECRYPT_PREREQUISITE` — backup made + uploaded, but no private key here. Verify the
-  existing archive **where the private key lives**, reusing it (no new backup, no key change):
-  ```bash
-  ./strateloq-dr-repair.sh --verify-artifact <archive.gpg> --gnupghome <private-key GNUPGHOME>
-  ```
-- `DECRYPT_PASSPHRASE_REQUIRED` — the private key is passphrase-protected; put the passphrase in
-  the DR env file as `DR_GPG_PASSPHRASE` (loaded, never printed), or run where the agent is unlocked.
-- `DECRYPT_RECIPIENT_MISMATCH` — the archive is encrypted to a key `DR_GPG_RECIPIENT` doesn't
-  resolve to. `DECRYPT_AGENT_ERROR` — gpg-agent/pinentry couldn't run in batch mode.
+**Read-only diagnostic (inspects the keyring; attempts no decryption without a secret key):**
+
+```bash
+./strateloq-dr-repair.sh --gpg-doctor <archive.gpg>
+```
+
+It prints the archive's recipient key ID, the public/secret key IDs available, the effective
+`GNUPGHOME` and user, and classifies: `GPG_DOCTOR_NO_SECRET_KEY` / `_RECIPIENT_MISMATCH` /
+`_PASSPHRASE_REQUIRED` / `_AGENT_ERROR` / `_DECRYPTABLE`. It never prints secret material, takes
+no backup, and changes nothing.
+
+**Restore (only where the private key lives — never copy the private key to the backup account):**
+
+```bash
+./strateloq-dr-repair.sh --verify-artifact <archive.gpg> --gnupghome <private-key GNUPGHOME>
+```
+
+This decrypts, runs `pg_restore --list`, and does a genuine isolated local restore →
+`ARTIFACT_RESTORE_OK` only if the real restore succeeds. If the key is passphrase-protected,
+supply the passphrase **transiently for that one command** (e.g. `read -rs DR_GPG_PASSPHRASE;
+export DR_GPG_PASSPHRASE; …; unset DR_GPG_PASSPHRASE`) or use an unlocked gpg-agent — **do not
+store the passphrase in a persistent env file**.
 
 ## Verdicts (relayed verbatim)
 

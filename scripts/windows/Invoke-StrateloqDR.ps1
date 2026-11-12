@@ -45,7 +45,7 @@ param(
 
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
-$script:LauncherVersion = '3.4.0'
+$script:LauncherVersion = '3.4.1'
 
 function Write-Section { param([string] $Title) Write-Host ''; Write-Host ('=== {0} ===' -f $Title) -ForegroundColor Cyan }
 function Write-Info  { param([string] $Message) Write-Host ('  {0}' -f $Message) }
@@ -291,7 +291,7 @@ switch ($verdict) {
         exit 8
     }
     'DECRYPT_PASSPHRASE_REQUIRED' {
-        Write-Bad 'Private key is passphrase-protected; no valid passphrase supplied (set DR_GPG_PASSPHRASE in the DR env file).'
+        Write-Bad 'Private key is passphrase-protected; supply the passphrase transiently for one command or use an unlocked gpg-agent (do NOT persist it in an env file).'
         Write-Host 'LAUNCHER_RESULT: DECRYPT_PASSPHRASE_REQUIRED' -ForegroundColor Red
         exit 8
     }
