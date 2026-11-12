@@ -283,7 +283,7 @@ Deno.serve(async (req) => {
     const requested = EVENT_MAP[String(canonical.event_name || "").toUpperCase()] || "PageView";
     canonical.event_name = HARMLESS.has(requested) ? requested : "PageView";
     canonical.action_source = canonical.action_source || "website";
-    canonical.event_source_url = canonical.event_source_url || "https://globalintelligenceactions.com/";
+    canonical.event_source_url = canonical.event_source_url || "https://strateloq.com/";
     if (!canonical.event_id) canonical.event_id = `pulse_verify_${crypto.randomUUID()}`;
   }
   let metaEvent: any;
