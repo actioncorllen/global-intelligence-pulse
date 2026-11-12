@@ -28,10 +28,10 @@ const STRIPE_KEY = Deno.env.get("STRIPE_SECRET_KEY") ?? "";
 const STRIPE_KEY_LIVE = Deno.env.get("STRIPE_SECRET_KEY_LIVE") ?? "";
 const LIVE_ALLOWED = (Deno.env.get("STRIPE_LIVE_ALLOWED") ?? "") === "true";
 
-const PROD_ORIGIN = "https://strateloq.com";
+const PROD_ORIGIN = "https://www.strateloq.com";
 const ALLOWED_RETURN_ORIGINS = new Set<string>([
   PROD_ORIGIN,
-  "https://www.strateloq.com",
+  "https://strateloq.com",
   "https://id-preview--12db6c84-161b-4c23-aac4-e19e8cd24ab1.lovable.app",
 ]);
 function safeReturnOrigin(requested: string): string {
