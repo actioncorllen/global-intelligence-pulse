@@ -234,7 +234,15 @@ local_restore() {
   createdb -h "$sock" -p "$port" -U postgres drcheck >/dev/null 2>&1 || true
   pqd() { psql -h "$sock" -p "$port" -U postgres -d drcheck -tAc "$1" 2>/dev/null | tr -d ' '; }
 
-  # --- restoration fix: pre-create Supabase-managed schemas + enable required extensions ----
+  # --- restoration fix: pre-create Supabase-managed roles + schemas + required extensions -----
+  # roles first, so RLS policies/grants that reference them (anon/authenticated/service_role...)
+  # restore instead of failing "role does not exist" (the dominant managed-env difference).
+  for r in anon authenticated service_role authenticator dashboard_user supabase_admin \
+           supabase_auth_admin supabase_storage_admin supabase_functions_admin \
+           supabase_replication_admin supabase_read_only_user supabase_realtime_admin \
+           pgbouncer pgsodium_keyholder pgsodium_keyiduser pgsodium_keymaker; do
+    psql -h "$sock" -p "$port" -U postgres -d drcheck -q -c "do \$\$ begin if not exists (select 1 from pg_roles where rolname='$r') then create role \"$r\" nologin noinherit; end if; end \$\$;" >/dev/null 2>&1 || true
+  done
   for s in extensions auth storage graphql graphql_public realtime vault pgsodium \
            supabase_functions supabase_migrations _analytics net cron pgbouncer; do
     psql -h "$sock" -p "$port" -U postgres -d drcheck -q -c "create schema if not exists \"$s\";" >/dev/null 2>&1 || true
@@ -271,9 +279,14 @@ local_restore() {
   EXP_POL="$(pg_restore -l "$dump" 2>/dev/null | awk '$4=="POLICY"{c++} END{print c+0}')"
   EXP_SEQ="$(pg_restore -l "$dump" 2>/dev/null | awk '$4=="SEQUENCE" && $5!="OWNED" && $5!="SET"{c++} END{print c+0}')"
 
-  # classify pg_restore errors
+  # classify pg_restore errors. A FAILED "CREATE TABLE"/"COPY" (whatever the underlying ERROR)
+  # is data-affecting - a table or its data did not restore - NOT harmless. pg_restore echoes the
+  # failed statement as "Command was: <SQL>"; count those plus explicit data-corruption messages.
+  local DA_CMD DA_MSG
   TOT="$(grep -ciE 'error:' "$errf" 2>/dev/null || true)"
-  LR_DATA_ERR="$(grep -icE 'COPY failed|invalid input syntax|value too long|extra data|missing data|could not create table |out of (shared )?memory|no space left|could not read block|data (is )?corrupt|unexpected message|lost synchronization' "$errf" 2>/dev/null || true)"
+  DA_CMD="$(grep -cE '^Command was: (CREATE TABLE|COPY )' "$errf" 2>/dev/null || true)"
+  DA_MSG="$(grep -icE 'COPY failed|invalid input syntax|value too long|extra data|missing data|out of (shared )?memory|no space left|could not read block|data (is )?corrupt|lost synchronization' "$errf" 2>/dev/null || true)"
+  LR_DATA_ERR=$(( ${DA_CMD:-0} + ${DA_MSG:-0} ))
   LR_MANAGED_ERR=$(( ${TOT:-0} - ${LR_DATA_ERR:-0} )); [ "$LR_MANAGED_ERR" -lt 0 ] && LR_MANAGED_ERR=0
 
   # exact MISSING public tables (dump TOC minus restored) + the actual error log for each
@@ -306,11 +319,27 @@ local_restore() {
   [ -n "$top" ] && { note "[INFO] largest tables (name rows):"; printf '%s\n' "$top"; }
   [ -n "$LR_REQ_REPORT" ] && note "[INFO] required tables:$LR_REQ_REPORT (min ${MIN_ROWS} row(s) each)"
   [ -n "${LR_EXT_REQUIRED# }" ] && note "[INFO] extensions required by dump:${LR_EXT_REQUIRED:-none}; enabled locally:${LR_EXT_ENABLED:- none}; UNAVAILABLE locally:${LR_EXT_UNAVAILABLE:- none}"
+  local pgmaj; pgmaj="$(pg_config --version 2>/dev/null | grep -oE '[0-9]+' | head -1)"; [ -z "$pgmaj" ] && pgmaj='<N>'
   if [ -n "${LR_MISSING// /}" ]; then
     note "[DIAG] public tables in the dump TOC but NOT restored:${LR_MISSING}"
     for tbl in $LR_MISSING; do
-      note "        --- '$tbl': has data in dump TOC? $(pg_restore -l "$dump" 2>/dev/null | awk -v t="$tbl" '$4=="TABLE" && $5=="DATA" && $6=="public" && $7==t{f=1} END{print (f?"YES":"no")}') ; actual pg_restore error(s):"
-      grep -i -B1 -- "$tbl" "$errf" 2>/dev/null | grep -iE "error:|does not exist|$tbl" | head -3 | sed 's/^/          /' || true
+      note "        --- public.${tbl} : data in backup? $(pg_restore -l "$dump" 2>/dev/null | awk -v t="$tbl" '$4=="TABLE" && $5=="DATA" && $6=="public" && $7==t{f=1} END{print (f?"YES":"no")}')"
+      note "          root cause (actual pg_restore ERROR -> the statement it failed on):"
+      awk -v t="$tbl" '/^pg_restore: error:/{e=$0} /^Command was:/{ if(index($0,t)){print "            "e; print "            "substr($0,1,90); e=""} }' "$errf" 2>/dev/null | head -6
+      note "          CREATE TABLE definition from the dump (column types reveal the real dependency):"
+      pg_restore -t "$tbl" -s -f - "$dump" 2>/dev/null | grep -vE '^--|^$|^SET |^SELECT |^ALTER TABLE .* OWNER' | sed 's/^/            /' | head -30
+    done
+  fi
+  if [ -n "${LR_EXT_UNAVAILABLE// /}" ]; then
+    note "[DIAG] extension remediation (local PostgreSQL major ${pgmaj}):"
+    for ext in $LR_EXT_UNAVAILABLE; do
+      case "$ext" in
+        vector)                note "          - vector         -> sudo apt-get install -y postgresql-${pgmaj}-pgvector  (embeddings columns)";;
+        http)                  note "          - http           -> sudo apt-get install -y postgresql-${pgmaj}-http";;
+        pg_cron)               note "          - pg_cron        -> sudo apt-get install -y postgresql-${pgmaj}-cron";;
+        pg_net|supabase_vault) note "          - ${ext} -> SUPABASE-MANAGED; not packaged for a standalone cluster. A production restore into Supabase provides it. It affects managed functions/policies, NOT an application table unless a column uses its type (check the DDL above).";;
+        *)                     note "          - ${ext} -> check your distro for postgresql-${pgmaj}-${ext} (or restore on a PostgreSQL version where it is available).";;
+      esac
     done
   fi
 

@@ -45,7 +45,7 @@ param(
 
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
-$script:LauncherVersion = '3.5.1'
+$script:LauncherVersion = '3.5.2'
 
 function Write-Section { param([string] $Title) Write-Host ''; Write-Host ('=== {0} ===' -f $Title) -ForegroundColor Cyan }
 function Write-Info  { param([string] $Message) Write-Host ('  {0}' -f $Message) }
@@ -155,6 +155,17 @@ if ($task) {
         if (-not $resolvedDurable) { $resolvedDurable = Get-DurableScriptFromAction -Execute $exe -Arguments $arg }
         if (-not $resolvedEnvFile) { $resolvedEnvFile = Get-EnvFileFromAction -Execute $exe -Arguments $arg }
     }
+    # (req 10) unattended-execution readiness: logon type must not require an interactive session
+    try {
+        $pr = $task.Principal
+        $lt = [string] $pr.LogonType
+        Write-Info ('  runs as: {0}  logon-type: {1}  run-level: {2}' -f $pr.UserId, $lt, $pr.RunLevel)
+        if ($lt -eq 'Password' -or $lt -eq 'S4U' -or $lt -eq 'ServiceAccount' -or $lt -eq 'Group') {
+            Write-Good 'task is set to run UNATTENDED (whether the user is logged on or not).'
+        } else {
+            Write-Warn2 ('logon-type "{0}" may need an interactive session; for unattended weekly runs choose "Run whether user is logged on or not".' -f $lt)
+        }
+    } catch { }
     try {
         $info = Get-ScheduledTaskInfo -TaskName $TaskName -ErrorAction SilentlyContinue
         if ($info) {

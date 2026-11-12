@@ -1,35 +1,45 @@
-Strateloq DR Repair - Validation Evidence (v3.5.1 - missing-table diagnosis + managed-extension fix)
-Generated: 2026-11-12T19:29:46Z
+Strateloq DR Repair - Validation Evidence (v3.5.2 - user_memory/vector root cause, role+classifier fixes)
+Generated: 2026-11-12T19:46:25Z
 crypto/db: gpg (GnuPG) 2.4.4, psql (PostgreSQL) 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1); PS parser: PowerShell 7.7.0
 ================================================================================
 
-## 0. ROOT CAUSE of '163/164, 118 managed-env errors': a public table whose column uses an
-##    extension type (e.g. pgvector 'vector' for embeddings) cannot be CREATEd in a vanilla
-##    local cluster lacking that extension. The table + its data ARE in the backup; a production
-##    restore into Supabase (which has the extension) brings it back. Fix = pre-create managed
-##    schemas + enable required extensions locally; install the extension package to finish the drill.
+## 0. public.user_memory failed because its column 'embedding extensions.vector(N)' needs the
+##    pgvector 'vector' type, absent in a vanilla cluster (confirmed from the dump DDL, not assumed).
+##    Fixes: (a) classifier now counts failed CREATE TABLE/COPY as DATA-AFFECTING; (b) managed
+##    roles are pre-created so role-dependent RLS policies restore; (c) the exact DDL + root error
+##    + version-aware remediation are printed. RESTORE_OK still requires the table to actually restore.
 
 ## 1. Static: launcher parse + orchestrator bash -n
-   RESULT: PASS (0 parse errors) tokens=1718
+   RESULT: PASS (0 parse errors) tokens=1794
    orchestrator bash -n: PASS
 
-## 2. TEST B - vanilla cluster (vector UNAVAILABLE): reproduces the operator's 1-missing-table case
+## 2. TEST B - vanilla cluster (vector UNAVAILABLE) == the operator's case:
+     [INFO] pg_restore rc=1  (errors: total=11, data-affecting=2, managed-env=9)
      [INFO] tables: public=2/3 (dump TOC), all-schemas=2; rows~5
-     [INFO] objects restored/TOC: sequences=1/1 functions=1/1 triggers=0/0 policies=0/0
+     [INFO] objects restored/TOC: sequences=2/2 functions=1/1 triggers=0/1 policies=2/5
      [INFO] extensions required by dump: vector; enabled locally: none; UNAVAILABLE locally: vector
-     [DIAG] public tables in the dump TOC but NOT restored:embeddings 
-             --- 'embeddings': has data in dump TOC? YES ; actual pg_restore error(s):
-             pg_restore: error: could not execute query: ERROR:  relation "public.embeddings" does not exist
+     [DIAG] public tables in the dump TOC but NOT restored:user_memory 
+             --- public.user_memory : data in backup? YES
+               root cause (actual pg_restore ERROR -> the statement it failed on):
+               pg_restore: error: could not execute query: ERROR:  type "extensions.vector" does not exist
+               Command was: CREATE TABLE public.user_memory (
+               pg_restore: error: could not execute query: ERROR:  relation "public.user_memory" does not exist
+               Command was: COPY public.user_memory (id, content, embedding) FROM stdin;
+               pg_restore: error: could not execute query: ERROR:  relation "public.user_memory" does not exist
+                   embedding extensions.vector(3)
+     [DIAG] extension remediation (local PostgreSQL major 16):
+               - vector         -> sudo apt-get install -y postgresql-16-pgvector  (embeddings columns)
      [WARN] fewer public tables than the dump TOC (2 < 3) - see [DIAG] above
+     [WARN] 2 data/schema-affecting pg_restore error(s)
    VERDICT: ARTIFACT_RESTORE_PARTIAL
 
-## 3. TEST A - same archive, extension available (fix enables it): the table restores
+## 3. TEST A - same archive, pgvector present (fix enables it) -> full restore:
+     [INFO] pg_restore rc=1  (errors: total=1, data-affecting=0, managed-env=1)
      [INFO] tables: public=3/3 (dump TOC), all-schemas=3; rows~7
-     [INFO] objects restored/TOC: sequences=1/1 functions=1/1 triggers=0/0 policies=0/0
-     [INFO] extensions required by dump: vector; enabled locally: vector; UNAVAILABLE locally: none
+     [INFO] objects restored/TOC: sequences=2/2 functions=1/1 triggers=1/1 policies=5/5
    VERDICT: ARTIFACT_RESTORE_OK
 
-## 4. The verdict is NOT relaxed: RESTORE_OK requires the table to actually restore
-   (public == dump TOC) AND zero data-affecting errors AND required tables satisfied.
-   A missing table is surfaced under [DIAG] with its real pg_restore error and 'has data' flag;
-   sequences/functions/triggers/policies are reported restored-vs-TOC.
+## 4. Managed vs app: role-dependent policies on restored tables come back once roles are
+   pre-created; policies/triggers on the MISSING user_memory cannot restore until the table does.
+   Supabase-only extensions (pg_net, supabase_vault) are reported as production-only, not app-table blockers.
+## 5. Launcher now reports the task logon-type (unattended readiness) - req #10.

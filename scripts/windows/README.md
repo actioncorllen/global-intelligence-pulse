@@ -139,9 +139,14 @@ Otherwise it prints `ARTIFACT_RESTORE_PARTIAL` with the per-table / error detail
   --required-tables members,media_assets,marketing_spend_authority --min-rows 1
 ```
 
-**Managed extensions / schemas.** Before restoring, the tool pre-creates the Supabase-managed
-schemas (`extensions`, `auth`, `storage`, `graphql`, `realtime`, `vault`, …) and enables the
-extensions the dump requires that are **available locally**. A `public` table whose column uses
+**Managed roles / extensions / schemas.** Before restoring, the tool pre-creates the
+Supabase-managed **roles** (`anon`, `authenticated`, `service_role`, …) so role-dependent RLS
+policies restore instead of failing "role does not exist"; pre-creates the managed **schemas**
+(`extensions`, `auth`, `storage`, `graphql`, `realtime`, `vault`, …); and enables the
+extensions the dump requires that are **available locally**. A failed `CREATE TABLE` or `COPY`
+is always classified **data-affecting** (never harmless), and a missing table's full
+`CREATE TABLE` DDL + the real `pg_restore` error are printed so the exact dependency is shown,
+not assumed. A `public` table whose column uses
 an extension type (commonly `vector`/pgvector for embeddings) **cannot be created in a vanilla
 cluster that lacks that extension** — the restore then reports that exact table under `[DIAG]`
 (with "has data: YES/no" and the real `pg_restore` error) and lists the extension under
