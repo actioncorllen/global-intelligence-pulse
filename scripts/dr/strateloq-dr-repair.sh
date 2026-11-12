@@ -48,6 +48,7 @@ while [ "$#" -gt 0 ]; do
     --repo)     REPO="$2"; shift ;;
     --durable-script) DURABLE_SCRIPT="$2"; shift ;;
     --env-file) ENV_FILE="$2"; shift ;;
+    --gnupghome) export GNUPGHOME="$2"; shift ;;
     --drive-remote) DRIVE_REMOTE="$2"; shift ;;
     --local-restore) LOCAL_RESTORE="on" ;;
     --no-local-restore) LOCAL_RESTORE="off" ;;
@@ -115,30 +116,78 @@ load_dr_env() {
   done
 }
 
-CIPHER_SHA=""     # set by verify_integrity
-DEC_PATH=""       # set by verify_integrity
-LR_TABLES=""      # set by local_restore
+CIPHER_SHA=""      # set by verify_integrity
+DEC_PATH=""        # set by verify_integrity
+LR_TABLES=""       # set by local_restore
+DECRYPT_CAUSE=""   # ok|no_secret_key|recipient_mismatch|passphrase|agent|unreadable|other|missing|no_gpg
 
 cleanup() { [ -n "$WORK" ] && rm -rf "$WORK" 2>/dev/null || true; }
 trap cleanup EXIT
 WORK="$(mktemp -d)"
 
+# --- GPG diagnosis helpers (public key IDENTIFIERS only; never print secret material) -------
+_gpg_msg_keyids()  { gpg --list-packets "$1" 2>/dev/null | sed -nE 's/.*keyid[: ]+(0x)?([0-9A-Fa-f]{8,}).*/\2/p' | tr 'a-f' 'A-F' | sort -u; }
+_gpg_sec_keyids()  { gpg --list-secret-keys --with-colons 2>/dev/null | awk -F: '$1=="sec"||$1=="ssb"{print $5}' | tr 'a-f' 'A-F' | sort -u; }
+_gpg_rcpt_keyids() { gpg --list-keys --with-colons "$1" 2>/dev/null | awk -F: '$1=="pub"||$1=="sub"{print $5}' | tr 'a-f' 'A-F' | sort -u; }
+
+# gpg_diagnose <enc> : prints findings, sets DECRYPT_CAUSE (attempts no decryption).
+gpg_diagnose() {
+  local enc="$1" k MSG SEC REC have_secret="no" rcpt_matches="no"
+  note "[INFO] gpg user=$(id -un)  GNUPGHOME=${GNUPGHOME:-$HOME/.gnupg}  $(gpg --version 2>/dev/null | head -1)"
+  MSG="$(_gpg_msg_keyids "$enc" | tr '\n' ' ')"
+  SEC="$(_gpg_sec_keyids   | tr '\n' ' ')"
+  REC="$(_gpg_rcpt_keyids "$DR_GPG_RECIPIENT" | tr '\n' ' ')"
+  note "[INFO] archive is encrypted to keyid(s): ${MSG:-<unreadable>}"
+  note "[INFO] DR_GPG_RECIPIENT='$DR_GPG_RECIPIENT' public keyid(s): ${REC:-<recipient public key NOT in this keyring>}"
+  note "[INFO] secret keyid(s) available to $(id -un): ${SEC:-<none - no private key in this keyring>}"
+  for k in $MSG; do case " $SEC " in *" $k "*) have_secret="yes" ;; esac; done
+  for k in $MSG; do case " $REC " in *" $k "*) rcpt_matches="yes" ;; esac; done
+  if   [ "$have_secret" = "yes" ];                      then DECRYPT_CAUSE="secret_present"
+  elif [ -z "$MSG" ];                                   then DECRYPT_CAUSE="unreadable"
+  elif [ -n "$REC" ] && [ "$rcpt_matches" = "no" ];     then DECRYPT_CAUSE="recipient_mismatch"
+  else                                                       DECRYPT_CAUSE="no_secret_key"; fi
+  note "[INFO] gpg diagnosis: $DECRYPT_CAUSE"
+}
+
 # ---------------------------------------------------------------------------
-# verify_integrity <enc.gpg>  -> sets CIPHER_SHA, DEC_PATH ; returns 0 on pass
+# verify_integrity <enc.gpg>  -> sets CIPHER_SHA, DEC_PATH, DECRYPT_CAUSE
+#   0 pass | 30 missing | 31 no gpg | 40 no_secret_key | 41 recipient_mismatch
+#   42 passphrase | 43 agent | 32 other decrypt | 33 bad TOC | 34 no pg_restore
 # ---------------------------------------------------------------------------
 verify_integrity() {
-  local enc="$1"
-  [ -s "$enc" ] || { note "[FAIL] artifact missing/empty: $enc"; return 30; }
+  local enc="$1" err rc toc
+  [ -s "$enc" ] || { note "[FAIL] artifact missing/empty: $enc"; DECRYPT_CAUSE="missing"; return 30; }
   CIPHER_SHA="$(sha256sum "$enc" | awk '{print $1}')"
   note "[OK]   ciphertext sha256: $CIPHER_SHA"
-  have gpg || { note "[FAIL] gpg not available to decrypt"; return 31; }
-  DEC_PATH="$WORK/verify.dump"
-  if ! ( umask 077; gpg --yes -o "$DEC_PATH" -d "$enc" ) >/dev/null 2>&1; then
-    note "[FAIL] decryption failed (operator private key / recipient mismatch)"; return 32
+  have gpg || { note "[FAIL] gpg not available"; DECRYPT_CAUSE="no_gpg"; return 31; }
+
+  gpg_diagnose "$enc"
+  if [ "$DECRYPT_CAUSE" = "no_secret_key" ]; then
+    note "[FAIL] cannot decrypt here: the PRIVATE key for this archive is not in $(id -un)'s keyring."
+    note "       The weekly backup encrypts to DR_GPG_RECIPIENT's PUBLIC key; the private key is held"
+    note "       OFFLINE by design, so decryption must run where that private key lives (or with --gnupghome)."
+    return 40
   fi
-  note "[OK]   decryption succeeded"
+  if [ "$DECRYPT_CAUSE" = "recipient_mismatch" ]; then
+    note "[FAIL] the archive is encrypted to a key that DR_GPG_RECIPIENT does not resolve to (recipient mismatch)."
+    return 41
+  fi
+
+  DEC_PATH="$WORK/verify.dump"; err="$WORK/gpg.err"
+  if [ -n "${DR_GPG_PASSPHRASE:-}" ]; then
+    printf '%s' "$DR_GPG_PASSPHRASE" | ( umask 077; gpg --batch --yes --pinentry-mode loopback --passphrase-fd 0 -o "$DEC_PATH" -d "$enc" ) 2>"$err"; rc=$?
+  else
+    ( umask 077; gpg --batch --yes --pinentry-mode loopback -o "$DEC_PATH" -d "$enc" ) 2>"$err"; rc=$?
+  fi
+  if [ "${rc:-1}" -ne 0 ]; then
+    if   grep -qiE 'passphrase|batchmode|can.t get input|cancel' "$err"; then DECRYPT_CAUSE="passphrase"; note "[FAIL] decrypt failed: the private key is passphrase-protected and no valid passphrase was supplied (set DR_GPG_PASSPHRASE in the DR env file, or run where the gpg-agent is unlocked)"; return 42
+    elif grep -qiE 'agent|pinentry|ioctl'                        "$err"; then DECRYPT_CAUSE="agent"; note "[FAIL] decrypt failed: gpg-agent/pinentry could not run in batch/no-tty mode"; return 43
+    elif grep -qiE 'no secret key'                               "$err"; then DECRYPT_CAUSE="no_secret_key"; note "[FAIL] decrypt failed: no usable secret key"; return 40
+    else DECRYPT_CAUSE="other"; note "[FAIL] decrypt failed: $(head -1 "$err" 2>/dev/null)"; return 32; fi
+  fi
+  DECRYPT_CAUSE="ok"
+  note "[OK]   decryption succeeded (private key present and usable)"
   have pg_restore || { note "[WARN] pg_restore unavailable; cannot list TOC"; return 34; }
-  local toc
   toc="$(pg_restore --list "$DEC_PATH" 2>/dev/null | grep -c ';')" || toc=0
   if [ "$toc" -lt 1 ]; then note "[FAIL] not a valid restorable custom-format dump (empty TOC)"; return 33; fi
   note "[OK]   PostgreSQL archive integrity: valid custom-format dump (TOC entries: $toc)"
@@ -184,9 +233,17 @@ local_restore() {
 # (sha256 + decrypt + archive integrity + real local restore). No prod read.
 # ---------------------------------------------------------------------------
 if [ "$MODE" = "verify-artifact" ]; then
-  echo "== Verify artifact =="
+  echo "== Verify artifact (existing backup; no new backup taken) =="
   note "artifact: $ARTIFACT"
-  if ! verify_integrity "$ARTIFACT"; then verdict "ARTIFACT_VERIFY_FAILED"; exit 9; fi
+  if ! verify_integrity "$ARTIFACT"; then
+    case "$DECRYPT_CAUSE" in
+      no_secret_key)      verdict "ARTIFACT_DECRYPT_NO_SECRET_KEY";      exit 40 ;;
+      recipient_mismatch) verdict "ARTIFACT_DECRYPT_RECIPIENT_MISMATCH"; exit 41 ;;
+      passphrase)         verdict "ARTIFACT_DECRYPT_PASSPHRASE_REQUIRED"; exit 42 ;;
+      agent)              verdict "ARTIFACT_DECRYPT_AGENT_ERROR";        exit 43 ;;
+      *)                  verdict "ARTIFACT_VERIFY_FAILED";              exit 9  ;;
+    esac
+  fi
   if [ "$LOCAL_RESTORE" = "off" ]; then verdict "ARTIFACT_INTEGRITY_OK"; exit 0; fi
   if local_restore "$DEC_PATH"; then
     note "[OK]   isolated local restore succeeded (tables=$LR_TABLES)"
@@ -335,7 +392,21 @@ fi
 
 echo
 echo "== Verify backup integrity (sha256 + decrypt + archive) =="
-if ! verify_integrity "$ENC"; then verdict "VERIFY_FAILED"; exit 9; fi
+if ! verify_integrity "$ENC"; then
+  case "$DECRYPT_CAUSE" in
+    no_secret_key)
+      echo
+      note "The fresh backup is VALID and uploaded (encrypted to DR_GPG_RECIPIENT's public key)."
+      note "Decryption needs the OFFLINE private key, which is not in $(id -un)'s keyring by design."
+      note "Complete the decrypt + isolated restore where that private key lives, reusing THIS archive:"
+      note "  strateloq-dr-repair.sh --verify-artifact '$DRIVE_REMOTE$DRIVE_DEST/$(basename "$ENC")' --gnupghome <private-key GNUPGHOME>"
+      verdict "ORCH_BACKUP_OK_DECRYPT_PREREQUISITE"; exit 0 ;;
+    recipient_mismatch) verdict "DECRYPT_RECIPIENT_MISMATCH"; exit 41 ;;
+    passphrase)         verdict "DECRYPT_PASSPHRASE_REQUIRED"; exit 42 ;;
+    agent)              verdict "DECRYPT_AGENT_ERROR"; exit 43 ;;
+    *)                  verdict "VERIFY_FAILED"; exit 9 ;;
+  esac
+fi
 
 echo
 echo "== Isolated restore into EPHEMERAL LOCAL PostgreSQL =="

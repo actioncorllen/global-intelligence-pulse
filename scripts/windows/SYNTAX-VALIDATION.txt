@@ -1,33 +1,40 @@
-Strateloq DR Repair - Validation Evidence (v3.3 - env discovery + /mnt/c bootstrap)
-Generated: 2026-11-12T17:41:04Z
-PS parser: PowerShell 7.7.0 (same engine as Windows PowerShell 5.1); DB/crypto: psql (PostgreSQL) 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1), gpg (GnuPG) 2.4.4
+Strateloq DR Repair - Validation Evidence (v3.4 - GPG decryption diagnosis)
+Generated: 2026-11-12T18:15:19Z
+xargs: {}/psql: No such file or directory
+PS parser: PowerShell 7.7.0 (== Windows PowerShell 5.1 engine); crypto/db: gpg (GnuPG) 2.4.4, psql (PostgreSQL) 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)
 ================================================================================
 
-## 0. ROOT CAUSE of the reported run:
-   - 'SUPABASE_DB_URL/DR_GPG_RECIPIENT not set' = credentials EXIST in the scheduled-backup
-     env file but were not loaded into the ad-hoc interactive shell. (Not genuinely missing.)
-   - bootstrap 'not a git repository' / 'trap: usage' = PowerShell->bash quoting of the old
-     'bash -lc' mega-line. Replaced with plain 'wsl <cmd>' calls via /mnt/c/Users/DELL/.
+## 0. CAUSE of your VERIFY_FAILED: the weekly backup encrypts to DR_GPG_RECIPIENT's PUBLIC
+##    key; decryption needs the PRIVATE key, which this DR design keeps OFFLINE. On the
+##    strateloqbackup machine there is no secret key -> 'GPG decryption FAILED' is EXPECTED.
+##    The archive is valid; the decrypt+restore check belongs on the private-key machine.
 
-## 1. Launcher v3.3.0 - full-file parse + 5.1 compatibility
-   RESULT: PASS (0 parse errors) tokens=1626
+## 1. Launcher v3.4.0 - full-file parse + 5.1 compatibility
+   RESULT: PASS (0 parse errors) tokens=1699
    COMPAT: PASS - no PS7-only syntax
 
 ## 2. Orchestrator - static syntax
    bash -n: PASS
 
-## 3. Credential discovery distinguishes shell / env-file / genuinely-missing (no values printed)
-   names derived from the backup script's own guards: DR_GPG_RECIPIENT SUPABASE_DB_URL 
-MISSING  -> 2 vars flagged genuinely missing
-ENV FILE -> 2 vars found in env file (not missing)
+## 3. GPG decrypt-failure classification - validated against REAL GnuPG (no secret material printed):
+   ----- 1 NO SECRET KEY (pub-only keyring, private offline) -----  ->  VERDICT: ARTIFACT_DECRYPT_NO_SECRET_KEY
+   ----- 2 SUCCESS via --gnupghome pointing at the private-key keyring -----  ->  VERDICT: ARTIFACT_INTEGRITY_OK
+   ----- 3 PASSPHRASE REQUIRED (secret present, no passphrase) -----  ->  VERDICT: ARTIFACT_DECRYPT_PASSPHRASE_REQUIRED
+   ----- 4 PASSPHRASE SUPPLIED via DR_GPG_PASSPHRASE -> decrypt OK -----  ->  VERDICT: ARTIFACT_INTEGRITY_OK
+   ----- 5 RECIPIENT MISMATCH (msg->B, DR_GPG_RECIPIENT=A, no secret for B) -----  ->  VERDICT: ARTIFACT_DECRYPT_RECIPIENT_MISMATCH
+   ----- 6 FULL SUCCESS + real isolated restore -----  ->  VERDICT: ARTIFACT_RESTORE_OK
 
-## 4. REAL repair with credentials ONLY in $REPO/.env (not in shell): loads + full restore
-     [OK]   loaded DR credentials from env file(s): /tmp/tmp.xHu0uuRFPJ/repo/.env (values not shown; nothing overwritten)
+## 4. End-to-end on a backup machine with ONLY the public key (private key offline):
+     [OK]   encrypted backup produced: strateloq-db-20261112T181527Z.dump.gpg (1009 bytes)
      [OK]   Google Drive upload verified (object present, size + hash match)
+     [INFO] gpg diagnosis: no_secret_key
+   VERDICT: ORCH_BACKUP_OK_DECRYPT_PREREQUISITE
+     [OK]   decryption succeeded (private key present and usable)
+     [OK]   PostgreSQL archive integrity: valid custom-format dump (TOC entries: 18)
      [INFO] ephemeral local restore: pg_restore rc=0, user tables restored=1
-   VERDICT: ORCH_RESTORE_OK
+   VERDICT: ARTIFACT_RESTORE_OK
 
-## 5. /mnt/c bootstrap - all commands are plain PowerShell (no bash -lc); each parses 0 errors
-   cmd1 fetch / cmd2 launcher->C:\ / cmd3 orchestrator->C:\ (LF) / cmd4 run (diagnostics) : all PASS
-
-## 6. Secrets: diagnostics print only variable NAMES, presence, and file PATH - never values.
+## 5. Smallest safe correction: run the decrypt+restore where the private key lives -
+      strateloq-dr-repair.sh --verify-artifact <archive.gpg> --gnupghome <private-key GNUPGHOME>
+      (reuses the existing backup + keys + Drive; no new backup, no key rotation; secrets never printed).
+      For the missing initdb/pg_ctl, the operator runs: sudo apt-get install -y postgresql (WSL).

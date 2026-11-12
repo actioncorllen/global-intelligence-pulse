@@ -45,7 +45,7 @@ param(
 
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
-$script:LauncherVersion = '3.3.0'
+$script:LauncherVersion = '3.4.0'
 
 function Write-Section { param([string] $Title) Write-Host ''; Write-Host ('=== {0} ===' -f $Title) -ForegroundColor Cyan }
 function Write-Info  { param([string] $Message) Write-Host ('  {0}' -f $Message) }
@@ -276,6 +276,29 @@ switch ($verdict) {
         Write-Warn2 'NOT restore-ready: install PostgreSQL server tools (initdb/pg_ctl) in WSL for the local restore.'
         Write-Host 'LAUNCHER_RESULT: BACKUP_OK_RESTORE_PREREQUISITE' -ForegroundColor Yellow
         exit 0
+    }
+    'ORCH_BACKUP_OK_DECRYPT_PREREQUISITE' {
+        Write-Good 'Fresh encrypted backup made and Drive upload verified.'
+        Write-Warn2 'NOT restore-ready: the private key is not in this keyring (held offline by design), so'
+        Write-Warn2 'decryption + isolated restore must run where the private key lives. Re-run there with:'
+        Write-Info  '  --verify-artifact <archive.gpg> --gnupghome <private-key GNUPGHOME>'
+        Write-Host 'LAUNCHER_RESULT: BACKUP_OK_DECRYPT_PREREQUISITE' -ForegroundColor Yellow
+        exit 0
+    }
+    'DECRYPT_RECIPIENT_MISMATCH' {
+        Write-Bad 'Archive is encrypted to a key that DR_GPG_RECIPIENT does not resolve to (recipient mismatch).'
+        Write-Host 'LAUNCHER_RESULT: DECRYPT_RECIPIENT_MISMATCH' -ForegroundColor Red
+        exit 8
+    }
+    'DECRYPT_PASSPHRASE_REQUIRED' {
+        Write-Bad 'Private key is passphrase-protected; no valid passphrase supplied (set DR_GPG_PASSPHRASE in the DR env file).'
+        Write-Host 'LAUNCHER_RESULT: DECRYPT_PASSPHRASE_REQUIRED' -ForegroundColor Red
+        exit 8
+    }
+    'DECRYPT_AGENT_ERROR' {
+        Write-Bad 'gpg-agent/pinentry could not run in batch/no-tty mode.'
+        Write-Host 'LAUNCHER_RESULT: DECRYPT_AGENT_ERROR' -ForegroundColor Red
+        exit 8
     }
     'ORCH_BACKUP_OK_RESTORE_SKIPPED' {
         Write-Warn2 'Backup made + verified; local restore skipped (-NoLocalRestore).'

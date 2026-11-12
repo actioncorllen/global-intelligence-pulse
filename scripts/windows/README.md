@@ -95,6 +95,23 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "$env:USERPROFILE\Invoke-Str
   the launcher reports `BACKUP_OK_RESTORE_PREREQUISITE`; install with
   `sudo apt-get install -y postgresql` in the WSL distro, then re-run.
 
+### Decryption / private key
+
+The weekly backup encrypts to `DR_GPG_RECIPIENT`'s **public** key; decrypting needs the
+**private** key, which this DR design keeps **offline**. So on the `strateloqbackup` machine
+decryption normally cannot run — that is **not** a broken backup. The verify step diagnoses
+the exact cause (printing only public key IDs, never secret material):
+
+- `BACKUP_OK_DECRYPT_PREREQUISITE` — backup made + uploaded, but no private key here. Verify the
+  existing archive **where the private key lives**, reusing it (no new backup, no key change):
+  ```bash
+  ./strateloq-dr-repair.sh --verify-artifact <archive.gpg> --gnupghome <private-key GNUPGHOME>
+  ```
+- `DECRYPT_PASSPHRASE_REQUIRED` — the private key is passphrase-protected; put the passphrase in
+  the DR env file as `DR_GPG_PASSPHRASE` (loaded, never printed), or run where the agent is unlocked.
+- `DECRYPT_RECIPIENT_MISMATCH` — the archive is encrypted to a key `DR_GPG_RECIPIENT` doesn't
+  resolve to. `DECRYPT_AGENT_ERROR` — gpg-agent/pinentry couldn't run in batch mode.
+
 ## Verdicts (relayed verbatim)
 
 | Verdict | Meaning | Restore-ready? |
