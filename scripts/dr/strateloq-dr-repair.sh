@@ -245,6 +245,9 @@ if [ "$MODE" = "gpg-doctor" ]; then
   note "[OK]   archive: $ARTIFACT ($(wc -c < "$ARTIFACT" | tr -d ' ') bytes)"
   note "[INFO] ciphertext sha256: $(sha256sum "$ARTIFACT" | awk '{print $1}')"
   have gpg || { note "[FAIL] gpg not available"; verdict "GPG_DOCTOR_NO_GPG"; exit 31; }
+  # load DR_GPG_RECIPIENT from the scheduled-backup env file if not already set (read-only on disk;
+  # needed for the recipient-match check so a true mismatch is not misread as a missing key).
+  if [ -z "${DR_GPG_RECIPIENT:-}" ]; then load_dr_env || true; [ -n "$ENV_LOADED_FILES" ] && note "[INFO] DR_GPG_RECIPIENT loaded from env file (value hidden)"; fi
   gpg_diagnose "$ARTIFACT"     # recipient keyid + secret keyids + GNUPGHOME + user (public IDs only)
   case "$DECRYPT_CAUSE" in
     no_secret_key)

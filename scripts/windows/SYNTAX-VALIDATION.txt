@@ -26,6 +26,9 @@ PS parser: PowerShell 7.7.0 (== Windows PowerShell 5.1 engine); crypto/db: gpg (
      no plaintext file left in home:
    note: with NO secret key, NO decryption is attempted at all (truly read-only on the backup account).
 
+   recipient-match: --gpg-doctor auto-loads DR_GPG_RECIPIENT from the scheduled-backup env file
+   (value hidden) so a true recipient_mismatch is not misread as a missing key - verified.
+
 ## 4. Real decrypt + genuine isolated restore (private-key keyring), no regression:
    verify-artifact branches: NO_SECRET_KEY / (gnupghome)->OK / PASSPHRASE_REQUIRED / (passphrase)->OK / RECIPIENT_MISMATCH / RESTORE_OK
      repair+verify: VERDICT: ORCH_BACKUP_OK_DECRYPT_PREREQUISITE
