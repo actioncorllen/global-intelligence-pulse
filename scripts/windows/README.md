@@ -44,40 +44,55 @@ destination; deploys Kalodata; or makes a paid API call.
 propagation, backup integrity, and the actual isolated restore. Otherwise the launcher relays
 the exact blocker — it cannot fabricate `RESTORE_OK`.
 
-## Setup (two short Windows PowerShell commands — paste one at a time)
+## Setup (four plain Windows PowerShell commands — no `bash -lc`, via `/mnt/c/Users/DELL/`)
 
-The old single mega-line was fragile: when a paste broke it, PowerShell dropped into `>>`
-continuation, `wslpath` returned nothing, `Copy-Item` failed with a null value, and an **old
-broken copy** of the launcher was left in place (that is the real source of the "line 67 / 169"
-errors — the corrected file never landed). These two commands fix that: each is short, uses only
-simple quoting, stops on the first failure, and uses a **static** WSL path (no `wslpath`, no
-null `Copy-Item`).
+The earlier `bash -lc` mega-line was what failed (`fatal: not a git repository`, `trap: usage`)
+— a PowerShell→bash quoting problem. These commands avoid it entirely: each is a **plain
+`wsl <cmd> <args>`** call (no `bash -lc`, no login shell, no shell redirect) or a PowerShell
+file write, and the two scripts move through `C:\Users\DELL\` = `/mnt/c/Users/DELL/` — the
+copy path you confirmed works. Run them in order.
 
-**Step 1 — fetch the corrected scripts into WSL** (run; wait for `FETCH_OK`):
-
-```powershell
-wsl -d Ubuntu -u strateloqbackup -- bash -lc 'set -e; cd ~; rm -rf .dr-fetch; git clone -q --no-checkout --depth 1 --filter=blob:none --branch claude/sleepy-bell-ff4a68 https://github.com/actioncorllen/global-intelligence-pulse .dr-fetch; mkdir -p strateloq-dr-ops; git -C .dr-fetch show claude/sleepy-bell-ff4a68:scripts/windows/Invoke-StrateloqDR.ps1 > strateloq-dr-ops/Invoke-StrateloqDR.ps1; git -C .dr-fetch show claude/sleepy-bell-ff4a68:scripts/dr/strateloq-dr-repair.sh > strateloq-dr-ops/strateloq-dr-repair.sh; chmod +x strateloq-dr-ops/strateloq-dr-repair.sh; rm -rf .dr-fetch; echo FETCH_OK'
-```
-
-**Step 2 — copy the corrected launcher over the old one and run DIAGNOSTICS ONLY** (no backup,
-no restore — only runs if Step 1 succeeded and the file is present):
+**1 — fetch the branch into your existing WSL repo** (no checkout, no working-tree change):
 
 ```powershell
-$src='\\wsl.localhost\Ubuntu\home\strateloqbackup\strateloq-dr-ops\Invoke-StrateloqDR.ps1'; if(-not (Test-Path $src)){$src='\\wsl$\Ubuntu\home\strateloqbackup\strateloq-dr-ops\Invoke-StrateloqDR.ps1'}; if((Test-Path $src) -and ((Get-Item $src).Length -gt 0)){Copy-Item $src "$env:USERPROFILE\Invoke-StrateloqDR.ps1" -Force; powershell -NoProfile -ExecutionPolicy Bypass -File "$env:USERPROFILE\Invoke-StrateloqDR.ps1"} else {Write-Host 'Launcher missing/empty in WSL - run Step 1 first (expect FETCH_OK).'}
+wsl -d Ubuntu -u strateloqbackup git -C /home/strateloqbackup/strateloq-dr-validate fetch https://github.com/actioncorllen/global-intelligence-pulse claude/sleepy-bell-ff4a68
 ```
 
-The launcher prints its version and running-file path at the top — confirm it says **v3.2.0**;
-if you still see the old errors, you are running a stale file (re-run Step 1, then Step 2).
-
-**Only after** you have reviewed the diagnostics, run the repair (fresh encrypted backup +
-verified upload + integrity + real isolated local restore) by adding `-Approve`:
+**2 — write the corrected launcher to `C:\Users\DELL\`** (capture → file; no bash redirect):
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File "$env:USERPROFILE\Invoke-StrateloqDR.ps1" -Approve
+wsl -d Ubuntu -u strateloqbackup git -C /home/strateloqbackup/strateloq-dr-validate show FETCH_HEAD:scripts/windows/Invoke-StrateloqDR.ps1 | Out-File -Encoding ascii "$env:USERPROFILE\Invoke-StrateloqDR.ps1"
 ```
 
-- The isolated restore needs PostgreSQL **server** tools (`initdb`, `pg_ctl`) in WSL. If they
-  are absent the launcher reports `BACKUP_OK_RESTORE_PREREQUISITE`; install with
+**3 — write the corrected orchestrator to `C:\Users\DELL\` with Unix line endings**:
+
+```powershell
+$o = wsl -d Ubuntu -u strateloqbackup git -C /home/strateloqbackup/strateloq-dr-validate show FETCH_HEAD:scripts/dr/strateloq-dr-repair.sh; [IO.File]::WriteAllText("$env:USERPROFILE\strateloq-dr-repair.sh", (($o -join "`n") + "`n"))
+```
+
+**4 — run DIAGNOSTICS ONLY** (no backup, no restore); the orchestrator runs from `/mnt/c`:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File "$env:USERPROFILE\Invoke-StrateloqDR.ps1" -Orchestrator /mnt/c/Users/DELL/strateloq-dr-repair.sh
+```
+
+The launcher prints its version and running-file path at the top — confirm **v3.3.0**. The
+diagnosis now reports each credential as *present in this shell*, *present in <env file>
+(will be loaded for the backup)*, or *genuinely missing* — so `SUPABASE_DB_URL` /
+`DR_GPG_RECIPIENT` living in your scheduled-backup env file is **not** reported as missing.
+
+**Only after** reviewing the diagnostics, run the repair (fresh encrypted backup + verified
+Drive upload + integrity + real isolated local restore) by adding `-Approve`:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File "$env:USERPROFILE\Invoke-StrateloqDR.ps1" -Orchestrator /mnt/c/Users/DELL/strateloq-dr-repair.sh -Approve
+```
+
+- If your scheduled-backup env file is in a non-standard location the diagnostic doesn't find,
+  point at it with `-EnvFile /home/strateloqbackup/<your-dr-env-file>` (its secrets are loaded,
+  never printed).
+- The isolated restore needs PostgreSQL **server** tools (`initdb`, `pg_ctl`) in WSL. If absent
+  the launcher reports `BACKUP_OK_RESTORE_PREREQUISITE`; install with
   `sudo apt-get install -y postgresql` in the WSL distro, then re-run.
 
 ## Verdicts (relayed verbatim)

@@ -34,6 +34,7 @@ PROD_PROJECT_REF="nxaunmyihhjixxxljcqt"   # production - NEVER a restore target
 MODE="diagnose"            # diagnose | repair | verify-artifact
 APPROVE="no"
 DURABLE_SCRIPT=""
+ENV_FILE=""                # explicit scheduled-backup env file (e.g. from the task action)
 ARTIFACT=""
 LOCAL_RESTORE="auto"       # auto | on | off
 WORK=""
@@ -46,6 +47,7 @@ while [ "$#" -gt 0 ]; do
     --approve)  APPROVE="yes" ;;
     --repo)     REPO="$2"; shift ;;
     --durable-script) DURABLE_SCRIPT="$2"; shift ;;
+    --env-file) ENV_FILE="$2"; shift ;;
     --drive-remote) DRIVE_REMOTE="$2"; shift ;;
     --local-restore) LOCAL_RESTORE="on" ;;
     --no-local-restore) LOCAL_RESTORE="off" ;;
@@ -62,6 +64,56 @@ have()    { command -v "$1" >/dev/null 2>&1; }
 BACKUP_SCRIPT="$REPO/scripts/dr/dr_db_logical_backup.sh"
 REPAIR_DOC="$REPO/dr/runbook/WEEKLY-BACKUP-REPAIR.md"
 RUNBOOK="$REPO/dr/runbook/RECOVERY-RUNBOOK.md"
+ENV_LOADED_FILES=""
+
+# --- DR credential environment discovery (presence only; never prints secret values) -------
+# Candidate scheduled-backup env files, explicit --env-file first.
+env_candidates() {
+  [ -n "${ENV_FILE:-}" ] && printf '%s\n' "$ENV_FILE"
+  printf '%s\n' \
+    "$REPO/.env" "$REPO/.env.dr" "$REPO/.dr.env" "$REPO/dr/.env" "$REPO/scripts/dr/.env" \
+    "$REPO/.env.backup" "$HOME/.strateloq-dr.env" "$HOME/strateloq-dr.env" \
+    "$HOME/.config/strateloq-dr/env" "$HOME/.strateloq-dr/env" "$HOME/.dr.env" \
+    "/etc/strateloq-dr/env" "/etc/default/strateloq-dr"
+}
+
+# The variable NAMES the operational backup script actually requires (its ${VAR:?}/${VAR:-}
+# guards) - so a script using DIFFERENT names is discovered and used, not assumed.
+required_backup_vars() {
+  local names=""
+  [ -s "$BACKUP_SCRIPT" ] && names="$(grep -oE '\$\{[A-Za-z_][A-Za-z0-9_]*:[?-]' "$BACKUP_SCRIPT" 2>/dev/null \
+      | sed -E 's/^\$\{//; s/:[?-]$//' | sort -u | tr '\n' ' ')"
+  [ -z "$names" ] && names="SUPABASE_DB_URL DR_GPG_RECIPIENT"
+  printf '%s' "$names"
+}
+
+# locate_var <NAME> -> "shell" | "file:<path>" | "missing"  (never prints the value)
+locate_var() {
+  local var="$1" f
+  if [ -n "${!var:-}" ]; then printf 'shell'; return 0; fi
+  while IFS= read -r f; do
+    [ -f "$f" ] || continue
+    if ( set +e; set -a; . "$f" >/dev/null 2>&1; set +a; [ -n "${!var:-}" ] ); then printf 'file:%s' "$f"; return 0; fi
+  done < <(env_candidates)
+  printf 'missing'
+}
+
+# Source the env file(s) that provide any still-missing required var INTO this shell, so the
+# backup inherits them. Trusted operator files; values are never echoed.
+load_dr_env() {
+  local var loc f
+  for var in $(required_backup_vars); do
+    [ -n "${!var:-}" ] && continue
+    loc="$(locate_var "$var")"
+    case "$loc" in
+      file:*) f="${loc#file:}"
+        case " $ENV_LOADED_FILES " in
+          *" $f "*) : ;;
+          *) set +e; set -a; . "$f" >/dev/null 2>&1; set +a; set -e; ENV_LOADED_FILES="$ENV_LOADED_FILES $f" ;;
+        esac ;;
+    esac
+  done
+}
 
 CIPHER_SHA=""     # set by verify_integrity
 DEC_PATH=""       # set by verify_integrity
@@ -176,7 +228,7 @@ if [ -n "$DURABLE_SCRIPT" ]; then
     fi
     if bash -n "$DURABLE_SCRIPT" 2>/dev/null; then note "[OK]   durable script parses (bash -n)"; else note "[FAIL] durable script has a syntax error"; BLOCKERS=$((BLOCKERS+1)); fi
   else
-    diag "durable_script=missing"; note "[FAIL] durable task script not found: $DURABLE_SCRIPT"; BLOCKERS=$((BLOCKERS+1))
+    diag "durable_script=missing"; note "[WARN] durable task script path from the task action not found in WSL: $DURABLE_SCRIPT (best-effort extraction; verify the task action - not a diagnose blocker)"
   fi
 else
   diag "durable_script=unspecified"; note "[INFO] no --durable-script given; launcher reports the task action separately"
@@ -190,8 +242,20 @@ for t in pg_dump pg_restore gpg rclone initdb pg_ctl; do
   else diag "tool_${t}=missing"; note "[WARN] tool not found: $t"; fi
 done
 
-if [ -n "${SUPABASE_DB_URL:-}" ]; then diag "env_SUPABASE_DB_URL=set"; note "[OK]   SUPABASE_DB_URL set (value hidden)"; else diag "env_SUPABASE_DB_URL=unset"; note "[WARN] SUPABASE_DB_URL not set"; fi
-if [ -n "${DR_GPG_RECIPIENT:-}" ]; then diag "env_DR_GPG_RECIPIENT=set"; note "[OK]   DR_GPG_RECIPIENT set (value hidden)"; else diag "env_DR_GPG_RECIPIENT=unset"; note "[WARN] DR_GPG_RECIPIENT not set"; fi
+# (4) DR credentials: discover where each required var lives; distinguish genuinely-missing
+#     from present-but-not-loaded-into-this-shell. Never prints secret values.
+REQUIRED_VARS="$(required_backup_vars)"
+note "[INFO] operational backup requires: $REQUIRED_VARS (names read from the backup script's own guards)"
+CREDS_MISSING=""
+for cv in $REQUIRED_VARS; do
+  loc="$(locate_var "$cv")"
+  case "$loc" in
+    shell)   diag "cred_${cv}=shell";   note "[OK]   $cv present in this shell (value hidden)" ;;
+    file:*)  diag "cred_${cv}=envfile";  note "[OK]   $cv present in ${loc#file:} - NOT loaded in this interactive shell; the repair will load it (value hidden)" ;;
+    missing) diag "cred_${cv}=missing";  note "[WARN] $cv genuinely NOT found in this shell or any known scheduled-backup env file"; CREDS_MISSING="$CREDS_MISSING $cv" ;;
+  esac
+done
+[ -n "$CREDS_MISSING" ] && note "[WARN] genuinely missing credentials:$CREDS_MISSING (these are not a diagnose blocker)"
 
 if have rclone; then
   if rclone listremotes 2>/dev/null | grep -qx "$DRIVE_REMOTE"; then diag "drive_remote=present"; note "[OK]   rclone remote present: $DRIVE_REMOTE -> $DRIVE_DEST (reused, not reconfigured)"
@@ -216,11 +280,21 @@ echo "== Repair (safe, reversible fixes only) =="
 [ -f "$BACKUP_SCRIPT" ] && [ ! -x "$BACKUP_SCRIPT" ] && { chmod +x "$BACKUP_SCRIPT"; note "[FIX]  made operational backup script executable"; } || note "[OK]   operational backup script permissions ok"
 if [ -n "$DURABLE_SCRIPT" ] && [ -f "$DURABLE_SCRIPT" ] && [ ! -x "$DURABLE_SCRIPT" ]; then chmod +x "$DURABLE_SCRIPT"; note "[FIX]  made durable task script executable"; fi
 
+# Load the existing scheduled-backup credentials from the discovered env file(s) first, so a
+# credential that EXISTS but was not in this interactive shell is used rather than reported missing.
+load_dr_env
+if [ -n "$ENV_LOADED_FILES" ]; then note "[OK]   loaded DR credentials from env file(s):$ENV_LOADED_FILES (values not shown; nothing overwritten)"
+else note "[INFO] no DR env file needed (required credentials already present in the shell)"; fi
+
 missing=""
 for t in pg_dump gpg; do have "$t" || missing="$missing $t"; done
-[ -n "${SUPABASE_DB_URL:-}" ] || missing="$missing SUPABASE_DB_URL"
-[ -n "${DR_GPG_RECIPIENT:-}" ] || missing="$missing DR_GPG_RECIPIENT"
-if [ -n "$missing" ]; then echo; note "Cannot take a backup; missing operator prerequisite(s):$missing"; verdict "PREREQUISITE_MISSING"; exit 7; fi
+for cv in $(required_backup_vars); do [ -n "${!cv:-}" ] || missing="$missing $cv"; done
+if [ -n "$missing" ]; then
+  echo
+  note "Cannot take a backup - GENUINELY missing after loading every known DR env file:$missing"
+  note "(not found in the shell or any discovered scheduled-backup env file)"
+  verdict "PREREQUISITE_MISSING"; exit 7
+fi
 
 echo
 echo "== Fresh encrypted production backup (via established operational script) =="

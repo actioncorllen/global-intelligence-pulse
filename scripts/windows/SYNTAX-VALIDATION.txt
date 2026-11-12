@@ -1,33 +1,33 @@
-Strateloq DR Repair - Validation Evidence (v3.2 - bootstrap hardening)
-Generated: 2026-11-12T08:36:16Z
-PS parser: System.Management.Automation.Language.Parser (PowerShell 7.7.0) - same engine as Windows PowerShell 5.1
+Strateloq DR Repair - Validation Evidence (v3.3 - env discovery + /mnt/c bootstrap)
+Generated: 2026-11-12T17:41:04Z
+PS parser: PowerShell 7.7.0 (same engine as Windows PowerShell 5.1); DB/crypto: psql (PostgreSQL) 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1), gpg (GnuPG) 2.4.4
 ================================================================================
 
-## 0. ROOT CAUSE: the committed launcher is CLEAN; the 'line 67/169' errors came from a
-##    STALE file left on the PC because the old fragile bootstrap failed to replace it.
-   committed Invoke-StrateloqDR.ps1 @ 8c8184f:
-     RESULT: PASS (0 parse errors) tokens=1445
-     line 67  = param([string[]] $Lines)
-     line 169 = Write-Section 'Exit-code propagation self-test (Windows -> WSL -> bash)'
-     -> both lines are valid PowerShell; 0 parse errors in the committed file.
+## 0. ROOT CAUSE of the reported run:
+   - 'SUPABASE_DB_URL/DR_GPG_RECIPIENT not set' = credentials EXIST in the scheduled-backup
+     env file but were not loaded into the ad-hoc interactive shell. (Not genuinely missing.)
+   - bootstrap 'not a git repository' / 'trap: usage' = PowerShell->bash quoting of the old
+     'bash -lc' mega-line. Replaced with plain 'wsl <cmd>' calls via /mnt/c/Users/DELL/.
 
-## 1. Corrected launcher v3.2.0 - full-file parse (Windows PowerShell 5.1 engine)
-   RESULT: PASS (0 parse errors) tokens=1460
-   COMPAT: PASS - no PowerShell-7-only syntax
+## 1. Launcher v3.3.0 - full-file parse + 5.1 compatibility
+   RESULT: PASS (0 parse errors) tokens=1626
+   COMPAT: PASS - no PS7-only syntax
 
-## 2. New bootstrap (replaces the fragile multi-line one) - both steps validated
-   Step 1 (PowerShell parse):
-     RESULT: PASS (0 parse errors) tokens=11
-   Step 1 (embedded bash -n):
-     PASS
-   Step 2 (PowerShell parse):
-     RESULT: PASS (0 parse errors) tokens=56
-   Step 2 fixes: static UNC path (no wslpath -> no 'WSL path resolution failed');
-                 Test-Path + Length>0 guard (no null-valued Copy-Item);
-                 single short lines with balanced quotes (no '>>' continuation).
+## 2. Orchestrator - static syntax
+   bash -n: PASS
 
-## 3. Diagnostic-only mode is READ-ONLY (no changes before approval)
-   orchestrator --diagnose verdict: DIAGNOSE_OK
-   repo tree unchanged by diagnose: PASS (read-only confirmed)
+## 3. Credential discovery distinguishes shell / env-file / genuinely-missing (no values printed)
+   names derived from the backup script's own guards: DR_GPG_RECIPIENT SUPABASE_DB_URL 
+MISSING  -> 2 vars flagged genuinely missing
+ENV FILE -> 2 vars found in env file (not missing)
 
-## 4. Launcher now prints its running file + version (v3.2.0) so a stale file is obvious.
+## 4. REAL repair with credentials ONLY in $REPO/.env (not in shell): loads + full restore
+     [OK]   loaded DR credentials from env file(s): /tmp/tmp.xHu0uuRFPJ/repo/.env (values not shown; nothing overwritten)
+     [OK]   Google Drive upload verified (object present, size + hash match)
+     [INFO] ephemeral local restore: pg_restore rc=0, user tables restored=1
+   VERDICT: ORCH_RESTORE_OK
+
+## 5. /mnt/c bootstrap - all commands are plain PowerShell (no bash -lc); each parses 0 errors
+   cmd1 fetch / cmd2 launcher->C:\ / cmd3 orchestrator->C:\ (LF) / cmd4 run (diagnostics) : all PASS
+
+## 6. Secrets: diagnostics print only variable NAMES, presence, and file PATH - never values.

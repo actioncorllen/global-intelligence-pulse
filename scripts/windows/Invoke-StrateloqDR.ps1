@@ -37,6 +37,7 @@ param(
     [string] $Orchestrator  = '/home/strateloqbackup/strateloq-dr-ops/strateloq-dr-repair.sh',
     [string] $TaskName      = 'Strateloq-DR-Weekly-Backup',
     [string] $DurableScript = '',
+    [string] $EnvFile       = '',
     [switch] $NoLocalRestore,
     [switch] $Approve,
     [switch] $Force
@@ -44,7 +45,7 @@ param(
 
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
-$script:LauncherVersion = '3.2.0'
+$script:LauncherVersion = '3.3.0'
 
 function Write-Section { param([string] $Title) Write-Host ''; Write-Host ('=== {0} ===' -f $Title) -ForegroundColor Cyan }
 function Write-Info  { param([string] $Message) Write-Host ('  {0}' -f $Message) }
@@ -97,6 +98,19 @@ function Get-DurableScriptFromAction {
     return ''
 }
 
+function Get-EnvFileFromAction {
+    # Best-effort: the scheduled-backup credentials usually come from an env file the task
+    # sources (e.g. `. ~/dr.env`, `source /path/env`, `--env-file X`, or a bare *.env path).
+    param([string] $Execute, [string] $Arguments)
+    if ($EnvFile) { return $EnvFile }
+    $hay = ('{0} {1}' -f $Execute, $Arguments)
+    foreach ($rx in @('(?:--env-file|source|\.)\s+(~?/[^\s"'';&|<>()]+)', '(~?/[^\s"'';&|<>()]+\.env[^\s"'';&|<>()]*)')) {
+        $m = [regex]::Match($hay, $rx)
+        if ($m.Success) { return $m.Groups[1].Value }
+    }
+    return ''
+}
+
 Write-Host ''
 Write-Host '############################################################' -ForegroundColor Cyan
 Write-Host ('#  Strateloq DR Repair Launcher  v{0}' -f $script:LauncherVersion) -ForegroundColor Cyan
@@ -127,6 +141,7 @@ Write-Good ('WSL target: distro={0}  user={1}' -f $Distro, $WslUser)
 Write-Section 'Scheduled task diagnosis (read-only)'
 $taskActionPresent = $false
 $resolvedDurable = ''
+$resolvedEnvFile = ''
 $task = $null
 try { $task = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue } catch { $task = $null }
 if ($task) {
@@ -138,6 +153,7 @@ if ($task) {
         if ($exe) { $taskActionPresent = $true }
         Write-Info ('  action: {0} {1}' -f $exe, $arg)
         if (-not $resolvedDurable) { $resolvedDurable = Get-DurableScriptFromAction -Execute $exe -Arguments $arg }
+        if (-not $resolvedEnvFile) { $resolvedEnvFile = Get-EnvFileFromAction -Execute $exe -Arguments $arg }
     }
     try {
         $info = Get-ScheduledTaskInfo -TaskName $TaskName -ErrorAction SilentlyContinue
@@ -165,6 +181,8 @@ if ($task) {
     Write-Warn2 ('scheduled task "{0}" not found via Get-ScheduledTask (not modifying it).' -f $TaskName)
 }
 if ($resolvedDurable) { Write-Info ('  durable script resolved: {0}' -f $resolvedDurable) }
+if (-not $resolvedEnvFile -and $EnvFile) { $resolvedEnvFile = $EnvFile }
+if ($resolvedEnvFile) { Write-Info ('  scheduled-backup env file resolved: {0} (its credentials will be loaded, not printed)' -f $resolvedEnvFile) }
 
 # --- (3) exit-code propagation self-test: Windows -> WSL -> bash ---
 Write-Section 'Exit-code propagation self-test (Windows -> WSL -> bash)'
@@ -188,7 +206,9 @@ Write-Good ('repair orchestrator present: {0}' -f $Orchestrator)
 Write-Section 'Diagnose (read-only)'
 $durableArg = ''
 if ($resolvedDurable) { $durableArg = (" --durable-script '{0}'" -f $resolvedDurable) }
-$diagCmd = ("'{0}' --diagnose --repo '{1}'{2}" -f $Orchestrator, $RepoPath, $durableArg)
+$envArg = ''
+if ($resolvedEnvFile) { $envArg = (" --env-file '{0}'" -f $resolvedEnvFile) }
+$diagCmd = ("bash '{0}' --diagnose --repo '{1}'{2}{3}" -f $Orchestrator, $RepoPath, $durableArg, $envArg)
 $diagOut = Invoke-Wsl $diagCmd
 foreach ($ln in $diagOut) { Write-Host ('  ' + (($ln -replace "`0", ''))) }
 $diagVerdict = Get-Verdict -Lines $diagOut
@@ -230,7 +250,7 @@ if (-not $Force) {
 Write-Section 'Repair + backup + verified upload + integrity + isolated local restore'
 $lrArg = ''
 if ($NoLocalRestore) { $lrArg = ' --no-local-restore' }
-$repairCmd = ("'{0}' --repair --approve --repo '{1}'{2}{3}" -f $Orchestrator, $RepoPath, $durableArg, $lrArg)
+$repairCmd = ("bash '{0}' --repair --approve --repo '{1}'{2}{3}{4}" -f $Orchestrator, $RepoPath, $durableArg, $envArg, $lrArg)
 $repairOut = Invoke-Wsl $repairCmd
 foreach ($ln in $repairOut) { Write-Host ('  ' + (($ln -replace "`0", ''))) }
 $verdict = Get-Verdict -Lines $repairOut
