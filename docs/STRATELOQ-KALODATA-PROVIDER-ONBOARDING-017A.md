@@ -1303,3 +1303,47 @@ New edges/bucket don't touch existing functions. Schedule during a quiet window;
 ## 85. Release verdict (unchanged): GO for the non-paid additive deploy on explicit founder authorisation
 Frontier re-confirmed `20261112152217` (recheck immediately before apply; if advanced, pick new increasing
 versions keeping M1→M2). Hard holds remain: paid Phase-D (separate approval) and Kalodata video-media rights.
+
+# Phase 20 — Frontend revision reconciliation (2026-11-12; no publish, no deploy)
+
+Resolved the `1c8ca1b` vs HEAD `e2b7220` question on the Lovable-backed repo
+`actioncorllen/https-www-globalintelligenceactions-com` (cloned read-only; no change pushed to it).
+
+## 86. e2b7220 is a strict superset of 1c8ca1b (do NOT revert)
+Intervening commits (1c8ca1b → e2b7220), via Lovable edit history: ecommerce workspace routing + header
+wording (`4d30528`, `309aaee`); **tenant-scoped Product Asset Lock** `fn_product_commercial_asset_readiness_owned`
+(`7672898` — the RPC is deployed in prod = mig_363); SEO robots/sitemap/JSON-LD (`a449a5e`, `e2b7220`); and
+**canonical `www.strateloq.com`** alignment (`abbede5`). **None touch the Kalodata gallery.** Reverting to
+1c8ca1b would discard the Strateloq branding/SEO/PAL/ecommerce launch work — so HEAD is the publish target.
+
+## 87. Kalodata gallery + contracts intact at e2b7220
+Present and compatible: `src/hooks/use-kalodata-research-gallery.ts`;
+`src/lib/business-discovery/research-image-gallery-contract.ts` (+test) — enforces `authority:"REFERENCE_ONLY"`,
+`deliveryMode:"SELF_HOSTED_SIGNED"`, validates `delivery_endpoint==="kalodata-research-image-url"`, calls RPC
+`fn_kalodata_product_images_cached(p_tenant,p_product)`, **fails closed** (returns [] on bad authority/endpoint/
+error); the `1c8ca1b` Explorer parity wiring (`product-explorer.tsx researchProductId={item.productId}`),
+Discovery `ResearchImagesBlock` (`product-intelligence.tsx`), and `ecommerce-workspace.tsx` wiring. Tenant =
+authenticated `user.id` (tenant isolation); display-only (never commerce/ads/publishing).
+
+## 88. Frontend verification run (cloned HEAD e2b7220; npm install 582 pkgs)
+- `vitest run` → **690/690 passed (91 files)** (supersedes the 682 at 1c8ca1b; +8 from later commits, no gallery test lost).
+- `tsc --noEmit` → **clean**. `vite build` → **success**.
+
+## 89. Backend contract readiness (frontend fails closed until deploy)
+- `fn_product_commercial_asset_readiness_owned` → DEPLOYED (mig_363). ✔
+- `kalodata-research-image-url` edge + `fn_kalodata_product_images_cached` RPC → pending the gated Kalodata
+  backend deploy; until then the gallery RPC errors are caught → empty state (no customer-facing breakage).
+  **The frontend can safely remain unpublished** (current published site keeps serving); publish e2b7220 only
+  after the backend self-tests pass (deploy step 8).
+
+## 90. Branding finding (flagged; NOT changed — out of Kalodata scope)
+Site is Strateloq-branded (408 refs; canonical www.strateloq.com). Residual **"Global Intelligence Pulse™"**
+persists in ~5 *marketing* components (`demo-preview-card.tsx`, `how-pulse-works.tsx`, `experience-pulse-modal.tsx`,
+`global-pulse-visual.tsx`) — customer-facing but unrelated to the Kalodata gallery, and possibly intentional ™
+feature naming. Left for a separate founder decision (per "do not initiate an unrelated rebranding exercise");
+not a Kalodata-release blocker.
+
+## 91. Reconciliation verdict: READY — publish revision `e2b7220`
+Gallery intact, tests/TS/build green, rights fail-closed, Strateloq-branded, superset of 1c8ca1b. No correction
+made. Publish `e2b7220` after the backend deploy + self-tests pass (step 8); hold the marketing-copy branding
+cleanup as a separate item.
