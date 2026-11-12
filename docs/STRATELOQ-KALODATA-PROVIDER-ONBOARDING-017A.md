@@ -1249,3 +1249,57 @@ additivity was re-confirmed against the *current* database, not the preflight sn
   free plan), so they run at deploy step 6, not during this read-only pass. Frontend 682/682 is a Lovable-sandbox
   result (not re-runnable from this ops repo). GO/NO-GO of §75 **unchanged**: ready for the non-paid additive
   deploy on explicit approval + the three §71 confirmations; paid Phase-D and video media remain held.
+
+# Phase 19 — Final gate update: official provider pricing + release-readiness (2026-11-12; no production change)
+
+## 80. Official Kalodata Open Center pricing (founder evidence; replaces earlier ~0.1 assumption)
+Source: kalodata.com/open-center/pricing + /docs (founder screenshots; kalodata.com unreachable from this env).
+**Units are PROVIDER CREDITS — not euros, not Strateloq customer discovery credits.** Observed balance: **14.1 credits**.
+
+| Endpoint | Provider credit cost |
+|---|---|
+| Product Detail | 0.1 / call |
+| Video Detail | 0.1 / call |
+| Product Rank | 0.1 / applicable ranking unit (ceiling-based row rounding) |
+| Video Rank | 0.1 / applicable ranking unit (ceiling-based row rounding) |
+| Product Images | **0.01 / call** |
+| Video URL | **0.5 / call** (BLOCKED — not invoked) |
+| Product Comment Statistics | 1 / call (not in this release) |
+| Credit Balance / Consumption Details | 0 |
+
+`need_image=1` and `need_image=2` add no separate image-parameter charge. This matrix updates the Phase-D cost
+model only; **nothing here activates budgets/prices or authorises a paid call.** A capped Phase-D test
+(one market, founder tenant, `max_calls≈20`) is ≈2 credits at 0.1/call and remains a SEPARATE approval.
+
+## 81. Secret validity — scope corrected (no overclaim)
+`KALODATA_SECRET_KEY` is evidenced by prior successful authenticated usage (2 consumed provider calls on record;
+`kalodata-discovery` deployed/operational; the 5 new edges read the same env name). This is **evidence of prior
+working credentials, not proof of current validity**, and Supabase MCP exposes no secret-listing tool here.
+**It is not on the critical path for this release:** the additive deploy and the step-6 self-tests make **no
+Kalodata call**, so the secret is first exercised only at Phase-D (the first real paid call). Confirm the secret
+in the dashboard (Edge Functions → Secrets) at Phase-D, or it surfaces on the first live call. Not a non-paid-deploy blocker.
+
+## 82. Frontend revision reconciliation (action before publish)
+Lovable project "Pulse Implementation" HEAD is now **`e2b7220`** (last edited 2026-11-12T20:06) — the intended
+release commit **`1c8ca1b` is no longer HEAD** (other sessions committed since, as Phase-17 §70 warned). Before
+step-8 publish: either verify `e2b7220` still carries the compatible Kalodata gallery wiring (and is otherwise
+safe to ship) and publish it, or publish the pinned `1c8ca1b`. **Do not blind-publish HEAD.** Backend deploy
+(steps 1-7) is unaffected. Branding note (not changed here, founder decision): the public hero still leads with
+"Global Intelligence" positioning copy while the logo/brand is correctly STRATELOQ — this is not the legacy
+company name and was not introduced by this work.
+
+## 83. Durable rollback (no longer scratchpad-only)
+Committed to the repo: `supabase/drafts/rollback/kalodata_release_rollback.sql` — reverts `fn_asset_rights_class`
+to its captured pre-deploy body, drops only the new functions/table/indexes/constraint/columns (unique names →
+clean no-arg drops), and guards the bucket (delete only if empty). Dropping the 4 cache columns removes cache
+metadata only; the ~257 existing `product_image_assets` rows and all business data are preserved. No restore needed.
+
+## 84. Availability impact (no overclaim)
+Low-impact, not literally zero: PostgreSQL DDL still takes brief locks. `ADD COLUMN IF NOT EXISTS` is
+metadata-only/instant; the guarded CHECK constraint validates on **257 rows** (sub-second ACCESS EXCLUSIVE);
+`CREATE OR REPLACE fn_asset_rights_class` is instant and backward-compatible (only KALODATA/FASTMOSS reclassified).
+New edges/bucket don't touch existing functions. Schedule during a quiet window; no endpoint is taken offline.
+
+## 85. Release verdict (unchanged): GO for the non-paid additive deploy on explicit founder authorisation
+Frontier re-confirmed `20261112152217` (recheck immediately before apply; if advanced, pick new increasing
+versions keeping M1→M2). Hard holds remain: paid Phase-D (separate approval) and Kalodata video-media rights.
