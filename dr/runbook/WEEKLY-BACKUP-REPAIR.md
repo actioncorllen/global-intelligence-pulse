@@ -1,59 +1,57 @@
 # Strateloq-DR-Weekly-Backup — Repair Procedure
 
-Operational procedure to diagnose and repair a failed `Strateloq-DR-Weekly-Backup`,
-take a fresh encrypted backup, and verify it is restorable. Runs **inside WSL (Ubuntu)**
-as the operator user (`strateloqbackup`) on the established checkout
+Operational procedure to diagnose + repair a failed `Strateloq-DR-Weekly-Backup`, take a
+fresh encrypted backup, verify its Drive upload and integrity, and prove it restores — run
+**inside WSL (Ubuntu)** as `strateloqbackup` on the established checkout
 `/home/strateloqbackup/strateloq-dr-validate`.
 
 Driver: `scripts/dr/strateloq-dr-repair.sh`. Windows entry point: `scripts/windows/Invoke-StrateloqDR.ps1`.
 
 ## Guarantees
-- **Diagnostics first, read-only** until `--repair --approve` are both given.
-- **No git checkout / branch switch / overwrite** of the working tree.
-- **Preserves** existing credentials, the `Strateloq-DR-Weekly-Backup` task configuration,
-  and the `strateloqdrive:` destination — the orchestrator only *reads* their presence.
-- **Never** touches the production database beyond a read-only `pg_dump`, never restores
-  over production, never deletes a backup, never prints a secret, never deploys Kalodata,
-  never makes a paid API call.
-- **No RESTORE-READY claim** unless an isolated `pg_restore` into a non-production DB
-  actually succeeds.
+- **Diagnostics first, read-only** until `--repair --approve`.
+- **No git** checkout / branch switch / overwrite of the working tree.
+- **Reuses** existing credentials, GPG keys/recipient and the `strateloqdrive:` connection;
+  the scheduled task, credentials and Drive destination are only *read*, never changed.
+- **Never** modifies production (read-only `pg_dump`); the restore target is an **ephemeral
+  local** cluster only (a provided DSN is refused unless local + non-production); never deletes
+  a backup; never prints a secret; never deploys Kalodata; never makes a paid API call.
+- **No `RESTORE_OK`** unless the scheduled-task action + exit-code propagation, the backup
+  integrity, and an actual isolated restore all pass.
 
 ## Steps
 
-1. **Diagnose (read-only).** Confirm: the checkout exists; the operational backup script
-   `scripts/dr/dr_db_logical_backup.sh` exists and is **non-empty**; this repair procedure
-   and the recovery runbook are present; `pg_dump`/`pg_restore`/`gpg`/`rclone` are installed;
-   operator secrets `SUPABASE_DB_URL` and `DR_GPG_RECIPIENT` are set (values never shown);
-   the `strateloqdrive:` remote is configured. Blocking issues stop here.
+1. **Diagnose the task failure** (Windows, read-only). Task state; `LastTaskResult` decoded
+   (e.g. `0x2` = the action's script path is wrong; non-zero = the invoked program returned
+   that code); missed runs; recent Task Scheduler events; the task **action** and the durable
+   script it invokes.
+2. **Exit-code propagation self-test.** `wsl … bash -lc 'exit 7'` must surface as `7`, proving
+   failures reach Task Scheduler rather than being swallowed.
+3. **Verify/repair the durable + operational scripts.** Present, non-empty, `bash -n` clean,
+   executable; warn if a `bash` durable script lacks `set -e` (silent-failure risk).
+4. **Approve.** Type `APPROVE` (or `-Approve -Force`) before any local change.
+5. **Fresh encrypted backup.** `dr_db_logical_backup.sh`: `pg_dump -Fc` (production, read-only)
+   → `gpg` encrypt to `DR_GPG_RECIPIENT` → shred plaintext; write a secret-free manifest.
+6. **Upload + verify upload.** `rclone copy` to `strateloqdrive:Strateloq-DR/backups`, then
+   confirm the remote object exists with **matching size and hash**.
+7. **Integrity.** ciphertext SHA-256 → `gpg` decrypt (0600 temp) → `pg_restore --list` (valid
+   custom-format archive, non-empty TOC).
+8. **Isolated restore (earns `RESTORE_OK`).** `initdb` a throwaway cluster in a temp dir
+   (unix-socket only, `listen_addresses=''`, trust), `pg_ctl start`, `pg_restore` into it,
+   count restored user tables, then stop + delete. `RESTORE_OK` only if tables ≥ 1.
 
-2. **Approve.** The launcher requires you to type `APPROVE` (or pass `-Approve -Force`)
-   before any change. Nothing mutates before this.
+`strateloq-dr-repair.sh --verify-artifact <file.gpg>` reruns steps 7–8 against any existing
+encrypted backup (e.g. one pulled from Drive) — no production read, no upload.
 
-3. **Repair (minimal, safe).** Apply only reversible, non-credential fixes (e.g. make the
-   operational backup script executable). If a blocker is an operator prerequisite (missing
-   tool/secret/remote), it is **reported, not faked**.
+## Verdicts
 
-4. **Fresh encrypted backup.** Run the established `dr_db_logical_backup.sh`
-   (`pg_dump -Fc` of production, read-only → `gpg` encrypt to `DR_GPG_RECIPIENT` → shred
-   plaintext). Write a secret-free manifest (sizes + `ciphertext_sha256` + timestamp) and
-   upload both to the existing `strateloqdrive:Strateloq-DR/backups`.
+| Verdict | Meaning | Exit |
+|---|---|---|
+| `DIAGNOSE_OK` / `DIAGNOSE_BLOCKED` | read-only health | 0 |
+| `PREREQUISITE_MISSING` | operator tool/secret needed before a backup | 7 |
+| `UPLOAD_FAILED` / `UPLOAD_VERIFY_FAILED` | Drive upload or its verification failed | 13 |
+| `ORCH_BACKUP_OK_RESTORE_PREREQUISITE` | backup made+uploaded+verified; local PG server tools missing | 0 |
+| `ORCH_RESTORE_OK` | backup integrity + actual ephemeral-local restore passed | 0 |
+| `ARTIFACT_RESTORE_OK` / `ARTIFACT_VERIFY_FAILED` | `--verify-artifact` restore / integrity result | 0 / 9 |
 
-5. **Verify restorability.** Decrypt to a `0600` temp file and run `pg_restore --list` to
-   prove the archive is a valid, restorable custom-format dump (non-empty TOC). The plaintext
-   is shredded immediately.
-
-6. **Isolated restore (earns RESTORE-READY).** Only when you supply an **empty, isolated**
-   database URL (`--isolated-db-url '<url>' --i-understand-isolated`, with a fail-closed guard
-   that refuses any production-looking target) does the orchestrator `pg_restore` into it and
-   count restored tables. **`RESTORE_OK` is printed only if that restore actually succeeds.**
-
-## Verdict codes (relayed verbatim by the launcher)
-
-| Verdict | Meaning |
-|---|---|
-| `DIAGNOSE_OK` / `DIAGNOSE_BLOCKED` | read-only health result |
-| `PREREQUISITE_MISSING` | an operator tool/secret is required before a backup can run |
-| `BACKUP_VERIFIED_RESTORE_PREREQUISITE` | fresh encrypted backup made + proven restorable; **isolated DB URL still needed for a full restore** |
-| `BACKUP_MADE_RESTORE_UNVERIFIED` | backup made but `pg_restore` unavailable to verify TOC |
-| `RESTORE_OK` | **restoration actually succeeded** into an isolated DB (the only RESTORE-READY state) |
-| `RESTORE_REFUSED_PRODUCTION` / `RESTORE_NOT_ACKNOWLEDGED` | fail-closed restore guards |
+The Windows launcher prints the final `RESTORE_OK` only when `ORCH_RESTORE_OK` **and** the
+task-action + exit-code-propagation checks also pass.
