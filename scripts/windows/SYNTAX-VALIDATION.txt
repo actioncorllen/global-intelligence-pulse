@@ -3,6 +3,14 @@ Generated: 2026-11-12T18:25:43Z
 PS parser: PowerShell 7.7.0 (== Windows PowerShell 5.1 engine); crypto/db: gpg (GnuPG) 2.4.4, psql (PostgreSQL) 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)
 ================================================================================
 
+## 0. set -u fix (v3.4.2): DR_GPG_RECIPIENT given a safe default and referenced as
+   ${DR_GPG_RECIPIENT:-} (lines 141/143); dr_weekly_backup.env added to discovery.
+   --gpg-doctor with DR_GPG_RECIPIENT initially UNSET - verified (real GnuPG):
+     no env file ............. no crash -> GPG_DOCTOR_NO_SECRET_KEY (exit 0)
+     readable dr_weekly_backup.env -> recipient loaded (hidden) -> GPG_DOCTOR_NO_SECRET_KEY
+     UNREADABLE env file (000) . no crash, no leak -> GPG_DOCTOR_NO_SECRET_KEY
+   four classifications + verify-artifact/repair chain: no regression.
+
 ## 1. Launcher v3.4.1 - full-file parse + 5.1 compatibility
    RESULT: PASS (0 parse errors) tokens=1699
    COMPAT: PASS - no PS7-only syntax

@@ -30,6 +30,9 @@ REPO="${STRATELOQ_DR_REPO:-$HOME/strateloq-dr-validate}"
 DRIVE_REMOTE="${STRATELOQ_DRIVE_REMOTE:-strateloqdrive:}"
 DRIVE_DEST="${STRATELOQ_DRIVE_DEST:-Strateloq-DR/backups}"
 PROD_PROJECT_REF="nxaunmyihhjixxxljcqt"   # production - NEVER a restore target
+# Safe defaults so `set -u` never aborts on an unset credential reference before discovery.
+DR_GPG_RECIPIENT="${DR_GPG_RECIPIENT:-}"
+DR_GPG_PASSPHRASE="${DR_GPG_PASSPHRASE:-}"
 
 MODE="diagnose"            # diagnose | repair | verify-artifact
 APPROVE="no"
@@ -74,8 +77,10 @@ env_candidates() {
   [ -n "${ENV_FILE:-}" ] && printf '%s\n' "$ENV_FILE"
   printf '%s\n' \
     "$REPO/.env" "$REPO/.env.dr" "$REPO/.dr.env" "$REPO/dr/.env" "$REPO/scripts/dr/.env" \
-    "$REPO/.env.backup" "$HOME/.strateloq-dr.env" "$HOME/strateloq-dr.env" \
-    "$HOME/.config/strateloq-dr/env" "$HOME/.strateloq-dr/env" "$HOME/.dr.env" \
+    "$REPO/.env.backup" "$REPO/dr_weekly_backup.env" "$REPO/scripts/dr/dr_weekly_backup.env" \
+    "$HOME/dr_weekly_backup.env" "$HOME/.config/strateloq-dr/dr_weekly_backup.env" \
+    "$HOME/.strateloq-dr.env" "$HOME/strateloq-dr.env" "$HOME/.config/strateloq-dr/env" \
+    "$HOME/.strateloq-dr/env" "$HOME/.dr.env" "/etc/strateloq-dr/dr_weekly_backup.env" \
     "/etc/strateloq-dr/env" "/etc/default/strateloq-dr"
 }
 
@@ -138,9 +143,9 @@ gpg_diagnose() {
   note "[INFO] gpg user=$(id -un)  GNUPGHOME=${GNUPGHOME:-$HOME/.gnupg}  $(gpg --version 2>/dev/null | head -1)"
   MSG="$(_gpg_msg_keyids "$enc" | tr '\n' ' ')"
   SEC="$(_gpg_sec_keyids   | tr '\n' ' ')"
-  REC="$(_gpg_rcpt_keyids "$DR_GPG_RECIPIENT" | tr '\n' ' ')"
+  REC="$(_gpg_rcpt_keyids "${DR_GPG_RECIPIENT:-}" | tr '\n' ' ')"
   note "[INFO] archive is encrypted to keyid(s): ${MSG:-<unreadable>}"
-  note "[INFO] DR_GPG_RECIPIENT='$DR_GPG_RECIPIENT' public keyid(s): ${REC:-<recipient public key NOT in this keyring>}"
+  note "[INFO] DR_GPG_RECIPIENT='${DR_GPG_RECIPIENT:-<unset>}' public keyid(s): ${REC:-<recipient public key NOT in this keyring>}"
   note "[INFO] secret keyid(s) available to $(id -un): ${SEC:-<none - no private key in this keyring>}"
   for k in $MSG; do case " $SEC " in *" $k "*) have_secret="yes" ;; esac; done
   for k in $MSG; do case " $REC " in *" $k "*) rcpt_matches="yes" ;; esac; done
