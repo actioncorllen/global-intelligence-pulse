@@ -11,6 +11,9 @@
 // Event idempotency: fn_psp_webhook_begin (PK on event id). Wallet credits are also idempotent per
 // payment reference. Member binding: client_reference_id, set server-side by the initiating edge.
 // FAIL-CLOSED: no webhook secret at all -> 424. LIVE events ignored unless STRIPE_LIVE_ALLOWED='true'.
+// LIVE card registration is additionally gated by independent pilot authorisation (pilot_auth.ts):
+// a livemode=true setup registration proceeds ONLY for a positively-verified, enabled live_card_pilot.
+import { liveCardRegistrationDecision, type PilotLookup } from "./pilot_auth.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
@@ -122,6 +125,21 @@ Deno.serve(async (req: Request): Promise<Response> => {
       const mode = String(obj.mode ?? "");
       const uid = String(obj.client_reference_id ?? "");
       if (mode === "setup" && uid) {
+        // INDEPENDENT pilot authorisation for LIVE card registration (defense in depth).
+        // Test-mode registrations are not gated (no extra DB call); live-mode requires a
+        // positively-verified, enabled live_card_pilot. Fail closed otherwise.
+        let pilot: PilotLookup = { ok: true, enabled: false };
+        if (livemode) {
+          try {
+            const p = await rpc("fn_live_card_pilot", { p_uid: uid });
+            pilot = { ok: true, enabled: p === true };
+          } catch { pilot = { ok: false }; }
+        }
+        const gate = liveCardRegistrationDecision(livemode, pilot);
+        if (!gate.register) {
+          await finish(gate.outcome);
+          return json(gate.httpStatus, { ok: gate.httpStatus < 400, handled: "card_setup", refused: gate.outcome });
+        }
         const siId = String(obj.setup_intent ?? "");
         if (!siId) { await finish("setup_missing_intent"); return json(200, { ok: true }); }
         const si = await stripeGet(apiKey, `setup_intents/${siId}?expand[]=payment_method`);
