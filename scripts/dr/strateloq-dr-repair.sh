@@ -134,7 +134,7 @@ DECRYPT_CAUSE=""   # ok|no_secret_key|recipient_mismatch|passphrase|agent|unread
 LR_TABLES=""; LR_PUBLIC=""; LR_EXP_PUBLIC=""; LR_DATA_ERR=""; LR_MANAGED_ERR=""
 LR_TOTAL_ROWS=""; LR_REQ_REPORT=""; LR_VERDICT=""; LR_MISSING=""
 LR_SEQ=""; LR_FUNC=""; LR_TRIG=""; LR_POL=""
-LR_EXT_REQUIRED=""; LR_EXT_ENABLED=""; LR_EXT_UNAVAILABLE=""
+LR_EXT_REQUIRED=""; LR_EXT_ENABLED=""; LR_EXT_UNAVAILABLE=""; LR_EXT_SCHEMA=""
 
 cleanup() { [ -n "$WORK" ] && rm -rf "$WORK" 2>/dev/null || true; }
 trap cleanup EXIT
@@ -247,17 +247,26 @@ local_restore() {
            supabase_functions supabase_migrations _analytics net cron pgbouncer; do
     psql -h "$sock" -p "$port" -U postgres -d drcheck -q -c "create schema if not exists \"$s\";" >/dev/null 2>&1 || true
   done
-  LR_EXT_REQUIRED=""; LR_EXT_ENABLED=""; LR_EXT_UNAVAILABLE=""
+  # schema-only SQL of the dump (small; reveals each extension's TARGET SCHEMA from its own DDL)
+  pg_restore -s -f "$base/schema.sql" "$dump" 2>/dev/null || true
+  LR_EXT_REQUIRED=""; LR_EXT_ENABLED=""; LR_EXT_UNAVAILABLE=""; LR_EXT_SCHEMA=""
   while IFS= read -r ext; do
     [ -z "$ext" ] && continue
     LR_EXT_REQUIRED="$LR_EXT_REQUIRED $ext"
-    if [ "$(pqd "select 1 from pg_available_extensions where name='${ext//\'/}';")" = "1" ]; then
-      if psql -h "$sock" -p "$port" -U postgres -d drcheck -q -c "create extension if not exists \"$ext\" with schema extensions;" >/dev/null 2>&1 \
-         || psql -h "$sock" -p "$port" -U postgres -d drcheck -q -c "create extension if not exists \"$ext\";" >/dev/null 2>&1; then
-        LR_EXT_ENABLED="$LR_EXT_ENABLED $ext"
+    if [ "$(pqd "select 1 from pg_available_extensions where name='${ext//\'/}';")" != "1" ]; then
+      LR_EXT_UNAVAILABLE="$LR_EXT_UNAVAILABLE $ext"; continue
+    fi
+    # (req 2,3) create the extension in the schema the DUMP actually uses - do NOT assume 'extensions'.
+    local sch=""
+    sch="$(grep -iE "CREATE EXTENSION (IF NOT EXISTS )?\"?${ext}\"? +WITH SCHEMA" "$base/schema.sql" 2>/dev/null | head -1 | sed -E 's/.*WITH SCHEMA +"?([A-Za-z0-9_]+)"?.*/\1/I')"
+    if [ -n "$sch" ]; then
+      psql -h "$sock" -p "$port" -U postgres -d drcheck -q -c "create schema if not exists \"$sch\";" >/dev/null 2>&1 || true
+      if psql -h "$sock" -p "$port" -U postgres -d drcheck -q -c "create extension if not exists \"$ext\" with schema \"$sch\";" >/dev/null 2>&1; then
+        LR_EXT_ENABLED="$LR_EXT_ENABLED $ext"; LR_EXT_SCHEMA="$LR_EXT_SCHEMA ${ext}:${sch}"
       fi
     else
-      LR_EXT_UNAVAILABLE="$LR_EXT_UNAVAILABLE $ext"
+      # dump has no explicit WITH SCHEMA -> do NOT preempt its placement; let the dump create it
+      LR_EXT_ENABLED="$LR_EXT_ENABLED $ext"; LR_EXT_SCHEMA="$LR_EXT_SCHEMA ${ext}:(dump-default)"
     fi
   done < <(pg_restore -l "$dump" 2>/dev/null | awk '$4=="EXTENSION"{print $6}' | sort -u)
 
@@ -318,7 +327,7 @@ local_restore() {
   note "[INFO] objects restored/TOC: sequences=${LR_SEQ:-0}/${EXP_SEQ:-0} functions=${LR_FUNC:-0}/${EXP_FUNC:-0} triggers=${LR_TRIG:-0}/${EXP_TRIG:-0} policies=${LR_POL:-0}/${EXP_POL:-0}"
   [ -n "$top" ] && { note "[INFO] largest tables (name rows):"; printf '%s\n' "$top"; }
   [ -n "$LR_REQ_REPORT" ] && note "[INFO] required tables:$LR_REQ_REPORT (min ${MIN_ROWS} row(s) each)"
-  [ -n "${LR_EXT_REQUIRED# }" ] && note "[INFO] extensions required by dump:${LR_EXT_REQUIRED:-none}; enabled locally:${LR_EXT_ENABLED:- none}; UNAVAILABLE locally:${LR_EXT_UNAVAILABLE:- none}"
+  [ -n "${LR_EXT_REQUIRED# }" ] && note "[INFO] extensions required:${LR_EXT_REQUIRED:-none}; enabled (ext:schema from dump DDL):${LR_EXT_SCHEMA:- none}; UNAVAILABLE:${LR_EXT_UNAVAILABLE:- none}"
   local pgmaj; pgmaj="$(pg_config --version 2>/dev/null | grep -oE '[0-9]+' | head -1)"; [ -z "$pgmaj" ] && pgmaj='<N>'
   if [ -n "${LR_MISSING// /}" ]; then
     note "[DIAG] public tables in the dump TOC but NOT restored:${LR_MISSING}"
