@@ -1,45 +1,35 @@
-Strateloq DR Repair - Validation Evidence (v3.5.0 - restore acceptance: schema+data, error classification)
-Generated: 2026-11-12T19:10:09Z
-PS parser: PowerShell 7.7.0 (== Windows PowerShell 5.1 engine); crypto/db: gpg (GnuPG) 2.4.4, psql (PostgreSQL) 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)
+Strateloq DR Repair - Validation Evidence (v3.5.1 - missing-table diagnosis + managed-extension fix)
+Generated: 2026-11-12T19:29:46Z
+crypto/db: gpg (GnuPG) 2.4.4, psql (PostgreSQL) 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1); PS parser: PowerShell 7.7.0
 ================================================================================
 
-## 0. pg_restore rc=1 on a Supabase logical dump restored into a vanilla cluster is normally
-##    HARMLESS: missing managed roles (anon/authenticated/service_role), managed extensions and
-##    schemas. RESTORE_OK now requires SCHEMA+DATA, not a table count: all public tables from the
-##    dump TOC present, ZERO data-affecting pg_restore errors, and required tables populated.
+## 0. ROOT CAUSE of '163/164, 118 managed-env errors': a public table whose column uses an
+##    extension type (e.g. pgvector 'vector' for embeddings) cannot be CREATEd in a vanilla
+##    local cluster lacking that extension. The table + its data ARE in the backup; a production
+##    restore into Supabase (which has the extension) brings it back. Fix = pre-create managed
+##    schemas + enable required extensions locally; install the extension package to finish the drill.
 
-## 1. Launcher v3.5.0 parse + 5.1 compatibility
+## 1. Static: launcher parse + orchestrator bash -n
    RESULT: PASS (0 parse errors) tokens=1718
-   COMPAT: PASS
-## 2. Orchestrator bash -n
-   PASS
+   orchestrator bash -n: PASS
 
-## 3. Acceptance validated against a REAL Supabase-like dump (RLS policy -> absent role => rc=1):
-   ===== A harmless rc=1 (policy->missing role), all data intact -> expect ARTIFACT_RESTORE_OK =====
-     [INFO] pg_restore rc=1  (errors: total=1, data-affecting=0, managed-env/harmless=1)
-     [INFO] tables restored: public=3/3 (expected from dump TOC), all-schemas=3; approx rows=5
-   VERDICT: ARTIFACT_RESTORE_OK
-   ===== B required members,media_assets present -> OK =====
-     [INFO] pg_restore rc=1  (errors: total=1, data-affecting=0, managed-env/harmless=1)
-     [INFO] tables restored: public=3/3 (expected from dump TOC), all-schemas=3; approx rows=5
-     [INFO] required tables: members=3rows media_assets=2rows (min 1 row(s) each)
-   VERDICT: ARTIFACT_RESTORE_OK
-   ===== C required includes a GHOST table -> PARTIAL =====
-     [INFO] pg_restore rc=1  (errors: total=1, data-affecting=0, managed-env/harmless=1)
-     [INFO] tables restored: public=3/3 (expected from dump TOC), all-schemas=3; approx rows=5
-     [INFO] required tables: members=3rows ghost_table=MISSING (min 1 row(s) each)
+## 2. TEST B - vanilla cluster (vector UNAVAILABLE): reproduces the operator's 1-missing-table case
+     [INFO] tables: public=2/3 (dump TOC), all-schemas=2; rows~5
+     [INFO] objects restored/TOC: sequences=1/1 functions=1/1 triggers=0/0 policies=0/0
+     [INFO] extensions required by dump: vector; enabled locally: none; UNAVAILABLE locally: vector
+     [DIAG] public tables in the dump TOC but NOT restored:embeddings 
+             --- 'embeddings': has data in dump TOC? YES ; actual pg_restore error(s):
+             pg_restore: error: could not execute query: ERROR:  relation "public.embeddings" does not exist
+     [WARN] fewer public tables than the dump TOC (2 < 3) - see [DIAG] above
    VERDICT: ARTIFACT_RESTORE_PARTIAL
-   ===== D required empty_tbl min-rows 1 -> PARTIAL =====
-     [INFO] pg_restore rc=1  (errors: total=1, data-affecting=0, managed-env/harmless=1)
-     [INFO] tables restored: public=3/3 (expected from dump TOC), all-schemas=3; approx rows=5
-     [INFO] required tables: empty_tbl=0rows (min 1 row(s) each)
-   VERDICT: ARTIFACT_RESTORE_PARTIAL
-   ===== E classifier unit: a real data error line must be counted =====
-   data-affecting matches: 1
 
-## 4. Classifier: data-affecting denylist = COPY failed | invalid input syntax | value too long |
-   extra/missing data | could not create table | out of memory | no space | could not read block |
-   data corrupt | lost synchronization.  Everything else (roles/extensions/schemas/ownership/ACL/
-   policies to missing roles) is counted as managed-environment and does NOT block RESTORE_OK.
-## 5. New operator controls: --required-tables t1,t2  --min-rows N  (or STRATELOQ_DR_REQUIRED_TABLES).
-   No new backup is taken; archives, keys, Drive config and production are untouched.
+## 3. TEST A - same archive, extension available (fix enables it): the table restores
+     [INFO] tables: public=3/3 (dump TOC), all-schemas=3; rows~7
+     [INFO] objects restored/TOC: sequences=1/1 functions=1/1 triggers=0/0 policies=0/0
+     [INFO] extensions required by dump: vector; enabled locally: vector; UNAVAILABLE locally: none
+   VERDICT: ARTIFACT_RESTORE_OK
+
+## 4. The verdict is NOT relaxed: RESTORE_OK requires the table to actually restore
+   (public == dump TOC) AND zero data-affecting errors AND required tables satisfied.
+   A missing table is surfaced under [DIAG] with its real pg_restore error and 'has data' flag;
+   sequences/functions/triggers/policies are reported restored-vs-TOC.

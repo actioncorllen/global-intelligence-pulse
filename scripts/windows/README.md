@@ -139,6 +139,23 @@ Otherwise it prints `ARTIFACT_RESTORE_PARTIAL` with the per-table / error detail
   --required-tables members,media_assets,marketing_spend_authority --min-rows 1
 ```
 
+**Managed extensions / schemas.** Before restoring, the tool pre-creates the Supabase-managed
+schemas (`extensions`, `auth`, `storage`, `graphql`, `realtime`, `vault`, …) and enables the
+extensions the dump requires that are **available locally**. A `public` table whose column uses
+an extension type (commonly `vector`/pgvector for embeddings) **cannot be created in a vanilla
+cluster that lacks that extension** — the restore then reports that exact table under `[DIAG]`
+(with "has data: YES/no" and the real `pg_restore` error) and lists the extension under
+`UNAVAILABLE locally`. This is a **local-tooling gap, not a backup defect**: the table and its
+data are in the archive, and a production restore into Supabase (which has the extension) brings
+it back. To complete the **local** drill, install the extension and re-verify the same archive:
+
+```bash
+sudo apt-get install -y postgresql-16-pgvector   # (or the package for the named extension)
+./strateloq-dr-repair.sh --verify-artifact <archive.gpg> --gnupghome <GNUPGHOME>
+```
+
+`RESTORE_OK` is reached only when the table actually restores — never by excluding it.
+
 ## Verdicts (relayed verbatim)
 
 | Verdict | Meaning | Restore-ready? |

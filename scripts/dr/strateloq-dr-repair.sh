@@ -132,7 +132,9 @@ DEC_PATH=""        # set by verify_integrity
 DECRYPT_CAUSE=""   # ok|no_secret_key|recipient_mismatch|passphrase|agent|unreadable|other|missing|no_gpg
 # set by local_restore:
 LR_TABLES=""; LR_PUBLIC=""; LR_EXP_PUBLIC=""; LR_DATA_ERR=""; LR_MANAGED_ERR=""
-LR_TOTAL_ROWS=""; LR_REQ_REPORT=""; LR_VERDICT=""
+LR_TOTAL_ROWS=""; LR_REQ_REPORT=""; LR_VERDICT=""; LR_MISSING=""
+LR_SEQ=""; LR_FUNC=""; LR_TRIG=""; LR_POL=""
+LR_EXT_REQUIRED=""; LR_EXT_ENABLED=""; LR_EXT_UNAVAILABLE=""
 
 cleanup() { [ -n "$WORK" ] && rm -rf "$WORK" 2>/dev/null || true; }
 trap cleanup EXIT
@@ -215,76 +217,112 @@ verify_integrity() {
 # | 22/23 cluster | 24 hard restore failure (no tables).
 # ---------------------------------------------------------------------------
 local_restore() {
-  local dump="$1" t base data sock port rc q
+  local dump="$1" t base data sock port rc errf EXP_PUB TOT ok req_fail tbl n top s ext line
   for t in initdb pg_ctl pg_restore psql createdb; do
     have "$t" || { note "[PREREQ] local PostgreSQL server tool missing: $t (install 'postgresql')"; return 20; }
   done
   [ "$(id -u)" = "0" ] && { note "[PREREQ] refuse to start a local cluster as root; run as the operator user"; return 21; }
 
-  # expected tables from the dump TOC (authoritative - what the backup actually contains)
-  local EXP_ALL EXP_PUB
-  EXP_ALL="$(pg_restore -l "$dump" 2>/dev/null | awk '$4=="TABLE" && $5!="DATA"{c++} END{print c+0}')"
   EXP_PUB="$(pg_restore -l "$dump" 2>/dev/null | awk '$4=="TABLE" && $5=="public"{c++} END{print c+0}')"
   LR_EXP_PUBLIC="$EXP_PUB"
 
-  base="$(mktemp -d)"; data="$base/pgdata"; sock="$base/sock"; mkdir -p "$sock"
+  base="$(mktemp -d)"; data="$base/pgdata"; sock="$base/sock"; errf="$base/restore.err"; mkdir -p "$sock"
   port=$(( (RANDOM % 4000) + 55000 ))
   initdb -D "$data" -A trust -U postgres >/dev/null 2>&1 || { note "[FAIL] initdb failed"; rm -rf "$base"; return 22; }
-  # unix-socket only, no TCP -> inherently isolated, unreachable from the network
   pg_ctl -D "$data" -o "-p $port -k $sock -c listen_addresses=''" -l "$base/pg.log" -w start >/dev/null 2>&1 \
     || { note "[FAIL] local cluster failed to start"; rm -rf "$base"; return 23; }
   createdb -h "$sock" -p "$port" -U postgres drcheck >/dev/null 2>&1 || true
+  pqd() { psql -h "$sock" -p "$port" -U postgres -d drcheck -tAc "$1" 2>/dev/null | tr -d ' '; }
+
+  # --- restoration fix: pre-create Supabase-managed schemas + enable required extensions ----
+  for s in extensions auth storage graphql graphql_public realtime vault pgsodium \
+           supabase_functions supabase_migrations _analytics net cron pgbouncer; do
+    psql -h "$sock" -p "$port" -U postgres -d drcheck -q -c "create schema if not exists \"$s\";" >/dev/null 2>&1 || true
+  done
+  LR_EXT_REQUIRED=""; LR_EXT_ENABLED=""; LR_EXT_UNAVAILABLE=""
+  while IFS= read -r ext; do
+    [ -z "$ext" ] && continue
+    LR_EXT_REQUIRED="$LR_EXT_REQUIRED $ext"
+    if [ "$(pqd "select 1 from pg_available_extensions where name='${ext//\'/}';")" = "1" ]; then
+      if psql -h "$sock" -p "$port" -U postgres -d drcheck -q -c "create extension if not exists \"$ext\" with schema extensions;" >/dev/null 2>&1 \
+         || psql -h "$sock" -p "$port" -U postgres -d drcheck -q -c "create extension if not exists \"$ext\";" >/dev/null 2>&1; then
+        LR_EXT_ENABLED="$LR_EXT_ENABLED $ext"
+      fi
+    else
+      LR_EXT_UNAVAILABLE="$LR_EXT_UNAVAILABLE $ext"
+    fi
+  done < <(pg_restore -l "$dump" 2>/dev/null | awk '$4=="EXTENSION"{print $6}' | sort -u)
 
   rc=0
-  pg_restore --no-owner --no-privileges -h "$sock" -p "$port" -U postgres -d drcheck "$dump" >/dev/null 2>"$base/restore.err" || rc=$?
+  pg_restore --no-owner --no-privileges -h "$sock" -p "$port" -U postgres -d drcheck "$dump" >/dev/null 2>"$errf" || rc=$?
   psql -h "$sock" -p "$port" -U postgres -d drcheck -c 'ANALYZE' >/dev/null 2>&1 || true
 
-  pql() { psql -h "$sock" -p "$port" -U postgres -d drcheck -tAc "$1" 2>/dev/null | tr -d ' '; }
-  LR_TABLES="$(pql "select count(*) from information_schema.tables where table_schema not in ('pg_catalog','information_schema') and table_type='BASE TABLE';")"
-  LR_PUBLIC="$(pql "select count(*) from information_schema.tables where table_schema='public' and table_type='BASE TABLE';")"
-  LR_TOTAL_ROWS="$(pql "select coalesce(sum(n_live_tup),0)::bigint from pg_stat_user_tables;")"
+  LR_TABLES="$(pqd "select count(*) from information_schema.tables where table_schema not in ('pg_catalog','information_schema') and table_type='BASE TABLE';")"
+  LR_PUBLIC="$(pqd "select count(*) from information_schema.tables where table_schema='public' and table_type='BASE TABLE';")"
+  LR_TOTAL_ROWS="$(pqd "select coalesce(sum(n_live_tup),0)::bigint from pg_stat_user_tables;")"
+  # schema objects (req #5): sequences / functions / triggers / policies, restored vs dump TOC
+  LR_SEQ="$(pqd "select count(*) from information_schema.sequences where sequence_schema='public';")"
+  LR_FUNC="$(pqd "select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public';")"
+  LR_TRIG="$(pqd "select count(*) from pg_trigger g join pg_class c on c.oid=g.tgrelid join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and not g.tgisinternal;")"
+  LR_POL="$(pqd "select count(*) from pg_policies where schemaname='public';")"
+  local EXP_FUNC EXP_TRIG EXP_POL EXP_SEQ
+  EXP_FUNC="$(pg_restore -l "$dump" 2>/dev/null | awk '$4=="FUNCTION"{c++} END{print c+0}')"
+  EXP_TRIG="$(pg_restore -l "$dump" 2>/dev/null | awk '$4=="TRIGGER"{c++} END{print c+0}')"
+  EXP_POL="$(pg_restore -l "$dump" 2>/dev/null | awk '$4=="POLICY"{c++} END{print c+0}')"
+  EXP_SEQ="$(pg_restore -l "$dump" 2>/dev/null | awk '$4=="SEQUENCE" && $5!="OWNED" && $5!="SET"{c++} END{print c+0}')"
 
-  # classify pg_restore errors: data/schema-affecting (concerning) vs managed-environment (harmless)
-  local errf="$base/restore.err" TOT
+  # classify pg_restore errors
   TOT="$(grep -ciE 'error:' "$errf" 2>/dev/null || true)"
   LR_DATA_ERR="$(grep -icE 'COPY failed|invalid input syntax|value too long|extra data|missing data|could not create table |out of (shared )?memory|no space left|could not read block|data (is )?corrupt|unexpected message|lost synchronization' "$errf" 2>/dev/null || true)"
   LR_MANAGED_ERR=$(( ${TOT:-0} - ${LR_DATA_ERR:-0} )); [ "$LR_MANAGED_ERR" -lt 0 ] && LR_MANAGED_ERR=0
 
-  # representative row counts for required tables (exact)
-  LR_REQ_REPORT=""; local req_fail=0 tbl n
+  # exact MISSING public tables (dump TOC minus restored) + the actual error log for each
+  LR_MISSING="$( comm -23 \
+      <(pg_restore -l "$dump" 2>/dev/null | awk '$4=="TABLE" && $5=="public"{print $6}' | sort -u) \
+      <(pqd "select table_name from information_schema.tables where table_schema='public' and table_type='BASE TABLE' order by 1;" | sort -u) \
+    | tr '\n' ' ' )"
+
+  # required-tables row verification (exact)
+  LR_REQ_REPORT=""; req_fail=0
   if [ -n "$REQUIRED_TABLES" ]; then
     local IFS_SAVE="$IFS"; IFS=','
     for tbl in $REQUIRED_TABLES; do
       tbl="$(printf '%s' "$tbl" | tr -d '[:space:]')"; [ -z "$tbl" ] && continue
-      if [ "$(pql "select count(*) from information_schema.tables where table_schema='public' and table_name='${tbl//\'/}';")" != "1" ]; then
+      if [ "$(pqd "select count(*) from information_schema.tables where table_schema='public' and table_name='${tbl//\'/}';")" != "1" ]; then
         LR_REQ_REPORT="$LR_REQ_REPORT ${tbl}=MISSING"; req_fail=1
       else
-        n="$(pql "select count(*) from public.\"${tbl//\'/}\";")"
-        LR_REQ_REPORT="$LR_REQ_REPORT ${tbl}=${n}rows"
-        [ "${n:-0}" -lt "${MIN_ROWS:-1}" ] && req_fail=1
+        n="$(pqd "select count(*) from public.\"${tbl//\'/}\";")"
+        LR_REQ_REPORT="$LR_REQ_REPORT ${tbl}=${n}rows"; [ "${n:-0}" -lt "${MIN_ROWS:-1}" ] && req_fail=1
       fi
     done
     IFS="$IFS_SAVE"
   fi
-
-  # top tables by row count (evidence)
-  local top; top="$(psql -h "$sock" -p "$port" -U postgres -d drcheck -tAF' ' -c \
+  top="$(psql -h "$sock" -p "$port" -U postgres -d drcheck -tAF' ' -c \
     "select relname, n_live_tup from pg_stat_user_tables order by n_live_tup desc nulls last limit 5;" 2>/dev/null | sed 's/^/        /')"
+
+  note "[INFO] pg_restore rc=$rc  (errors: total=${TOT:-0}, data-affecting=${LR_DATA_ERR:-0}, managed-env=${LR_MANAGED_ERR})"
+  note "[INFO] tables: public=${LR_PUBLIC:-0}/${EXP_PUB:-?} (dump TOC), all-schemas=${LR_TABLES:-0}; rows~${LR_TOTAL_ROWS:-0}"
+  note "[INFO] objects restored/TOC: sequences=${LR_SEQ:-0}/${EXP_SEQ:-0} functions=${LR_FUNC:-0}/${EXP_FUNC:-0} triggers=${LR_TRIG:-0}/${EXP_TRIG:-0} policies=${LR_POL:-0}/${EXP_POL:-0}"
+  [ -n "$top" ] && { note "[INFO] largest tables (name rows):"; printf '%s\n' "$top"; }
+  [ -n "$LR_REQ_REPORT" ] && note "[INFO] required tables:$LR_REQ_REPORT (min ${MIN_ROWS} row(s) each)"
+  [ -n "${LR_EXT_REQUIRED# }" ] && note "[INFO] extensions required by dump:${LR_EXT_REQUIRED:-none}; enabled locally:${LR_EXT_ENABLED:- none}; UNAVAILABLE locally:${LR_EXT_UNAVAILABLE:- none}"
+  if [ -n "${LR_MISSING// /}" ]; then
+    note "[DIAG] public tables in the dump TOC but NOT restored:${LR_MISSING}"
+    for tbl in $LR_MISSING; do
+      note "        --- '$tbl': has data in dump TOC? $(pg_restore -l "$dump" 2>/dev/null | awk -v t="$tbl" '$4=="TABLE" && $5=="DATA" && $6=="public" && $7==t{f=1} END{print (f?"YES":"no")}') ; actual pg_restore error(s):"
+      grep -i -B1 -- "$tbl" "$errf" 2>/dev/null | grep -iE "error:|does not exist|$tbl" | head -3 | sed 's/^/          /' || true
+    done
+  fi
 
   pg_ctl -D "$data" -w stop >/dev/null 2>&1 || true
   rm -rf "$base"
 
-  note "[INFO] pg_restore rc=$rc  (errors: total=${TOT:-0}, data-affecting=${LR_DATA_ERR:-0}, managed-env/harmless=${LR_MANAGED_ERR})"
-  note "[INFO] tables restored: public=${LR_PUBLIC:-0}/${EXP_PUB:-?} (expected from dump TOC), all-schemas=${LR_TABLES:-0}; approx rows=${LR_TOTAL_ROWS:-0}"
-  [ -n "$top" ] && { note "[INFO] largest tables (name rows):"; printf '%s\n' "$top"; }
-  [ -n "$LR_REQ_REPORT" ] && note "[INFO] required tables:$LR_REQ_REPORT (min ${MIN_ROWS} row(s) each)"
-
   if [ "${LR_TABLES:-0}" -lt 1 ]; then note "[FAIL] no tables restored"; LR_VERDICT="fail"; return 24; fi
 
-  # acceptance: all public tables from the dump present AND no data-affecting errors AND required tables satisfied
-  local ok=1
-  [ "${LR_PUBLIC:-0}" -ge "${EXP_PUB:-0}" ] || { note "[WARN] fewer public tables than the dump TOC (${LR_PUBLIC:-0} < ${EXP_PUB:-0})"; ok=0; }
-  [ "${LR_DATA_ERR:-0}" -eq 0 ] || { note "[WARN] $LR_DATA_ERR data/schema-affecting pg_restore error(s) - see them with: pg_restore ... 2>err (grep COPY/invalid/...)"; ok=0; }
+  # acceptance: all public tables present AND zero data-affecting errors AND required tables satisfied
+  ok=1
+  [ "${LR_PUBLIC:-0}" -ge "${EXP_PUB:-0}" ] || { note "[WARN] fewer public tables than the dump TOC (${LR_PUBLIC:-0} < ${EXP_PUB:-0}) - see [DIAG] above"; ok=0; }
+  [ "${LR_DATA_ERR:-0}" -eq 0 ] || { note "[WARN] ${LR_DATA_ERR} data/schema-affecting pg_restore error(s)"; ok=0; }
   [ "$req_fail" -eq 0 ] || { note "[WARN] one or more required tables missing or under the row threshold"; ok=0; }
   if [ "$ok" -eq 1 ]; then LR_VERDICT="ok"; return 0; fi
   LR_VERDICT="partial"; return 25
