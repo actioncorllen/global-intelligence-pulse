@@ -45,7 +45,7 @@ param(
 
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
-$script:LauncherVersion = '3.4.1'
+$script:LauncherVersion = '3.5.0'
 
 function Write-Section { param([string] $Title) Write-Host ''; Write-Host ('=== {0} ===' -f $Title) -ForegroundColor Cyan }
 function Write-Info  { param([string] $Message) Write-Host ('  {0}' -f $Message) }
@@ -270,6 +270,12 @@ switch ($verdict) {
         if (-not $exitProp)          { Write-Info '  - exit-code propagation self-test failed' }
         Write-Host 'LAUNCHER_RESULT: RESTORE_BLOCKED_TASK (restore proven; fix the task/exit-code item above)' -ForegroundColor Red
         exit 9
+    }
+    'ORCH_RESTORE_PARTIAL' {
+        Write-Warn2 'Restore ran but acceptance was not fully met (missing public tables, data-affecting pg_restore errors, or required tables under threshold).'
+        Write-Warn2 'NOT restore-ready - review the per-table / error details above. Managed-environment (role/extension) errors alone do not cause this.'
+        Write-Host 'LAUNCHER_RESULT: RESTORE_PARTIAL' -ForegroundColor Yellow
+        exit 25
     }
     'ORCH_BACKUP_OK_RESTORE_PREREQUISITE' {
         Write-Good 'Fresh encrypted backup made, Drive upload verified, integrity verified.'

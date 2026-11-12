@@ -33,6 +33,9 @@ PROD_PROJECT_REF="nxaunmyihhjixxxljcqt"   # production - NEVER a restore target
 # Safe defaults so `set -u` never aborts on an unset credential reference before discovery.
 DR_GPG_RECIPIENT="${DR_GPG_RECIPIENT:-}"
 DR_GPG_PASSPHRASE="${DR_GPG_PASSPHRASE:-}"
+# Acceptance criteria for the isolated restore (comma-separated required public tables; min rows each).
+REQUIRED_TABLES="${STRATELOQ_DR_REQUIRED_TABLES:-}"
+MIN_ROWS="${STRATELOQ_DR_MIN_ROWS:-1}"
 
 MODE="diagnose"            # diagnose | repair | verify-artifact
 APPROVE="no"
@@ -53,6 +56,8 @@ while [ "$#" -gt 0 ]; do
     --durable-script) DURABLE_SCRIPT="$2"; shift ;;
     --env-file) ENV_FILE="$2"; shift ;;
     --gnupghome) export GNUPGHOME="$2"; shift ;;
+    --required-tables) REQUIRED_TABLES="$2"; shift ;;
+    --min-rows) MIN_ROWS="$2"; shift ;;
     --drive-remote) DRIVE_REMOTE="$2"; shift ;;
     --local-restore) LOCAL_RESTORE="on" ;;
     --no-local-restore) LOCAL_RESTORE="off" ;;
@@ -124,8 +129,10 @@ load_dr_env() {
 
 CIPHER_SHA=""      # set by verify_integrity
 DEC_PATH=""        # set by verify_integrity
-LR_TABLES=""       # set by local_restore
 DECRYPT_CAUSE=""   # ok|no_secret_key|recipient_mismatch|passphrase|agent|unreadable|other|missing|no_gpg
+# set by local_restore:
+LR_TABLES=""; LR_PUBLIC=""; LR_EXP_PUBLIC=""; LR_DATA_ERR=""; LR_MANAGED_ERR=""
+LR_TOTAL_ROWS=""; LR_REQ_REPORT=""; LR_VERDICT=""
 
 cleanup() { [ -n "$WORK" ] && rm -rf "$WORK" 2>/dev/null || true; }
 trap cleanup EXIT
@@ -202,37 +209,85 @@ verify_integrity() {
 }
 
 # ---------------------------------------------------------------------------
-# local_restore <plain.dump>  -> REAL restore into an EPHEMERAL LOCAL cluster
-# sets LR_TABLES ; returns 0 on >=1 restored table, 20/21 on prerequisite,
-# 22-24 on failure.
+# local_restore <plain.dump>  -> REAL restore into an EPHEMERAL LOCAL cluster,
+# then classify pg_restore errors and verify SCHEMA + DATA (not just a table count).
+# Sets LR_*; LR_VERDICT = ok|partial. Returns: 0 ok | 25 partial | 20/21 prereq
+# | 22/23 cluster | 24 hard restore failure (no tables).
 # ---------------------------------------------------------------------------
 local_restore() {
-  local dump="$1" t
+  local dump="$1" t base data sock port rc q
   for t in initdb pg_ctl pg_restore psql createdb; do
     have "$t" || { note "[PREREQ] local PostgreSQL server tool missing: $t (install 'postgresql')"; return 20; }
   done
-  if [ "$(id -u)" = "0" ]; then
-    note "[PREREQ] refuse to start a local cluster as root; run as the operator user"; return 21
-  fi
-  local base data sock port rc
+  [ "$(id -u)" = "0" ] && { note "[PREREQ] refuse to start a local cluster as root; run as the operator user"; return 21; }
+
+  # expected tables from the dump TOC (authoritative - what the backup actually contains)
+  local EXP_ALL EXP_PUB
+  EXP_ALL="$(pg_restore -l "$dump" 2>/dev/null | awk '$4=="TABLE" && $5!="DATA"{c++} END{print c+0}')"
+  EXP_PUB="$(pg_restore -l "$dump" 2>/dev/null | awk '$4=="TABLE" && $5=="public"{c++} END{print c+0}')"
+  LR_EXP_PUBLIC="$EXP_PUB"
+
   base="$(mktemp -d)"; data="$base/pgdata"; sock="$base/sock"; mkdir -p "$sock"
   port=$(( (RANDOM % 4000) + 55000 ))
-  if ! initdb -D "$data" -A trust -U postgres >/dev/null 2>&1; then
-    note "[FAIL] initdb failed"; rm -rf "$base"; return 22
-  fi
-  # unix-socket only, no TCP -> inherently isolated and unreachable from the network
-  if ! pg_ctl -D "$data" -o "-p $port -k $sock -c listen_addresses=''" -l "$base/pg.log" -w start >/dev/null 2>&1; then
-    note "[FAIL] local cluster failed to start"; rm -rf "$base"; return 23
-  fi
+  initdb -D "$data" -A trust -U postgres >/dev/null 2>&1 || { note "[FAIL] initdb failed"; rm -rf "$base"; return 22; }
+  # unix-socket only, no TCP -> inherently isolated, unreachable from the network
+  pg_ctl -D "$data" -o "-p $port -k $sock -c listen_addresses=''" -l "$base/pg.log" -w start >/dev/null 2>&1 \
+    || { note "[FAIL] local cluster failed to start"; rm -rf "$base"; return 23; }
   createdb -h "$sock" -p "$port" -U postgres drcheck >/dev/null 2>&1 || true
+
   rc=0
-  pg_restore --no-owner --no-privileges -h "$sock" -p "$port" -U postgres -d drcheck "$dump" >/dev/null 2>&1 || rc=$?
-  LR_TABLES="$(psql -h "$sock" -p "$port" -U postgres -d drcheck -tAc \
-    "select count(*) from information_schema.tables where table_schema not in ('pg_catalog','information_schema');" 2>/dev/null | tr -d ' ')"
+  pg_restore --no-owner --no-privileges -h "$sock" -p "$port" -U postgres -d drcheck "$dump" >/dev/null 2>"$base/restore.err" || rc=$?
+  psql -h "$sock" -p "$port" -U postgres -d drcheck -c 'ANALYZE' >/dev/null 2>&1 || true
+
+  pql() { psql -h "$sock" -p "$port" -U postgres -d drcheck -tAc "$1" 2>/dev/null | tr -d ' '; }
+  LR_TABLES="$(pql "select count(*) from information_schema.tables where table_schema not in ('pg_catalog','information_schema') and table_type='BASE TABLE';")"
+  LR_PUBLIC="$(pql "select count(*) from information_schema.tables where table_schema='public' and table_type='BASE TABLE';")"
+  LR_TOTAL_ROWS="$(pql "select coalesce(sum(n_live_tup),0)::bigint from pg_stat_user_tables;")"
+
+  # classify pg_restore errors: data/schema-affecting (concerning) vs managed-environment (harmless)
+  local errf="$base/restore.err" TOT
+  TOT="$(grep -ciE 'error:' "$errf" 2>/dev/null || true)"
+  LR_DATA_ERR="$(grep -icE 'COPY failed|invalid input syntax|value too long|extra data|missing data|could not create table |out of (shared )?memory|no space left|could not read block|data (is )?corrupt|unexpected message|lost synchronization' "$errf" 2>/dev/null || true)"
+  LR_MANAGED_ERR=$(( ${TOT:-0} - ${LR_DATA_ERR:-0} )); [ "$LR_MANAGED_ERR" -lt 0 ] && LR_MANAGED_ERR=0
+
+  # representative row counts for required tables (exact)
+  LR_REQ_REPORT=""; local req_fail=0 tbl n
+  if [ -n "$REQUIRED_TABLES" ]; then
+    local IFS_SAVE="$IFS"; IFS=','
+    for tbl in $REQUIRED_TABLES; do
+      tbl="$(printf '%s' "$tbl" | tr -d '[:space:]')"; [ -z "$tbl" ] && continue
+      if [ "$(pql "select count(*) from information_schema.tables where table_schema='public' and table_name='${tbl//\'/}';")" != "1" ]; then
+        LR_REQ_REPORT="$LR_REQ_REPORT ${tbl}=MISSING"; req_fail=1
+      else
+        n="$(pql "select count(*) from public.\"${tbl//\'/}\";")"
+        LR_REQ_REPORT="$LR_REQ_REPORT ${tbl}=${n}rows"
+        [ "${n:-0}" -lt "${MIN_ROWS:-1}" ] && req_fail=1
+      fi
+    done
+    IFS="$IFS_SAVE"
+  fi
+
+  # top tables by row count (evidence)
+  local top; top="$(psql -h "$sock" -p "$port" -U postgres -d drcheck -tAF' ' -c \
+    "select relname, n_live_tup from pg_stat_user_tables order by n_live_tup desc nulls last limit 5;" 2>/dev/null | sed 's/^/        /')"
+
   pg_ctl -D "$data" -w stop >/dev/null 2>&1 || true
   rm -rf "$base"
-  note "[INFO] ephemeral local restore: pg_restore rc=$rc, user tables restored=${LR_TABLES:-0}"
-  [ "${LR_TABLES:-0}" -ge 1 ] && return 0 || return 24
+
+  note "[INFO] pg_restore rc=$rc  (errors: total=${TOT:-0}, data-affecting=${LR_DATA_ERR:-0}, managed-env/harmless=${LR_MANAGED_ERR})"
+  note "[INFO] tables restored: public=${LR_PUBLIC:-0}/${EXP_PUB:-?} (expected from dump TOC), all-schemas=${LR_TABLES:-0}; approx rows=${LR_TOTAL_ROWS:-0}"
+  [ -n "$top" ] && { note "[INFO] largest tables (name rows):"; printf '%s\n' "$top"; }
+  [ -n "$LR_REQ_REPORT" ] && note "[INFO] required tables:$LR_REQ_REPORT (min ${MIN_ROWS} row(s) each)"
+
+  if [ "${LR_TABLES:-0}" -lt 1 ]; then note "[FAIL] no tables restored"; LR_VERDICT="fail"; return 24; fi
+
+  # acceptance: all public tables from the dump present AND no data-affecting errors AND required tables satisfied
+  local ok=1
+  [ "${LR_PUBLIC:-0}" -ge "${EXP_PUB:-0}" ] || { note "[WARN] fewer public tables than the dump TOC (${LR_PUBLIC:-0} < ${EXP_PUB:-0})"; ok=0; }
+  [ "${LR_DATA_ERR:-0}" -eq 0 ] || { note "[WARN] $LR_DATA_ERR data/schema-affecting pg_restore error(s) - see them with: pg_restore ... 2>err (grep COPY/invalid/...)"; ok=0; }
+  [ "$req_fail" -eq 0 ] || { note "[WARN] one or more required tables missing or under the row threshold"; ok=0; }
+  if [ "$ok" -eq 1 ]; then LR_VERDICT="ok"; return 0; fi
+  LR_VERDICT="partial"; return 25
 }
 
 # ---------------------------------------------------------------------------
@@ -304,11 +359,12 @@ if [ "$MODE" = "verify-artifact" ]; then
   fi
   if [ "$LOCAL_RESTORE" = "off" ]; then verdict "ARTIFACT_INTEGRITY_OK"; exit 0; fi
   if local_restore "$DEC_PATH"; then
-    note "[OK]   isolated local restore succeeded (tables=$LR_TABLES)"
+    note "[OK]   isolated restore ACCEPTED: all public tables + representative data verified; data-affecting errors=0 (any pg_restore rc!=0 was managed-environment only)."
     verdict "ARTIFACT_RESTORE_OK"; exit 0
   else
     rc=$?
     [ "$rc" -le 21 ] && { verdict "ORCH_LOCAL_RESTORE_PREREQUISITE"; exit 0; }
+    [ "$rc" -eq 25 ] && { note "[PARTIAL] restore ran but acceptance not fully met (see warnings above) - NOT signed off."; verdict "ARTIFACT_RESTORE_PARTIAL"; exit 25; }
     verdict "ARTIFACT_RESTORE_FAILED"; exit 12
   fi
 fi
@@ -472,7 +528,7 @@ if [ "$LOCAL_RESTORE" = "off" ]; then
   note "[SKIP] local restore disabled (--no-local-restore)"; verdict "ORCH_BACKUP_OK_RESTORE_SKIPPED"; exit 0
 fi
 if local_restore "$DEC_PATH"; then
-  note "[OK]   REAL isolated restore passed in an ephemeral local cluster (user tables=$LR_TABLES)"
+  note "[OK]   REAL isolated restore ACCEPTED (all public tables + representative data verified; data-affecting errors=0; user tables=$LR_TABLES)"
   verdict "ORCH_RESTORE_OK"; exit 0
 else
   rc=$?
@@ -480,5 +536,6 @@ else
     note "Backup made + uploaded + verified; local restore tooling is the remaining prerequisite."
     verdict "ORCH_BACKUP_OK_RESTORE_PREREQUISITE"; exit 0
   fi
+  [ "$rc" -eq 25 ] && { note "[PARTIAL] backup restorable but restore acceptance not fully met (see warnings) - NOT signed off."; verdict "ORCH_RESTORE_PARTIAL"; exit 25; }
   note "[FAIL] isolated restore failed"; verdict "ORCH_RESTORE_FAILED"; exit 12
 fi

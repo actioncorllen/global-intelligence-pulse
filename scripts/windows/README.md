@@ -118,11 +118,26 @@ no backup, and changes nothing.
 ./strateloq-dr-repair.sh --verify-artifact <archive.gpg> --gnupghome <private-key GNUPGHOME>
 ```
 
-This decrypts, runs `pg_restore --list`, and does a genuine isolated local restore →
-`ARTIFACT_RESTORE_OK` only if the real restore succeeds. If the key is passphrase-protected,
-supply the passphrase **transiently for that one command** (e.g. `read -rs DR_GPG_PASSPHRASE;
-export DR_GPG_PASSPHRASE; …; unset DR_GPG_PASSPHRASE`) or use an unlocked gpg-agent — **do not
-store the passphrase in a persistent env file**.
+This decrypts, runs `pg_restore --list`, and does a genuine isolated local restore. If the key
+is passphrase-protected, supply the passphrase **transiently for that one command** (e.g.
+`read -rs DR_GPG_PASSPHRASE; export DR_GPG_PASSPHRASE; …; unset DR_GPG_PASSPHRASE`) or use an
+unlocked gpg-agent — **do not store the passphrase in a persistent env file**.
+
+### Restore acceptance (schema + data, not a table count)
+
+`pg_restore` returning `rc=1` on a Supabase logical dump is normally **harmless** — missing
+managed roles (`anon`/`authenticated`/`service_role`), managed extensions/schemas, and RLS
+policies that reference those roles. The restore classifies every `pg_restore` error into
+**data-affecting** (`COPY failed`, `invalid input syntax`, `value too long`, `could not create
+table`, `out of memory`, `no space`, `data corrupt`, …) vs **managed-environment** (everything
+else). It prints `ARTIFACT_RESTORE_OK` **only** when: all `public` tables from the dump TOC are
+present, there are **zero data-affecting errors**, and any `--required-tables` meet `--min-rows`.
+Otherwise it prints `ARTIFACT_RESTORE_PARTIAL` with the per-table / error details. Tune with:
+
+```bash
+./strateloq-dr-repair.sh --verify-artifact <archive.gpg> --gnupghome <GNUPGHOME> \
+  --required-tables members,media_assets,marketing_spend_authority --min-rows 1
+```
 
 ## Verdicts (relayed verbatim)
 
