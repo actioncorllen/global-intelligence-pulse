@@ -1,31 +1,29 @@
-Strateloq DR Repair - Validation Evidence (v3.5.4 - per-error schema classification + evidence)
-Generated: 2026-11-12T20:53:56Z
-crypto/db: gpg (GnuPG) 2.4.4, psql (PostgreSQL) 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)
+Strateloq DR - Weekly Backup Script Restoration Evidence
+Generated: 2026-11-12T21:14:52Z
 ================================================================================
 
-## 0. With all 164 public tables restored, a failed CREATE TABLE/COPY can only be in a NON-public
-##    schema. Failures in Supabase-MANAGED schemas (vault/net/cron/auth/storage/...) are production-
-##    provided dependencies (supabase_vault/pg_net/pg_cron), NOT application recovery failures.
-##    The classifier now reads each failed statement's SCHEMA and prints the exact ERROR + stmt as
-##    evidence; only APPLICATION-schema failures block RESTORE_OK. This classifies by evidence,
-##    not by relaxation - every failed statement is shown.
+## 0. ROOT CAUSE: the scheduled task Strateloq-DR-Weekly-Backup runs
+   /home/strateloqbackup/strateloq-dr-validate/scripts/dr/dr_weekly_backup.sh, which exists
+   but is 0 BYTES -> the weekly backup does nothing and returns exit 1. No committed
+   implementation existed anywhere in the repo or its history, so the correct script is
+   composed from the EXISTING committed pieces (dr_db_logical_backup.sh + the strateloqdrive:
+   remote). It changes no credential/key/Drive destination and preserves prior archives.
 
-## 1. Static: launcher parse + orchestrator bash -n
-   RESULT: PASS (0 parse errors) tokens=1794
-   orchestrator bash -n: PASS
+## 1. The restored script scripts/dr/dr_weekly_backup.sh
+   size      : 4317 bytes (non-zero)
+   sha256    : 85d56f9ff3c317c012c2c9b5a6a9b3b78110776d7c9dcf39f4ffb811208a1a1b
+   perms     : -rwxr-xr-x (executable)
+   bash -n   : PASS
 
-## 2. Managed-schema failure (vault table needs a vector type the local cluster lacks):
-     [INFO] pg_restore rc=1  (errors: total=7, APPLICATION-data-affecting=0, managed-schema-data=2, other managed-env=5)
-               [managed-schema] schema=vault :: error: could not execute query: ERROR:  type "extensions.vector" does not exist
-                 stmt: Command was: CREATE TABLE vault.secret_vectors (
-               [managed-schema] schema=vault :: error: could not execute query: ERROR:  relation "vault.secret_vectors" does not exist
-                 stmt: Command was: COPY vault.secret_vectors (id, v) FROM stdin;
-     [INFO] tables: public=2/2 (dump TOC), all-schemas=2; rows~5
-     [INFO] 2 failed CREATE TABLE/COPY in Supabase-MANAGED schemas (vault/net/cron/...) - production-provided, not application recovery failures (evidence above).
-   VERDICT: ARTIFACT_RESTORE_OK
-   -> each error printed with [managed-schema] schema=vault + exact ERROR + statement;
-      APPLICATION-data-affecting=0, public 2/2 -> ARTIFACT_RESTORE_OK (managed gap documented).
+## 2. End-to-end behaviour (externals mocked; no production/Drive touched here):
+   RUN ok .................... WEEKLY_BACKUP_OK, exit 0; timestamped archive + manifest uploaded
+   previous archive .......... PRESERVED (rclone copy is additive: old + new both present)
+   upload verification ....... remote size + md5 compared to local -> UPLOAD_VERIFIED
+   missing SUPABASE_DB_URL .... exit 1 (exit-code propagates to Task Scheduler)
+   upload mismatch ........... exit 13
 
-## 3. An APPLICATION-schema failed CREATE TABLE/COPY (schema=public) is classified APPLICATION
-   and keeps the verdict RESTORE_PARTIAL (proven earlier: public.user_memory missing -> PARTIAL).
-## 4. Acceptance unchanged in rigor: public==TOC, zero APPLICATION data-affecting, required tables.
+## 3. IMPORTANT: this session cannot run the Windows scheduled task or reach Google Drive.
+   Requirements 5 and 6 (run the task once with approval; confirm LastTaskResult=0 and a
+   newly timestamped archive in strateloqdrive:Strateloq-DR/backups with upload integrity)
+   are OPERATOR steps on the Windows/WSL machine. No RESTORE_OK / success is claimed for the
+   weekly task until that run is confirmed - and it is NOT inferred from the Nov-12 manual restore.
