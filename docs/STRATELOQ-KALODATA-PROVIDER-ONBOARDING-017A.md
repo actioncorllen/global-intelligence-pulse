@@ -1206,3 +1206,46 @@ this DR repo and NOT the reference snapshot.
   §71 confirmations. HOLD on paid testing (Phase D) until per-call cost is confirmed and a capped budget + active
   price are provisioned — a SEPARATE approval. Video URL/playback/downloads/permanent storage/ad-reuse remain
   disabled pending written Kalodata video rights. STOPPED here before any production modification.
+
+# Phase 18 — Independent resume re-verification (2026-11-12; no production change)
+
+Read-only re-inspection on resume. Production has advanced since the Phase-17 preflight (frontier
+`mig_358` → **`20261112152217` / mig_363**, 515 migrations — the interleaved billing/onboarding work), so
+additivity was re-confirmed against the *current* database, not the preflight snapshot.
+
+## 76. Production re-verified (project nxaunmyihhjixxxljcqt, read-only MCP)
+- Both release migrations still **NOT applied**; all 5 new edges still **NOT deployed** (only `kalodata-discovery`
+  + `fn_persist_kalodata_product_detail` pre-exist). `kalodata_video_research` absent; `product_image_assets`
+  has only `source_url` (cache cols `storage_ref/cache_state/content_hash/cached_at` absent);
+  `discovery_refresh_request.operation` absent → nothing partially applied; bundle is fully additive.
+- `fn_asset_rights_class('PROVIDER_DISCOVERY_REFERENCE','KALODATA') = RIGHTS_UNKNOWN` (req-10 unapplied → fail-closed).
+- 9-market gate intact: **US, GB, DE, FR, ES, IT, MY, PH, SG** enabled (IE disabled).
+- Financial fail-closed: **0 active KALODATA `provider_call_budget`, 0 active `discovery_credit_price`** → no paid
+  call is currently possible. No paid call was made during this verification.
+
+## 77. Static validation performed here (no deploy, no paid call)
+- **Edge TypeScript:** 5 functions type-checked locally (tsc, Deno global shimmed since deno.land is proxy-blocked).
+  `kalodata-research-image-url` clean; the other four show only a shim-induced implicit-any on the `Deno.serve`
+  handler param (typed under Deno itself) — no genuine type errors. Functions use **no external imports**, so the
+  absent per-folder `deno.json` is correct, not a gap.
+- **Edge security invariants re-read:** REFERENCE_ONLY + `NOT_CLEARED_REFERENCE_ONLY` on image delivery; video
+  rank/detail persist **metadata only** ("no video media / playback URL fetched or stored"); 300s short-lived
+  owner-authorised signing via `fn_product_image_signed_ref` (auth.uid + ownership, caller JWT); secret-key
+  redaction in logs; no durable signed URL persisted.
+- **Migrations:** balanced BEGIN/COMMIT; additive (`CREATE TABLE IF NOT EXISTS kalodata_video_research`, additive
+  columns); least-privilege (service_role GRANT + anon/authenticated REVOKE on every fn incl. selftests). The
+  selftest teardown `DELETE`s target hardcoded **synthetic sentinel tenants** (`ca11…` UUIDs that cannot collide
+  with real v4 `auth.uid`), service_role-only — safe test fixtures, not destructive ops.
+
+## 78. One deploy-time item (not a code defect)
+- Draft version labels `20261111000000` / `20261111010000` now sit **behind** the live frontier
+  `20261112152217`. Apply via the canonical Management API `apply_migration` with **fresh version timestamps
+  greater than the frontier** (the version is operator-chosen at apply time; file labels are advisory). Files are
+  intentionally **not** renumbered to avoid desyncing the extensive §-references above.
+
+## 79. Resume verdict
+- No code defect found; implementation matches the verified design. Backend selftests remain **defined and
+  self-contained** but execute only post-apply (no isolated PG server here — `pg_ctl` absent, branching not on the
+  free plan), so they run at deploy step 6, not during this read-only pass. Frontend 682/682 is a Lovable-sandbox
+  result (not re-runnable from this ops repo). GO/NO-GO of §75 **unchanged**: ready for the non-paid additive
+  deploy on explicit approval + the three §71 confirmations; paid Phase-D and video media remain held.
