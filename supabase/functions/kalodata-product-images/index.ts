@@ -26,6 +26,14 @@
 //
 // Mirrors kalodata-video-detail (auth/gate/redact/settle) + product-image-import (upload/sign). No ad /
 // storefront / commercial use is ever unlocked. Not deployed; no chargeable call is made from here.
+//
+// ENVELOPE DIAGNOSTICS (2026-11-13): the documented provider envelope { success, code, message, data }
+// is inspected BEFORE the payload is trusted. An explicit provider error inside HTTP 200 (success:false)
+// and an unexpected non-envelope shape are refunded (post-charge, established beta semantics) and labelled
+// PROVIDER_API_ERROR / UNEXPECTED_RESPONSE_SHAPE — never recorded as a successful acquisition. A well-formed
+// envelope with an empty image set stays SUCCESS_NO_IMAGES (legitimately charged, unchanged). Diagnostics are
+// bounded + redacted (envelope flags, code, a sanitised/clipped message, data type/key-names/length) — never
+// raw bytes, signed URLs, tokens or secrets. No extra provider dispatch; settle() is still called exactly once.
 
 const SECRET_ENV = "KALODATA_SECRET_KEY";
 const SECRET_HEADER_ENV = "KALODATA_SECRET_HEADER";
@@ -87,6 +95,37 @@ function extractImages(body: any): { images: string[]; productId: string | null;
     .filter((s) => /^https?:\/\//i.test(s));
   return { images, productId: d?.product_id != null ? String(d.product_id) : null, expiresAt: d?.expires_at != null ? String(d.expires_at) : null };
 }
+// Bounded, redacted inspection of the documented Kalodata response envelope { success, code, message, data,
+// cached }. Returns a decision + SAFE diagnostics: envelope flags, code, a sanitised/clipped message, and
+// data type/key-NAMES/length — NEVER provider field values, signed URLs, tokens or the raw body.
+function classifyEnvelope(body: any): { decision: "DATA" | "EMPTY" | "API_ERROR" | "UNEXPECTED_SHAPE"; diag: Record<string, unknown> } {
+  const isObj = body != null && typeof body === "object" && !Array.isArray(body);
+  const success = isObj ? (body as any).success : undefined;
+  const rawCode = isObj ? (body as any).code : undefined;
+  const dataVal = isObj ? (body as any).data : undefined;
+  const dataPresent = dataVal !== undefined && dataVal !== null;
+  const dataType = !isObj
+    ? (Array.isArray(body) ? "array" : body === null ? "null" : typeof body)
+    : (dataVal === null ? "null" : dataVal === undefined ? "absent" : Array.isArray(dataVal) ? "array" : typeof dataVal);
+  const msg = isObj && (body as any).message != null ? redact(String((body as any).message)).slice(0, 160) : null;
+  const diag: Record<string, unknown> = {
+    envelope: isObj,
+    success: typeof success === "boolean" ? success : (success == null ? null : String(success).slice(0, 12)),
+    code: (typeof rawCode === "number" || typeof rawCode === "string") ? String(rawCode).slice(0, 24) : null,
+    message_present: !!(msg && msg.length > 0),
+    message: msg,
+    data_type: dataType,
+    data_present: dataPresent,
+    data_len: Array.isArray(dataVal) ? (dataVal as unknown[]).length : null,
+    data_keys: (dataPresent && typeof dataVal === "object" && !Array.isArray(dataVal))
+      ? Object.keys(dataVal as Record<string, unknown>).slice(0, 24) : null,
+    cached: isObj && typeof (body as any).cached === "boolean" ? (body as any).cached : null,
+  };
+  if (success === false) return { decision: "API_ERROR", diag };           // explicit provider error in a 200
+  if (isObj && dataPresent) return { decision: "DATA", diag };              // envelope with a data payload
+  if (isObj && success === true) return { decision: "EMPTY", diag };        // explicit success, empty/absent data
+  return { decision: "UNEXPECTED_SHAPE", diag };                            // non-object, or object w/o success & data
+}
 
 Deno.serve(async (req) => {
   if (req.method !== "POST") return jsonResponse(405, { ok: false, error: "method_not_allowed" });
@@ -147,13 +186,29 @@ Deno.serve(async (req) => {
     return jsonResponse(provider.status === 402 ? 402 : 502, { ok: false, provider: "KALODATA", market, lane_status: laneStatus, http_status: provider.status, error: redact(providerBody?.message ?? providerBody?.error ?? "provider_error") });
   }
 
+  // Inspect the documented response envelope BEFORE trusting the payload. An explicit provider error
+  // inside HTTP 200 (success:false) must NOT be recorded as a successful acquisition.
+  const env = classifyEnvelope(providerBody);
+  if (env.decision === "API_ERROR") {
+    await settle("PROVIDER_FAILED_POST_CHARGE");  // a call occurred -> established post-charge (beta refund) semantics
+    try { await rpc("fn_kalodata_record_lane_outcome", { p_user_id: tenant, p_market: market, p_lane_status: "PROVIDER_API_ERROR", p_detail: { operation: "tiktok/product/images", kalodata_product_id: kalodataProductId, diagnostics: env.diag } }); } catch (_e) { /* telemetry best-effort */ }
+    return jsonResponse(502, { ok: false, provider: "KALODATA", market, lane_status: "PROVIDER_API_ERROR", diagnostics: env.diag });
+  }
+
   const { images, expiresAt } = extractImages(providerBody);
   const expiresAtMs = expiresAt ? Date.parse(expiresAt) : NaN;
 
-  // Provider returned no imagery: the call succeeded (charge legitimate); nothing to cache.
   if (images.length === 0) {
+    // An UNEXPECTED, non-envelope structure is NOT trusted as a success: refund (post-charge) and flag it.
+    if (env.decision === "UNEXPECTED_SHAPE") {
+      await settle("PROVIDER_FAILED_POST_CHARGE");
+      try { await rpc("fn_kalodata_record_lane_outcome", { p_user_id: tenant, p_market: market, p_lane_status: "UNEXPECTED_RESPONSE_SHAPE", p_detail: { operation: "tiktok/product/images", kalodata_product_id: kalodataProductId, diagnostics: env.diag } }); } catch (_e) { /* best-effort */ }
+      return jsonResponse(502, { ok: false, provider: "KALODATA", market, lane_status: "UNEXPECTED_RESPONSE_SHAPE", diagnostics: env.diag });
+    }
+    // A well-formed envelope with no images is a genuine empty dataset: the call is legitimately charged.
     await settle("SUCCESS");
-    return jsonResponse(200, { ok: true, provider: "KALODATA", market, lane_status: "SUCCESS_NO_IMAGES", product_id: kalodataProductId, cached: 0, rights_state: "PROVIDER_DISCOVERY_REFERENCE" });
+    try { await rpc("fn_kalodata_record_lane_outcome", { p_user_id: tenant, p_market: market, p_lane_status: "SUCCESS_NO_IMAGES", p_detail: { operation: "tiktok/product/images", kalodata_product_id: kalodataProductId, diagnostics: env.diag } }); } catch (_e) { /* best-effort */ }
+    return jsonResponse(200, { ok: true, provider: "KALODATA", market, lane_status: "SUCCESS_NO_IMAGES", product_id: kalodataProductId, cached: 0, rights_state: "PROVIDER_DISCOVERY_REFERENCE", diagnostics: env.diag });
   }
 
   const results: Array<{ position: number; status: string; asset_id?: string; reason?: string }> = [];
@@ -234,6 +289,6 @@ Deno.serve(async (req) => {
     product_id: kalodataProductId, returned: images.length,
     cached, deduped, failed, skipped_expired: skippedExpired,
     rights_state: "PROVIDER_DISCOVERY_REFERENCE", authority: "REFERENCE_ONLY",
-    commercial_use: "NOT_CLEARED_REFERENCE_ONLY", results,
+    commercial_use: "NOT_CLEARED_REFERENCE_ONLY", results, diagnostics: env.diag,
   });
 });

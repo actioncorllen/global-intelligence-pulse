@@ -15,6 +15,13 @@
 // contract-blocking flag has been removed. Spending/safety controls remain: secret-key auth, service_role
 // /nonce gate, market gate, and the UPSTREAM budget reservation that the caller must perform (same as the
 // product/rank lane). Not deployed; no call is made here.
+//
+// ENVELOPE DIAGNOSTICS (2026-11-13): the documented provider envelope { success, code, message, data } is
+// inspected BEFORE parsing. An explicit provider error inside HTTP 200 (success:false) is labelled
+// PROVIDER_API_ERROR (not a benign EMPTY_DETAIL); a non-envelope shape is labelled UNEXPECTED_RESPONSE_SHAPE.
+// Accounting is UNCHANGED — every no-detail outcome still refunds under the established post-charge (beta)
+// semantics; only the lane_status + bounded/redacted diagnostics change. Diagnostics carry envelope flags,
+// code, a sanitised/clipped message and data type/key-names/length — never raw bytes, URLs, tokens or secrets.
 
 const SECRET_ENV = "KALODATA_SECRET_KEY";
 const SECRET_HEADER_ENV = "KALODATA_SECRET_HEADER";
@@ -67,6 +74,37 @@ function extractDetail(body: any): any | null {
     if (p && typeof p === "object" && !Array.isArray(p) && (p.product_id || p.master_image_url || p.product_description || p.variants || p.attributes)) return p;
   }
   return null;
+}
+// Bounded, redacted inspection of the documented Kalodata response envelope { success, code, message, data,
+// cached }. Returns a decision + SAFE diagnostics: envelope flags, code, a sanitised/clipped message, and
+// data type/key-NAMES/length — NEVER provider field values, URLs, tokens or the raw body.
+function classifyEnvelope(body: any): { decision: "DATA" | "EMPTY" | "API_ERROR" | "UNEXPECTED_SHAPE"; diag: Record<string, unknown> } {
+  const isObj = body != null && typeof body === "object" && !Array.isArray(body);
+  const success = isObj ? (body as any).success : undefined;
+  const rawCode = isObj ? (body as any).code : undefined;
+  const dataVal = isObj ? (body as any).data : undefined;
+  const dataPresent = dataVal !== undefined && dataVal !== null;
+  const dataType = !isObj
+    ? (Array.isArray(body) ? "array" : body === null ? "null" : typeof body)
+    : (dataVal === null ? "null" : dataVal === undefined ? "absent" : Array.isArray(dataVal) ? "array" : typeof dataVal);
+  const msg = isObj && (body as any).message != null ? redact(String((body as any).message)).slice(0, 160) : null;
+  const diag: Record<string, unknown> = {
+    envelope: isObj,
+    success: typeof success === "boolean" ? success : (success == null ? null : String(success).slice(0, 12)),
+    code: (typeof rawCode === "number" || typeof rawCode === "string") ? String(rawCode).slice(0, 24) : null,
+    message_present: !!(msg && msg.length > 0),
+    message: msg,
+    data_type: dataType,
+    data_present: dataPresent,
+    data_len: Array.isArray(dataVal) ? (dataVal as unknown[]).length : null,
+    data_keys: (dataPresent && typeof dataVal === "object" && !Array.isArray(dataVal))
+      ? Object.keys(dataVal as Record<string, unknown>).slice(0, 24) : null,
+    cached: isObj && typeof (body as any).cached === "boolean" ? (body as any).cached : null,
+  };
+  if (success === false) return { decision: "API_ERROR", diag };           // explicit provider error in a 200
+  if (isObj && dataPresent) return { decision: "DATA", diag };              // envelope with a data payload
+  if (isObj && success === true) return { decision: "EMPTY", diag };        // explicit success, empty/absent data
+  return { decision: "UNEXPECTED_SHAPE", diag };                            // non-object, or object w/o success & data
 }
 
 Deno.serve(async (req) => {
@@ -132,8 +170,23 @@ Deno.serve(async (req) => {
     return jsonResponse(provider.status === 402 ? 402 : 502, { ok: false, provider: "KALODATA", market, lane_status: laneStatus, http_status: provider.status, error: redact(providerBody?.message ?? providerBody?.error ?? "provider_error") });
   }
 
+  // Inspect the documented response envelope BEFORE parsing. An explicit provider error inside HTTP 200
+  // (success:false) must NOT be silently reported as a benign empty detail.
+  const env = classifyEnvelope(providerBody);
+  if (env.decision === "API_ERROR") {
+    await settle("PROVIDER_FAILED_POST_CHARGE");  // a call occurred -> unchanged post-charge (beta refund) accounting
+    try { await rpc("fn_kalodata_record_lane_outcome", { p_user_id: userId, p_market: market, p_lane_status: "PROVIDER_API_ERROR", p_detail: { operation: "tiktok/product/detail", product_id: productId, diagnostics: env.diag } }); } catch (_e) { /* telemetry best-effort */ }
+    return jsonResponse(502, { ok: false, provider: "KALODATA", market, lane_status: "PROVIDER_API_ERROR", diagnostics: env.diag });
+  }
+
   const detail = extractDetail(providerBody);
-  if (!detail) { await settle("PROVIDER_FAILED_POST_CHARGE"); return jsonResponse(502, { ok: false, provider: "KALODATA", market, lane_status: "EMPTY_DETAIL" }); }
+  if (!detail) {
+    // Genuine empty vs unexpected shape — accounting UNCHANGED (both refund post-charge); diagnostics added.
+    const lane = env.decision === "UNEXPECTED_SHAPE" ? "UNEXPECTED_RESPONSE_SHAPE" : "EMPTY_DETAIL";
+    await settle("PROVIDER_FAILED_POST_CHARGE");
+    try { await rpc("fn_kalodata_record_lane_outcome", { p_user_id: userId, p_market: market, p_lane_status: lane, p_detail: { operation: "tiktok/product/detail", product_id: productId, diagnostics: env.diag } }); } catch (_e) { /* telemetry best-effort */ }
+    return jsonResponse(502, { ok: false, provider: "KALODATA", market, lane_status: lane, diagnostics: env.diag });
+  }
 
   // 3) persist via the EXISTING persister (REFERENCE_ONLY; tenant-isolated). No duplicate persistence.
   const persist = await rpc("fn_persist_kalodata_product_detail", { p_tenant: userId, p_product: productId, p_market: market, p_detail: detail });
@@ -153,5 +206,5 @@ Deno.serve(async (req) => {
   } catch (_e) { /* usage telemetry is best-effort */ }
 
   await settle("SUCCESS");
-  return jsonResponse(200, { ok: true, provider: "KALODATA", market, lane_status: "SUCCESS_DETAIL", product_id: productId, persist: pb });
+  return jsonResponse(200, { ok: true, provider: "KALODATA", market, lane_status: "SUCCESS_DETAIL", product_id: productId, persist: pb, diagnostics: env.diag });
 });
