@@ -5,6 +5,18 @@
 -- The release (M1 20261111000000 + M2 20261111010000, applied under fresh
 -- versions > frontier) is ADDITIVE => rollback needs NO database restore.
 --
+-- APPLIED PRODUCTION MIGRATIONS (6; recorded in supabase_migrations.schema_migrations, 2026-11-13):
+--   20261113061729 kalodata_detail_video_caller            (M1 — product detail + video intel + caller wiring)
+--   20261113063155 kalodata_selftest_fixture_fixes          (self-test fixture only: approval_key + commerce cols)
+--   20261113063724 kalodata_caller_selftest_transient_price (self-test fixture only: txn-local price)
+--   20261113064209 kalodata_caller_selftest_authuid_claim   (self-test fixture only: request.jwt.claim.sub)
+--   20261113064907 kalodata_product_images                  (M2 — multi-image cache + req-10 reclass + signing)
+--   20261113065224 kalodata_product_images_selftest_fixtures(self-test fixture only: txn-local public.users)
+-- The 4 correction migrations ONLY CREATE OR REPLACE the two/one self-test utility functions
+-- (fn_kalodata_caller_lifecycle_selftest, fn_kalodata_e2e_mock_lifecycle_selftest,
+--  fn_kalodata_product_images_selftest) — all of which are DROP-ed by section 2 below, so this rollback
+-- already reverts them. They change no deployed caller/credit/image logic; no extra rollback step is needed.
+--
 -- SAFETY (founder directive):
 --   * Preserves all unrelated records, user accounts, tenant data, credits,
 --     provider settings and working functionality.
