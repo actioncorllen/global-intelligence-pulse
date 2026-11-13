@@ -1347,3 +1347,26 @@ not a Kalodata-release blocker.
 Gallery intact, tests/TS/build green, rights fail-closed, Strateloq-branded, superset of 1c8ca1b. No correction
 made. Publish `e2b7220` after the backend deploy + self-tests pass (step 8); hold the marketing-copy branding
 cleanup as a separate item.
+
+# Phase 21 — Marketing-copy branding fix applied; publish revision updated (2026-11-13; no publish)
+
+Founder-authorised the §90 branding cleanup. Applied the smallest targeted correction on the Lovable-backed
+repo `actioncorllen/https-www-globalintelligenceactions-com` and pushed to `main` (Lovable imported it).
+
+## 92. Change
+Replaced the outdated product-name string **"Global Intelligence Pulse(™)" → "Strateloq(™)"** in 4 marketing
+components — rendered: `demo-preview-card.tsx` badge ×3, `how-pulse-works.tsx` STAGES[0].title (keeps `suffix:"™"`);
+comments: `global-pulse-visual.tsx`, `experience-pulse-modal.tsx`, `how-pulse-works.tsx`. ™ and design preserved.
+**No** file/component/identifier renames (legacy technical identifiers kept); no functional, Kalodata gallery,
+SEO, auth, founding-member, billing or Product Asset Lock change. Generic "Global Intelligence" positioning
+copy on the hero was left as-is (not the product name; brand wordmark is STRATELOQ) — separate decision if wanted.
+
+## 93. Verification (local, on the exact change)
+`vitest run` → **690/690 passed (91 files)**; `tsc --noEmit` → clean; `vite build` → success.
+
+## 94. Publish revision (SUPERSEDES §91)
+**Publish `5d90dd2`** (`5d90dd258843bfe1d8979c1057b1c54054b6af20`) — Lovable HEAD as of 2026-11-13T05:51Z,
+git-backed, imported from `main`. It is `e2b7220` + the branding fix (so it retains the Kalodata gallery, SEO,
+PAL, auth, billing and canonical www.strateloq.com). **Not published** (`is_published` reflects the prior live
+build). Publish `5d90dd2` at release step 8, after the backend deploy + self-tests pass. Backend GO/NO-GO
+unchanged; still awaiting explicit founder deployment authorisation.
