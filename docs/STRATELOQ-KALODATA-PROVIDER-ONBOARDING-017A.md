@@ -1370,3 +1370,54 @@ git-backed, imported from `main`. It is `e2b7220` + the branding fix (so it reta
 PAL, auth, billing and canonical www.strateloq.com). **Not published** (`is_published` reflects the prior live
 build). Publish `5d90dd2` at release step 8, after the backend deploy + self-tests pass. Backend GO/NO-GO
 unchanged; still awaiting explicit founder deployment authorisation.
+
+# Phase 22 — AUTHORISED controlled production release EXECUTED (2026-11-13)
+
+Founder granted explicit execution authorisation. The non-paid additive release was applied to production
+`nxaunmyihhjixxxljcqt`. No chargeable Kalodata call; no budget/price activation; video media disabled.
+
+## 95. Migrations applied (via Management API apply_migration; recorded in schema_migrations)
+- `20261113061729` kalodata_detail_video_caller (M1).
+- `20261113064907` kalodata_product_images (M2).
+Plus 4 **corrections** (self-test fixtures only — no change to deployed caller/credit/image logic), each the
+smallest safe fix for an ephemeral-vs-production schema gap found during verification:
+- `063155` selftest_fixture_fixes — seed `provider_call_budget.approval_key` + `commerce_products`
+  identity_basis/product_identity/provenance (current prod NOT-NULL columns).
+- `063724` caller_selftest_transient_price — caller test seeds a **transaction-local** active US
+  `discovery_credit_price` (inserted+deleted inside the call; never committed; production pricing stays 0/fail-closed).
+- `064209` caller_selftest_authuid_claim — caller test drives tenancy via `request.jwt.claim.sub` (what prod
+  `auth.uid()` reads) instead of `set_config('test.uid')` (an ephemeral shim prod lacks).
+- `065224` product_images_selftest_fixtures — product_images test seeds transaction-local `public.users`
+  rows (commerce_products.user_id FK → public.users; no triggers/FKs) + commerce_products NOT-NULL columns.
+
+## 96. Production self-test results (run individually; no paid call)
+- `fn_kalodata_product_detail_selftest` → **8/8**.
+- `fn_kalodata_video_selftest` → **10/10** (video/url hard-blocked; no playback/media column).
+- `fn_kalodata_caller_lifecycle_selftest` → **12/12** (reserve/authorize/settle/refund, idempotency,
+  cross-tenant, provider-budget fail-closed, 9-market gate).
+- `fn_kalodata_product_images_selftest` → **11/11** (caching, dedup, tenant isolation, no durable credential,
+  source_url provenance-only, owner-only short-lived signing, expiry survives, rights-class RESEARCH_REFERENCE_ONLY,
+  Product Asset Lock non-publishable, credit-reuse short-circuit).
+- NOTE: run each self-test in its own statement. Running caller+images in ONE transaction yields a false 7/11
+  because the caller test leaves `request.jwt.claim.sub` set and `auth.uid()` prefers it over the claims blob.
+- `fn_kalodata_e2e_mock_lifecycle_selftest` is a supplementary (non-gating) test; it needs a real `auth.users`
+  user for its commerce_products fixture, so it is not run on production (fixtures left intact; not a defect).
+
+## 97. Storage + Edge Functions + rights/finance
+- Bucket `pulse-research-reference` created: **private** (public=false), 10 MB limit, MIME allowlist png/jpeg/webp; 0 objects.
+- 5 Edge Functions deployed ACTIVE v1, all `verify_jwt=true`: kalodata-product-detail, kalodata-video-rank,
+  kalodata-video-detail, kalodata-product-images (service_role/nonce gated); kalodata-research-image-url
+  (JWT + `fn_product_image_signed_ref` ownership; 300s signed delivery; service role only mints the URL).
+- `fn_asset_rights_class('PROVIDER_DISCOVERY_REFERENCE','KALODATA')='RESEARCH_REFERENCE_ONLY'` (req-10 live, fail-closed).
+- Finance fail-closed preserved: 0 active KALODATA budgets, 0 active credit prices; **0 Kalodata credits
+  consumed** by this release (consumed_calls all-time unchanged at 2). Security advisors: 6 (1 INFO/5 WARN), **no ERROR**.
+
+## 98. Frontend
+- Published Lovable revision **`5d90dd2`** (HEAD; approved) to production — serves `www.strateloq.com`.
+- Backend now satisfies the `5d90dd2` contracts: `fn_kalodata_product_images_cached`, edge
+  `kalodata-research-image-url`, `fn_product_commercial_asset_readiness_owned` (mig_363) — all deployed.
+
+## 99. Held (separate approvals; NOT part of this release)
+- Phase-D paid live Kalodata testing (capped budget + active price) — still gated.
+- Kalodata video-media rights (download/host/playback/ad-reuse) — still disabled pending written confirmation.
+- Live end-to-end Kalodata API functionality is NOT claimed (no authorised live provider test was run).
