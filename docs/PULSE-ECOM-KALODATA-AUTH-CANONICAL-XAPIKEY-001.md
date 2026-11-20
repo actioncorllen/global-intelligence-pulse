@@ -761,3 +761,31 @@ byte-identical throughout.
 + Google Shopping upstream conditions (GPD.01 leg), then flip released=true on the five
 pilot rows. GPD.06–11 stay FALSE — a working implementation is not customer-evidence
 acceptance. Spend: 0. Tracker: BE230.
+
+## ADDENDUM 18 — 2026-11-20: ACTIVE-SOURCE RIGHTS CLOSEOUT (BE231)
+
+**Documentary review, no interpretation.** The authoritative register
+(`catalogue_source_rights`) holds every clearance dimension FALSE for every provider. The
+only provider correspondence on file is Kalodata's 20-Nov reply (API authentication
+guidance only — no rights statements; need_image/master_image_url is a product feature,
+not a display licence) and the FastMoss entitlement enquiry pending since 16-Nov.
+Provider public terms pages are not retrievable from this engineering session
+(DNS-blocked by network policy) — recorded as not-retrievable, nothing guessed.
+
+**Matrix + decision (docs/legal/STRATELOQ-ACTIVE-SOURCE-RIGHTS-MATRIX-BE231.md).** Full
+Permitted/Prohibited/Unconfirmed/Requires-written-approval matrix for DataForSEO (incl.
+Merchant), Kalodata and CJ. The GB five-product text-only pilot is NOT authorised by
+documents on file; `customer_source_release.released` stays FALSE. The exact missing
+document is named (DataForSEO written confirmation for derived listing-text display +
+retention + upstream Google conditions).
+
+**Two register-vs-practice inconsistencies flagged for founder decision:** (1) Kalodata
+derived analytics + reference images are live in the customer workspace under the
+founder's direct build authorisation while the register holds display FALSE; (2) system
+practice treats CJ SUPPLIER_PROVIDED media as gallery-display-eligible while the register
+holds display FALSE. Resolution for each: provider written confirmation (drafts ready) or
+a documented founder risk-acceptance written into the register.
+
+**Actions:** four active-source rights_evidence entries updated with this reconciliation
+(no clearance flag changed); three permission-request emails drafted for founder review —
+not sent. GPD.01 row updated; no GOLD ticks. Spend 0. Tracker: BE231.
