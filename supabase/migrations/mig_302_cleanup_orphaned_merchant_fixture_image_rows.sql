@@ -1,0 +1,27 @@
+-- mig_302 — 2026-11-20 — BE229: root cause + resolution of the long-standing gallery 14/15.
+-- Applied to project nxaunmyihhjixxxljcqt as migration
+-- `cleanup_orphaned_merchant_fixture_image_rows` (authoritative body in
+-- supabase_migrations.schema_migrations). Record file only.
+--
+-- The failing check fn_product_gallery_selftest.'no_ai_or_web_sources' asserts that NO
+-- product_image_assets rows exist from providers outside
+-- CJ_SUPPLIER / EBAY_BROWSE / FASTMOSS / KALODATA. It had been failing since 19 Nov and
+-- was recorded as a "DATAFORSEO_MERCHANT allowlist — founder decision" item. The actual
+-- root cause was NOT a licensing question: exactly ten DATAFORSEO_MERCHANT rows existed,
+-- every one with the fake URL https://img.example.invalid/a.jpg, created 2026-11-19,
+-- whose product_ids no longer exist in commerce_products (orphans), with is_fixture
+-- wrongly false — i.e. leaked test-fixture residue. No genuine DataForSEO Merchant
+-- imagery is stored anywhere (the 160 real Merchant products carry ZERO image rows; the
+-- founder's 19-Nov reference-only / fail-closed alignment holds in production data).
+--
+-- Fix: delete exactly those 10 rows (guard: source_provider DATAFORSEO_MERCHANT AND
+-- image_url LIKE '%example.invalid%' AND product_id not in commerce_products; aborts
+-- unless ROW_COUNT = 10). Audit list of the ten product_ids is in the applied migration.
+-- The one FASTMOSS orphan (2026-10-13, real URL) is retained production-era data under
+-- the founder/legal retention flag and was NOT touched.
+--
+-- Result: fn_product_gallery_selftest 15/15 (first time) with the ORIGINAL STRICT
+-- invariant intact — no test weakened, no rights relaxed, PAL untouched — and the amber
+-- cascade cleared: fn_ad_studio_lineage_selftest, fn_media_video_runtime_selftest,
+-- fn_ad_production_engine_selftest (J_regressions) and
+-- fn_discovery_media_integrity_selftest all all_pass.

@@ -707,3 +707,33 @@ $0 CJ to the first CONFIRMED exact-SKU match; 17 = $0 once 16 exists; 19 = 16's 
 two zero-cost founder rulings; 22 = ≈2–3 Kalodata credits + ~$5–15 DataForSEO for a
 disciplined 10×6 pass (no-waiver). Spend this wave: 0. Tracker: BE228;
 LIVE MASTER — GOLD rows 3–4, 7–12, 15–16.
+
+## ADDENDUM 16 — 2026-11-20: EVIDENCE RELEASE READINESS (BE229)
+
+**Gallery 14/15 resolved at root (mig_302).** The "allowlist — founder decision" item was
+in fact leaked test-fixture residue: ten orphaned DATAFORSEO_MERCHANT image rows with the
+fake URL img.example.invalid, product_ids no longer in commerce_products, mislabelled
+is_fixture=false. Deleted exactly those ten (assertion-guarded; audit list in the
+migration). No genuine Merchant imagery is stored anywhere — the 19-Nov fail-closed
+alignment holds in production data. The one FASTMOSS orphan (real URL, 13 Oct) stays
+under the retention flag. Result: gallery 15/15 with the original strict invariant, and
+the amber cascade (lineage, video runtime, ad engine J_regressions, media integrity) all
+green. No test weakened; PAL untouched.
+
+**Visibility-gap diagnosis (three separable issues).** (1) System-tenant legacy evidence:
+isolation working, not transferred. (2) The 160 Merchant products are founder-owned and
+eligible in principle but the explorer's base predicate admits only kalodata/fastmoss —
+a product decision, not a defect. (3) No Merchant imagery stored; customer cards would be
+text-fallback (GPD.02-sanctioned) or need an image-rights determination.
+
+**Rights reconciliation** recorded per source (derived analysis vs field display vs
+reference images vs customer display vs commercial reuse vs caching), with the explicit
+rule that display_cleared is a system flag, never legal authorisation; written
+customer-display terms are on file for none of Kalodata / DataForSEO / CJ → GPD.01
+remains the gate for GPD.02 and the rights legs of 08/10/15.
+
+**GB publication plan prepared, not executed** (five founder-owned products: Projecteur,
+Cold Brew, two projector listings, Govee), text-fallback mechanism, reversible predicate
+migration, revocation and rollback drills specified. Blocked on the founder's
+text-fallback product decision + GPD.01 written confirmation for DataForSEO derived
+text-field display. No GPD.06–11 ticks. Spend 0. Tracker: BE229.
