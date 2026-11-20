@@ -1,0 +1,35 @@
+-- mig_306 — 2026-11-20 — Lovable credit recovery STEP 5: genuine notification emitters.
+-- Applied to project nxaunmyihhjixxxljcqt as migrations
+-- `notification_emitters_and_workspace_feedback_v1` + `workspace_feedback_trim_guard_v1`
+-- (authoritative bodies in supabase_migrations.schema_migrations). Record file only.
+--
+-- Context: the live frontend bell (get_own_notifications / mark_notification_read /
+-- mark_all_notifications_read over pulse_notifications) was fully wired but NO code path
+-- ever called fn_emit_notification — pulse_notifications had 0 rows ever. Wired three
+-- GENUINE event sources; nothing invented, no polling, no synthetic unread counts:
+--
+-- 1) fn_monitor_apply (saved-product monitoring): after a run inserts >=1 NEW
+--    saved_product_monitor_events row, emit ONE owner notification
+--    (kind SAVED_PRODUCT_CHANGE, title 'Saved product update: <title>', body = first
+--    change summary + '(+N more)' + '[MARKET]', link /workspace?view=opportunities).
+--    The SCORING confidence gate and dedupe_key logic are untouched: suppressed or
+--    deduped changes emit nothing (proved in drill T3).
+--
+-- 2) accept_invitation: on first-time successful provisioning ('accepted'/'provisioned'),
+--    emit MEMBER_ACTIVATED to active founder_principals (body = member email,
+--    link /workspace/invitations). Idempotent re-acceptance emits nothing.
+--
+-- 3) submit_feedback: member_feedback.subject_type CHECK extended with 'workspace'
+--    (free-text research-workspace feedback; requires non-empty comment after trim —
+--    the trim guard is the _v1 follow-up fix found by drill T5); on every successful
+--    submission emit FEEDBACK_RECEIVED to active founder principals (not to the
+--    submitter). 'opportunity'/'content' branches byte-identical in behaviour.
+--
+-- Verified (synthetic drill, all residue deleted; pulse_notifications back to 0):
+-- T1 first observation -> 0 events 0 notifications; T2 FACTUAL demand change -> 1 event +
+-- 1 unread notification with honest title/body; T3 SCORING change w/o confidence ->
+-- suppressed, no notification; T4 workspace feedback by real activated member -> ok +
+-- exactly 1 founder FEEDBACK_RECEIVED; T5 whitespace-only comment -> invalid_target;
+-- T6 unknown subject -> invalid_subject; T7 anon -> unauthenticated.
+-- Regression: fn_founding_access_control_selftest 12/12 all_pass after the
+-- accept_invitation splice (its synthetic acceptance exercises the new emit path).

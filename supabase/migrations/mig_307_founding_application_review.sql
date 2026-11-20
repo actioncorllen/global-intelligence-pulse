@@ -1,0 +1,29 @@
+-- mig_307 — 2026-11-20 — Lovable credit recovery STEP 3 backend: 04.02 application review.
+-- Applied to project nxaunmyihhjixxxljcqt as migrations `founding_application_review_v1`
+-- + `founding_application_review_v2_original_vocabulary` (authoritative bodies in
+-- supabase_migrations.schema_migrations). Record file only.
+--
+-- Gap: founding_applications had no review writer — the 3 historical approvals were
+-- recorded outside any UI/RPC; 04.02 'review-workflow acceptance remains'.
+--
+-- Additive columns: reviewed_at timestamptz, reviewed_by text, review_note text.
+--
+-- fn_founding_applications_review_list() [authenticated+service, fn_is_founder()-gated,
+-- FORBIDDEN_FOUNDER_ONLY otherwise]: all applications (full application fields +
+-- review fields) plus derived lifecycle facts per application: business_profile_count,
+-- profile_unowned, invitations_issued, invitation_consumed, member_activated.
+--
+-- fn_review_founding_application(p_application_id, p_decision 'approve'|'decline',
+-- p_note) [same gate]: transitions ONLY from the table's original non-terminal states
+-- ('new','reviewing','contacted') to 'accepted' / 'rejected' — the ORIGINAL CHECK
+-- vocabulary (v1 invented 'approved' and was corrected in v2 after the CHECK rejected
+-- it; fn_submit_founding_application already treats accepted/rejected as terminal).
+-- Records reviewed_at/by/note. Review does NOT issue invitations: issue_invitation
+-- remains the only issuance authority and reads application EXISTENCE + business-profile
+-- cardinality, not status (verified before design).
+--
+-- Verified (synthetic application, deleted after): non-founder member ->
+-- FORBIDDEN_FOUNDER_ONLY on both; founder list = 10 rows (9 real + drill) with derived
+-- fields; approve -> accepted with reviewed_by = founder uid + note persisted; second
+-- review -> invalid_state; bad decision -> invalid_decision; unknown id -> not_found;
+-- real data untouched (6 new + 3 accepted before and after).
