@@ -677,3 +677,33 @@ the accepted comparison view.
 
 **Board:** LIVE MASTER — GOLD rows 13/14/20 updated only; 7 of 22 GPD gates now accepted
 (04, 05, 12, 13, 18, 20, 21). Spend 0; no code changes (no defect found). Tracker: BE227.
+
+## ADDENDUM 15 — 2026-11-20: GOLD VERIFICATION WAVE (BE228) — 10 OF 22 ACCEPTED
+
+**Accepted this wave:** GPD.03 (fresh acquisition & provenance — 10/10 visible items carry
+provider/country/first-observed/as-of with the stale guard; sighted same-day), GPD.14
+(explainable decisions — verdict + insufficient-evidence + missing-coverage + per-country
+why, all sighted; review triggers = the accepted monitoring alerts), GPD.15 (rights-safe
+research detail — identity, price/currency, estimate/window, honest UNKNOWNs, truthful
+supplier-unavailable, PAL-governed reference images, zero member store/ads actions).
+
+**Narrowed:** GPD.02 now depends on exactly one thing — the GPD.01 written provider-rights
+sign-off (mechanism, sweep and sighting complete; per the rule, unlicensed display rights
+are never marked approved).
+
+**Held honestly (GPD.06–11):** one shared gap — no customer-visible product carries
+demand/seller/advertiser/price evidence; every honest-empty path is complete and sighted,
+and the mechanisms were re-proven on genuine stored observations (GB 162 MATCHED listings
+£4.99–£135.90 with sellers honestly UNKNOWN; GB 22 advertisers from 29 ads; IT
+independently 35/14; US UNKNOWN; saturation VERY_HIGH only where observed). Key finding:
+the founder-tenant resolver call correctly returns UNKNOWN for system-tenant evidence —
+tenant isolation proven at the evidence layer, not a regression. No-cost unlock
+identified (founder decision): customer-publish the GB pilot products + the gallery
+allowlist ruling — closes the sighting gap with evidence already owned, zero paid calls.
+
+**Commercial dependency plan (GPD.01/16/17/19/22):** 01 = legal sign-off, $0 API,
+instantly closes 02 + rights legs; 16 = ≤0.5 Kalodata credits + ≤$0.50 DataForSEO +
+$0 CJ to the first CONFIRMED exact-SKU match; 17 = $0 once 16 exists; 19 = 16's match or
+two zero-cost founder rulings; 22 = ≈2–3 Kalodata credits + ~$5–15 DataForSEO for a
+disciplined 10×6 pass (no-waiver). Spend this wave: 0. Tracker: BE228;
+LIVE MASTER — GOLD rows 3–4, 7–12, 15–16.
