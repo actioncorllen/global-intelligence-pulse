@@ -273,3 +273,35 @@ no credentials exposed.
 **Next build milestone:** research-driven evidence upgrade for the 10 US WATCH candidates
 (budget-gated Kalodata product/detail + product/images lanes and/or CJ exact-SKU supplier
 economics) — separate founder authorisation required for any paid call.
+
+---
+
+## ADDENDUM 4 — 2026-11-20: UNIFIED PRODUCT OPPORTUNITY INTELLIGENCE VERIFIED (BE217)
+
+Verification-only pass (zero provider calls of any kind, zero schema/code changes):
+
+- **One unified, tenant-isolated US list.** `fn_ecommerce_workspace_intelligence` returns a single
+  `product_decisions` array spanning kalodata (10), dataforseo_merchant (25), dataforseo (1) and
+  reddit (1) — 37 US products, all WATCH, 0 TEST, each with source attribution, USD price,
+  provisional flag and decision reasons. TikTok sales strength alone never promotes past WATCH.
+- **Cross-provider overlay proven on one product.** DE kalodata product "More Adventskalender 2026"
+  shows `SEARCH_DEMAND (DATAFORSEO) = QUALIFYING` and `MARKETPLACE_VALIDATION = QUALIFYING`
+  alongside its TikTok discovery in one intelligence payload — separately sourced evidence
+  families, no blending. US products honestly show UNKNOWN where no evidence exists in either
+  direction (Shark: momentum QUALIFYING, demand UNKNOWN; Rossetta: offers QUALIFYING, momentum
+  UNKNOWN).
+- **Identity integrity.** Zero products carry both TikTok and Google native IDs; no title-only
+  joins exist or were created; records remain independent per the Product Identity Resolution
+  policy.
+- **CJ honesty.** 1,317 supplier product rows; 7 real resolutions; exactly one bound match
+  (GB kids nightlight projector → CJ SKU CJYD3093228, $5.73 cost, ships CN/CN→US) surfaced as
+  `CONCRETE_PRODUCT_AMBIGUOUS` (not CONFIRMED); all 10 US kalodata candidates show
+  `supplier_match UNMATCHED / dispatched false` — honest incomplete-opportunity status.
+- **Preserved state.** No Stage-1/GOLD checkbox, formula or completed DataForSEO unit touched
+  (BE215/BE216 reconciliation intact). Kalodata balance 14.0; DataForSEO month $0.391; paid
+  dispatch OFF everywhere; isolation and rights gates unchanged.
+- **Tracker:** Build Evidence & Handoff row 217 (BE217).
+
+Open gates (not prematurely marked): founding-member signed-in UI walkthrough; GOLD
+GPD.03/05–11 customer-visible + rights acceptance (8 Stage-1 units); CJ exact-SKU economics for
+the US kalodata candidates; image/display licensing (fail-closed).
