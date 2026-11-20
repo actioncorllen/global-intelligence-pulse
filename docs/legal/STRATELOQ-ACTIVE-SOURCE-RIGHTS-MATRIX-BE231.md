@@ -100,3 +100,41 @@ customers as sourcing research; (2) linking to CJ product pages; (3) displaying
 supplier-provided product images in that research context; (4) permitted
 retention/caching of catalogue data; (5) exclusion of commercial media reuse unless
 separately agreed. Could you confirm each point, or send the applicable API terms?
+
+---
+
+## BE232 amendment (2026-11-20): founder-reported Kalodata permissions correspondence
+
+**Correction of scope.** BE231's statement that Kalodata correspondence contained only
+authentication guidance was true of the correspondence **on file in the system** (repo +
+register + tracker), but the founder reports an earlier provider permissions email from
+Andrew Lin covering: derived SaaS analytics, raw-data resale restrictions, Product Rank
+images (need_image), the Product Images API, attribution, caching and hosting. BE231's
+claim is therefore re-scoped: *the system record was incomplete*, and whether any Kalodata
+clearance is a missing register entry (right exists, unrecorded) or a missing contractual
+right is **INDETERMINATE** until the original thread is read.
+
+**Recovery attempts (all from this session, 2026-11-20):**
+- Gmail (the near-certain location — the FastMoss enquiry precedent is recorded as sent
+  from the user's Gmail): **connector authentication expired**; a session cannot start
+  OAuth. Unblock: re-authorize the Gmail connector in claude.ai → Settings → Connectors,
+  after which the full thread (all messages + dates) will be read and reconciled.
+- Repository docs (incl. the Kalodata master doc), Lovable project docs, all tracker tabs
+  (incl. hidden "VERIFIED — Do Not Repeat" and "Stage 1 — Provider Preflight"), the
+  `catalogue_source_rights` register, Google Drive (single Kalodata mention = the tracker
+  itself), Notion: **no copy of the permissions email**.
+
+**Consequences, pending the thread:** no clearance field was changed (the email text, not
+its description, is the evidence rule 4 requires); the live Kalodata customer display
+remains flagged as provider-unconfirmed in the register; the DataForSEO five-product
+release stays disabled on its own upstream/display verification; CJ permissions remain
+separate and unresolved; the three draft emails stand untrimmed because nothing has yet
+been conclusively answered by correspondence readable in-session.
+
+**Prepared reconciliation (to run immediately after Gmail re-auth):** for each of the six
+permission dimensions, quote the exact sentence + message date into
+`catalogue_source_rights.rights_evidence`, set the specific clearance flag only where the
+quoted text supports that exact permission, re-check for referenced separate terms that
+impose additional restrictions, restrict any current display use the correspondence does
+not support, trim answered questions from the Kalodata draft email, and update GPD.01/02
+with precisely the justified changes.
