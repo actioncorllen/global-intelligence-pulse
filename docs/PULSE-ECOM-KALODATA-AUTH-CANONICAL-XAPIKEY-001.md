@@ -224,3 +224,52 @@ No additional provider requests, no publishing, no purchases, no FastMoss, no Lo
 **Outcome: the end-to-end Kalodata Product Discovery pipeline is live** — authentication,
 market-gated request with need_image, budget gating, tenant-private ingestion, REFERENCE_ONLY
 image persistence and telemetry all verified against real provider data.
+
+---
+
+## ADDENDUM 3 — 2026-11-20: PHASE 2 — LIVE PRODUCT DISCOVERY WORKSPACE (COMPLETED)
+
+**Gap found.** The workspace's authoritative payload (`fn_ecommerce_workspace_intelligence`) lists
+products from `product_opportunity_decisions` only; the 10 ingested candidates had zero
+`product_market_evaluations` and zero decisions, so they were invisible. The missing step was the
+existing projection `fn_project_discovered_candidates`.
+
+**Repair (existing tenant-authorised function, no architecture change).** Ran
+`fn_project_discovered_candidates(tenant,'US',168)` once: 35 registered, undecided US candidates
+(incl. the 10 new) projected and decisioned — `suppress_dispatch=on` internally, zero paid
+research, provisional outcomes only. All 10 new products: `decision WATCH`,
+`lifecycle_state WATCH`, `action_gating MONITOR_GATHER_EVIDENCE`,
+`research_evidence_state INSUFFICIENT_EVIDENCE`, `decision_provisional true` — nothing auto-TEST.
+
+**Tenant-authenticated verification (production RPCs under the tenant's auth context):**
+`fn_ecommerce_workspace_intelligence` → status ok, all **10/10** new Kalodata products present
+(titles, USD prices, `source_store kalodata`); `fn_ecommerce_lifecycle_summary('US')` → 37
+products (tenant+country isolated; DE summary unaffected); `fn_ecommerce_product_intelligence`
+(Shark PowerPro) → kalodata-attributed identity, COMMERCE_MOMENTUM QUALIFYING with genuine
+units/revenue (7,487 / $1,721,935), other evidence families honestly UNKNOWN/UNAVAILABLE;
+`fn_product_card_display_image` + `fn_resolve_product_gallery` → genuine TikTok CDN image,
+`rights_state PROVIDER_DISCOVERY_REFERENCE`, `is_authoritative false`, native source_item_id.
+Cross-tenant probe → `no_member` (no exposure).
+
+**Deterministic suites:** discovery render 13/13, media integrity 7/7, product image 10/10,
+media auth 5/5, product gallery 14/15 — the one failure (`no_ai_or_web_sources`) is
+**pre-existing**: 10 `DATAFORSEO_MERCHANT` images from the founder's 2026-11-19 merchant lane are
+absent from the selftest's provider allowlist (stale test allowlist; founder decision).
+
+**Live UI check (www.strateloq.com):** site serves; `/workspace` redirects unauthenticated
+visitors to `/auth?next=%2Fworkspace` (sign-in + founding-member application); zero tenant data
+leaked pre-auth. **Limitation:** a full founding-member sign-in walkthrough could not be performed
+from the agent session (no member credentials exist there; the zz test-token minter is disabled by
+design) — API-level verification above is the authoritative evidence.
+
+**Safety/cost:** no further Kalodata requests (runs total unchanged at 15; balance 14.0);
+0 DataForSEO spend by this session (today's 18 consumptions were the founder's own 00:00–00:20 UTC
+pilot); 0 FastMoss; 0 Lovable credits (read-only inspection); 0 publications
+(`commerce_product_pages` untouched); no active provider budgets; suppression restored;
+no credentials exposed.
+
+**Milestone recorded:** launch tracker 'Build Evidence & Handoff' row 214 (BE214).
+
+**Next build milestone:** research-driven evidence upgrade for the 10 US WATCH candidates
+(budget-gated Kalodata product/detail + product/images lanes and/or CJ exact-SKU supplier
+economics) — separate founder authorisation required for any paid call.
