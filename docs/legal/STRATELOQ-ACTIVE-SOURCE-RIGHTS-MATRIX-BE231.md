@@ -138,3 +138,48 @@ quoted text supports that exact permission, re-check for referenced separate ter
 impose additional restrictions, restrict any current display use the correspondence does
 not support, trim answered questions from the Kalodata draft email, and update GPD.01/02
 with precisely the justified changes.
+
+---
+
+## BE233 (2026-11-20): Kalodata permissions RESOLVED — corrected matrix
+
+**Source document:** Andrew Lin <andrew.lin@kalodata.com>, **2026-11-11**,
+"Re: Commercial API Licensing and Product Image Usage — Strateloq Technologies".
+Recovered by the founder via their connected Gmail; Gmail message link:
+https://mail.google.com/mail/u/?authuser=actioncorllen%40gmail.com#all/1a1c976c3cfc53e3
+Provenance in-session: founder-supplied transcription (the Gmail connector remains
+unauthenticated here, so the message was not independently re-read; same evidentiary
+class as the register's existing founder-supplied eBay entry). BE231/BE232's conclusion
+is corrected: the Kalodata correspondence on file was incomplete — **the gap was a
+missing register entry, not a missing contractual right.**
+
+### Corrected Kalodata matrix
+
+| Permission | Status | Basis (2026-11-11 email) |
+|---|---|---|
+| Derived/analysed intelligence → paying SaaS customers (multi-country/account) | **P** | Point 1; also point 6 (no separate commercial licence for described use) |
+| Raw-data resale | **X (documented prohibition)** | Point 2 |
+| Product Rank main images in authenticated SaaS research | **P — conditions: authenticated display + Kalodata attribution** | Point 3 |
+| Caching / proxying / hosting of customer-facing research images | **P** | Point 4 (current practice hotlinks DIRECT_URL — within scope; Product Images API links expire after 5 min, point 5, so caching permission is operationally relevant) |
+| Attribution | **Required condition** | Point 3; rendered today in evidence meta / source labels — must be maintained |
+| Creative / storefront / advertising reuse of media | **X** | Not covered by points 1–6; founder instruction; PAL + commercial_cleared=false + founder gates unchanged |
+| Pricing | — | Per-call; need_image adds no separate credits (point 7) |
+
+### Reconciliation of current customer display
+The live workspace use — labelled derived analytics + Product Rank reference images shown
+to the authenticated founding member with source attribution, hotlinked, never
+commercially reused — is **within the documented scope**. The BE231-flagged Kalodata
+register-vs-practice inconsistency is resolved as a register omission. Register updated
+(four clearances TRUE with scopes; raw resale recorded as documented prohibition;
+creative/commercial reuse remains FALSE).
+
+### Residual caveats (why "complete legal clearance" is still not claimed)
+Kalodata's standard terms-of-service text is still not on file, and upstream TikTok-Shop
+data conditions are not addressed in the email. These are recorded caveats, not blockers
+to the described research-display use the provider confirmed in writing.
+
+### Draft-email changes
+The **Kalodata draft is withdrawn** — every question it asked (derived display, reference
+images, attribution, caching, commercial exclusion) is conclusively answered by the
+2026-11-11 email; no repeat enquiry is needed. The **DataForSEO** and **CJ** drafts stand
+unchanged and unresolved.

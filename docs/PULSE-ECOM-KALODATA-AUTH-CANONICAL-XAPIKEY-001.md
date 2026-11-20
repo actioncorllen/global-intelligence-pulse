@@ -789,3 +789,29 @@ a documented founder risk-acceptance written into the register.
 **Actions:** four active-source rights_evidence entries updated with this reconciliation
 (no clearance flag changed); three permission-request emails drafted for founder review —
 not sent. GPD.01 row updated; no GOLD ticks. Spend 0. Tracker: BE231.
+
+## ADDENDUM 19 — 2026-11-20: KALODATA PERMISSIONS RESOLVED (BE233)
+
+**The recovered provider email** (Andrew Lin <andrew.lin@kalodata.com>, 2026-11-11,
+"Re: Commercial API Licensing and Product Image Usage — Strateloq Technologies";
+founder-supplied via their connected Gmail, message link recorded in the rights matrix
+doc; not independently re-read in-session — Gmail connector pending re-auth) corrects
+BE231/232: the system record was incomplete, and the Kalodata gap was a **missing
+register entry, not a missing contractual right.**
+
+**Register reconciliation (scoped):** derived/analysed intelligence display to paying
+SaaS customers cleared; Product Rank main-image display cleared for authenticated
+research WITH attribution (rendered today in the evidence meta/source labels — a
+condition to maintain); caching/proxy/hosting cleared (current practice hotlinks;
+Product Images API links expire after 5 minutes); raw-data resale recorded as a
+**documented prohibition**; creative/storefront/advertising reuse not covered and stays
+blocked (PAL, founder gates, commercial_cleared=false). Residual caveats recorded:
+standard ToS text not on file; upstream TikTok-Shop conditions unaddressed — caveats,
+not blockers to the confirmed research-display use. The live customer display is within
+the documented scope; nothing had to be restricted.
+
+**Consequences:** Kalodata draft email withdrawn (fully answered — no repeat enquiry);
+DataForSEO and CJ remain separately unresolved (drafts stand; Merchant release gate
+FALSE). **GPD.02 ACCEPTED** (its sole remaining dependency now documented for 100% of the
+current customer image surface); GPD.01 open on DataForSEO + CJ only. 11 of 22 GPD gates
+accepted. Spend 0. Tracker: BE233.
