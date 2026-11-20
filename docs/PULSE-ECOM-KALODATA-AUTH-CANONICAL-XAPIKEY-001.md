@@ -815,3 +815,55 @@ DataForSEO and CJ remain separately unresolved (drafts stand; Merchant release g
 FALSE). **GPD.02 ACCEPTED** (its sole remaining dependency now documented for 100% of the
 current customer image surface); GPD.01 open on DataForSEO + CJ only. 11 of 22 GPD gates
 accepted. Spend 0. Tracker: BE233.
+
+## Addendum 20 — 2026-11-20 — BE237: Lovable credit recovery executed (4 builds, 1 deployment, gates closed)
+
+**Reconciliation first (STEP 1, no credits).** Live production equalled Lovable main
+HEAD `779ae40`, so nothing on main was "built not deployed". Classification:
+LIVE+ACCEPTED — Refresh Discovery, `/billing/return`, monitoring panel, compare route,
+invitation issuance UI; BUILT-NOT-DEPLOYED — the Phase 08 subscription draft
+(`thr_hngx5qbpo2ie` @ `9831ee3`, incl. `29eb929`'s server-owned `checkout_open` gate)
+and the W0.05 catalogue package (the BE157/158 patch files were lost with the 17-Nov
+session scratchpad; the deployed RPC contracts remained authoritative);
+PARTIALLY WIRED — notification bell (UI + read RPCs live, `fn_emit_notification` had
+zero callers, `pulse_notifications` empty forever); NOT BUILT — application review UI,
+member feedback UI, Problem-to-Product UI.
+
+**Shipped (Lovable commits, one deployment `f01f2435-51fe-4e7d-8723-34fd0b1ac9c1`,
+28.3 credits, 1,061 tests / 114 files, typecheck+lint+build clean, live bundle
+`index-CoFwwWhL.js` crawl-verified 19/19 including preserved surfaces):**
+1. `e9b3503` Shared catalogue (W0.05 rebuilt from contracts): browse/adopt via
+   `fn_catalogue_browse(_markets)`/`fn_catalogue_adopt`; score suppressed below MEDIUM
+   confidence; image only `AUTHORIZED` + https; honest 0-published empty state;
+   `not_entitled` panel; no publish/admin controls.
+2. `767fa0b` Founder Applications review panel on `/workspace/invitations` + member
+   Share-feedback dialog; non-founders get a restricted panel, never applicant data.
+3. `56bacb6` Phase 08 subscription UI merged draft→main FAIL-CLOSED: Select enabled
+   only by server `checkout_open === true`; today the server returns no open plan, so
+   every button renders disabled; `billing-checkout` independently re-refuses
+   (env gate + plan inactive + live-price + per-user intent RPC). Nothing charges.
+4. `c5e9450` Premium Problem-to-Product (`/workspace/problems`): observed vs inferred
+   separation, Hypothesis chips, fit matrix with visible UNKNOWN, "What's missing"
+   list, candidates captioned research-stage — never verified supplier matches.
+
+**Backend (migrations, record files mig_306–mig_308):** genuine notification emitters
+(`fn_monitor_apply` per-run owner alert with SCORING/dedupe gates untouched;
+`accept_invitation` → founder MEMBER_ACTIVATED; `submit_feedback` 'workspace' subject,
+trim-guarded, founder FEEDBACK_RECEIVED) — drill T1–T7 green, zero residue;
+founder-gated application review RPCs using the table's original status vocabulary;
+server-side `not_entitled` gate on the four 05A read RPCs (founder/service pass;
+tenant isolation re-verified first). Regression: founding access control 12/12,
+05A foundation + discovery suites green.
+
+**Known pre-existing, flagged not fixed:** `fn_research_orchestrator_selftest`
+(contract `pulse_research_selftest_v3_013n`) is pinned to the retired
+tiktok/meta/ebay dispatch era and fails 5/8 of its cases; it chains into
+`fn_problem_solution_selftest` case `N_product_first_pipeline_regression` (17/18).
+Retarget decision pending — same genre as the mig_299 explorer/lanes retarget.
+
+**Preserved and re-verified after deployment:** `customer_source_release` 5 rows all
+`released=false`; `catalogue_source_rights` cleared only for KALODATA research-display
+dims; `platform_catalogue` 0 published; the sole live "FastMoss" string is the honest
+historical provenance caption; 11 accepted GOLD gates untouched; no public signup; no
+charge, price activation or checkout opening. Tracker: BE237 (Build Evidence row 237,
+POLISHED 03.09/04.02/04.08, PINNED P0.10/W0.05, START HERE NOW-5).
