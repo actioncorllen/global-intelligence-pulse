@@ -1,0 +1,23 @@
+-- mig_295 (2026-11-20): FASTMOSS RETIRED FROM CUSTOMER WORKSPACE (founder directive).
+-- Production migrations applied via MCP (bodies in supabase_migrations.schema_migrations):
+--   fastmoss_retirement_quarantine            — 47 FastMoss-only products (GB 28 / DE 19) into
+--                                               commerce_discovery_hidden (reason
+--                                               FASTMOSS_PROVIDER_RETIRED, source/first-observed
+--                                               snapshots); 38 FASTMOSS images availability=
+--                                               UNAVAILABLE; FASTMOSS disabled in all 20 market
+--                                               configs. Fully reversible; nothing deleted.
+--   fastmoss_retirement_reader_consistency    — workspace intelligence (decisions list, evidence
+--                                               summary, products_tracked), lifecycle summary and
+--                                               the product-detail wrapper now honour the hidden
+--                                               quarantine; fn_product_discovery_lanes returns an
+--                                               honest empty payload (provider_retired=FASTMOSS).
+--   fastmoss_retirement_image_reader_availability — fn_product_card_display_image fallback and
+--                                               fn_product_image_signed_ref now honour the
+--                                               availability flag (pre-existing gap).
+--   fastmoss_retirement_selftest_retarget     — render + budget-gate selftests' provider-agnostic
+--                                               fixtures retargeted from the retired FastMoss
+--                                               ingest path to the active Kalodata path.
+-- Verified: 0 FastMoss-only products/images/metrics visible to customers; dispatch refused in all
+-- markets; Kalodata (33 products / 10 live images), DataForSEO (169), CJ (1,317 rows, 9
+-- resolutions) and all non-FastMoss decisions preserved; regression suites green.
+-- Frontend: Lovable commit 887d50b deployed; live bundle contains zero 'FastMoss' strings.

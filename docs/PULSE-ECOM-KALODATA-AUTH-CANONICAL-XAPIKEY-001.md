@@ -445,3 +445,37 @@ unbranded-niche page(s) (0.1 credit each, incl. MY/PH/SG option); (2) approved p
 DataForSEO second-family wave; (3) free CJ freshness re-probe at confirmation time;
 (4) the unchanged pipeline then carries to economics and decision; GOLD gates remain the
 final acceptances.
+
+---
+
+## ADDENDUM 9 — 2026-11-20: FASTMOSS RETIRED FROM CUSTOMER WORKSPACE (BE222)
+
+**Retired (reversibly, nothing deleted):** 47 FastMoss-only products (GB 28 / DE 19, one tenant,
+batches Oct-12/Oct-19) quarantined via the existing `commerce_discovery_hidden` mechanism with
+full source/first-observed snapshots; 38 FastMoss images suppressed (availability=UNAVAILABLE);
+FASTMOSS dispatch disabled in all 20 market configs (request builder refuses; budget gate was
+already fail-closed). The "110 locally acquired trial products" were never ingested into
+production — nothing to retire. The one product with auxiliary independent signals (GB Snowman
+Door Hanger) was quarantined with all evidence preserved intact; 0/47 had independent product
+authorisation, Kalodata IDs or bound suppliers.
+
+**Reader consistency:** workspace intelligence, lifecycle summary, product-detail wrapper and the
+lanes RPC now all honour the quarantine (this also stopped 21 pre-existing Oct-21
+legacy-concept hides from leaking into the workspace list). Two pre-existing image-reader gaps
+found and fixed (card fallback + signed-ref ignored availability). Two selftests retargeted from
+the retired FastMoss ingest path to Kalodata; all suites green again (gallery 14/15 = known
+pre-existing allowlist item).
+
+**Verified in production:** 0 fastmoss decisions visible (sources kalodata 33 +
+dataforseo_merchant 25; products_tracked 193); explorer GB=0 DE=0 US=10, markets list US-only;
+hidden detail → not_found; lanes → provider_retired; `fn_fastmoss_discovery_request` refused;
+Kalodata/DataForSEO/CJ counts unchanged (33/169/1,317 + 9 resolutions, 2,841 signals); isolation
+untouched.
+
+**Frontend:** Lovable commit 887d50b (1.2 credits) — header wording, empty-state hints removed,
+captions/tooltips neutralised, audit labels kept, 724/724 tests — **deployed**: www.strateloq.com
+now serves bundle `index-pv5O6SfZ.js` with zero "FastMoss" strings (old bundle had the retired
+wording). Product/storefront publishing remains OFF.
+
+**Open item for founder/legal:** whether FastMoss provider terms require deletion of retained
+(unpublished, audit-only) FastMoss data on termination. Tracker: BE222.
