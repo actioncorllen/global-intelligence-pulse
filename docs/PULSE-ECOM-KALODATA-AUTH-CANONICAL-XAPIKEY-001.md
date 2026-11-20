@@ -614,3 +614,34 @@ verification: on a phone, signed in, Product Discovery → cards → product dra
 Compare countries → return → Saved → Monitoring panel. On that founder confirmation it
 ticks TRUE. GPD.21's remainders stay as identified (alerts sighting + paid multi-market
 evidence — founder decisions; no unpaid engineering path). Spend: 0. Tracker: BE225.
+
+## ADDENDUM 13 — 2026-11-20: GPD.21 FINAL GOLD CLOSEOUT (BE226) — ACCEPTED
+
+**The product (found in existing data, zero paid calls).** Govee Star Light Projector
+`d985e5af-658b-4fdc-abe6-d43797e84f03`, authoritative native identity
+google_product_id 18034214886779403846 (dataforseo_merchant, GENERIC_OK), not hidden,
+single product row — never title-matched. Independent country-local observations:
+GB marketplace observation 2026-11-19 17:26 UTC (+ GB category-demand context: 'star
+projector', GBP median 25.49, provenance INFERRED_CATEGORY) vs US marketplace observation
+2026-11-20 00:03 UTC. Independent evaluations: GB 19 Nov WATCH/GBP/diagnostic-76 and
+US 20 Nov WATCH/USD/diagnostic-56, both confidence NONE.
+
+**Member-facing verification** through the live RPC the deployed UI calls: two EVALUATED
+views (GB GBP / US USD, decisions WATCH, scores suppressed under the verified-score
+guard), every other supported country ANALYSIS_REQUIRED with no decision, global best GB,
+no TEST, no borrowing, no fabrication. Honest depth note recorded: one marketplace
+observation per market; confidence NONE is the truthful reading — deep evidence is
+GPD.22's benchmark, not this gate's.
+
+**Verdict-change detector** characterized with pure IMMUTABLE comparator calls on the
+genuine 19-Nov cold-brew history (76→52.6 + real demand/seller arrivals): δ10 fires
+SCORE+DEMAND+COMPETITION; δ30 threshold drops SCORE; identical snapshots → zero (no false
+alarms); decision/qualification flips classify as confidence-gated scoring dims. Combined
+with BE224's live alert/dedupe/ACL proof and the founder's sighting of the two genuine GB
+alerts: "real verdict changes only" fully evidenced. No defect found → no code change.
+
+**Tracker.** LIVE MASTER — GOLD (the only visible tab; nothing unhidden): GPD.21 → TRUE /
+ACCEPTED. Accepted gates now: GPD.04, GPD.05, GPD.18, GPD.20, GPD.21 (5 of 22). Spend 0.
+Next unit ready: GPD.19 (server-side denial already proven; remaining = signed-in
+continuity evidence + subscriber-denial sighting), with GPD.12/13 as same-visit checks.
+Tracker: BE226.
