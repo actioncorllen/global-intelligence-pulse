@@ -1,0 +1,27 @@
+-- mig_308 — 2026-11-20 — Lovable credit recovery STEP 6 precondition: premium gate on
+-- the Problem-to-Product read surface. Applied to project nxaunmyihhjixxxljcqt as
+-- migration `problem_to_product_premium_read_gate_v1` (authoritative body in
+-- supabase_migrations.schema_migrations). Record file only.
+--
+-- Finding: fn_problem_clusters_read / fn_problem_evidence_card / fn_problem_fit_read /
+-- fn_problem_solution_read were authenticated-wide with NO entitlement requirement,
+-- while 05A is a premium feature ("Do not deliver premium research results to accounts
+-- whose entitlement contract is not active server side"). Tenant isolation verified
+-- intact first (clusters_read WHERE tenant_id=auth.uid(); detail reads tenant-check).
+--
+-- Fix (anchored splice after the standard unauthenticated check in all 4, assertion-
+-- guarded, aborts if any anchor count <> 1 or a function already gated):
+--   not (fn_is_founder() OR active account_entitlement) -> {'status':'not_entitled'}.
+-- fn_is_founder() keeps founder + no-uid service/selftest contexts passing.
+--
+-- Verified: founder ok; entitled non-founder member ok (tenant-scoped rows);
+-- unentitled member -> not_entitled on all four; foundation + discovery selftests
+-- all_pass in service context after the gate.
+--
+-- KNOWN PRE-EXISTING (diagnosed during this drill, NOT caused or changed here):
+-- fn_research_orchestrator_selftest (contract pulse_research_selftest_v3_013n) fails
+-- 5 of its 8 cases because it is pinned to the retired multi-source dispatch era
+-- (tiktok/meta/ebay dispatchable, 6-attempt fan-out, cache freshness) — same genre as
+-- the explorer/lanes retargeting done in mig_299. fn_problem_solution_selftest chains
+-- it as case N_product_first_pipeline_regression, so that suite reads 17/18 with only
+-- case N false. Flagged for a future retarget decision; no customer-facing impact.
