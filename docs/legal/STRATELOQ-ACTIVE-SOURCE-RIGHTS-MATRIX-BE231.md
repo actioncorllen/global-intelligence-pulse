@@ -265,8 +265,10 @@ the in-dashboard contact/ticket channel is an equally valid route — founder's 
 > 2. Does DataForSEO require any particular **attribution**, or impose any **retention or
 >    caching restrictions**, for this display use?
 >
-> 3. Are there additional **Google Shopping, Merchant or search-engine-specific
->    restrictions** you advise apply to that proposed display (in view of §7.2)?
+> 3. Could you clarify how your licence applies to this use, and share any **known
+>    upstream Google Shopping / Merchant or search-engine conditions** you advise
+>    customers about (in view of §7.2)? We recognise that Google's own rights are not
+>    DataForSEO's to grant and that upstream compliance remains our responsibility.
 >
 > We do not display or store Shopping images, and raw API data is never resold.
 > Thank you — a short written confirmation of each point, or the applicable licence
@@ -313,3 +315,30 @@ verification), so this enquiry asks for the applicable terms as well.
 - **CJ:** the five questions above (+ obtaining the terms text itself).
 - **Kalodata:** none (2026-11-11 email controls; standard-ToS caveat recorded as
   unresolvable by static fetch — client-rendered page).
+
+
+---
+
+## BE236 (2026-11-20): finals verified against the approved scope — awaiting explicit send authorisation
+
+**Verification result:** both final drafts contain ONLY the approved research-only
+permission questions. Neither asks for advertising, storefront publishing, raw-data
+resale or creative-media reuse anywhere (DataForSEO Q1 expressly disclaims raw-dataset
+resale; CJ Q5 expressly states those uses are not sought and are blocked platform-side).
+One refinement applied per the founder's item 3: DataForSEO Q3 now explicitly recognises
+that Google's own rights are not DataForSEO's to grant and that upstream compliance
+remains Strateloq's responsibility. CJ draft unchanged (already requests the applicable
+terms document alongside the five research/sourcing permissions).
+
+**Send authorisation status:** approved in substance; explicit SEND authorisation not yet
+granted — the exact outgoing texts above (Draft 1 as refined, Draft 2 unchanged) are
+presented to the founder for that final go. Send channels: the founder's own mail client,
+or this session's Gmail connector once re-authorised (currently expired).
+
+**Dispatch recording procedure (runs when each email is actually sent):** record in
+`catalogue_source_rights.rights_evidence` and the live tracker — sent timestamp (UTC),
+sender account, recipient address/channel, subject line, Gmail message id/link (or
+ticket id), and a response-status field (AWAITING_REPLY → acknowledged → substantive
+reply quoted verbatim with date), following the FastMoss-enquiry recording precedent.
+Release rows and clearance flags change only on substantive written replies (or the
+founder's documented judgments), never on dispatch.
