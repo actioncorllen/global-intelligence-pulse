@@ -406,3 +406,42 @@ opportunity: (1) more generic product-native candidates (e.g. one authorised Kal
 0.1 credit, unbranded-niche biased, and/or MY/PH/SG), (2) the approved paid DataForSEO
 second-family wave, then (3) the existing pipeline auto-carries to economics and decision.
 Tracker: BE220.
+
+---
+
+## ADDENDUM 8 — 2026-11-20: PHASE 6 — SUPPLIER-FIRST DISCOVERY ROUTE (BE221)
+
+Pure existing-data evaluation: zero provider calls, zero writes, zero code changes.
+
+**CJ cache profile (1,317 rows):** 100% native pid + SKU + shipping codes + image; 1,061 with
+cost; 199 categories; only 6 deep-enriched; **0 rows within the 14-day freshness contract**
+(newest 2026-10-29). Representative generic set: leather patch $0.95, USB projection lamp
+$5.73, pet water dispenser, jewelry box, 3-channel dash cam $28.21, ski balaclava $1.83
+(35 variants, media SUPPLIER_PROVIDED_REFERENCE_ONLY).
+
+**Sourceability (verified-but-stale, nothing fabricated):** dash cam — US warehouse IN_STOCK
+34 units (2026-09-11), USPS domestic freight $0, full prior US unit economics; balaclava —
+GB freight 22 options, GB landed $5.34, sampled variant OUT_OF_STOCK.
+
+**Cross-provider (identity resolution only):** exact matches remain 1/9 all-time (GB
+nightlight → CJYD3093228, AMBIGUOUS, unchanged); the GB ski-mask market product was honestly
+NOT bound to the enriched balaclava. Market coverage of the 6: nightlight concept 5 markets /
+394 signals / WATCH ×5; ski mask 1 family; the other four UNKNOWN (no evidence transferred).
+
+**Route comparison:** market-first = strong demand, weak exact supplier matchability;
+supplier-first = perfect exact identity + free economics reach, weak market evidence + stale
+freshness. Neither alone qualifies anything; the intersection is the requirement. Closest
+overall: nightlight (4 qualifying GB families) — still correctly disqualified (high
+saturation + ambiguous identity). **Unique bridge case:** dash cam 66b60d77 — concrete
+platform_id identity + exact CJ SKU + prior US economics, but 0 evidence families, no
+registry entry (pre-dates the pipeline; re-entry is a founder decision).
+
+**No landed-cost calculation is justified today** (stale evidence, no CONFIRMED match;
+customer economics correctly return no_candidate). No defect found → no change made; the
+inactive CJ enrichment workflow deliberately not run. Spend 0 everywhere. Tracker: BE221.
+
+**Outstanding for the first fully qualified opportunity:** (1) authorised Kalodata
+unbranded-niche page(s) (0.1 credit each, incl. MY/PH/SG option); (2) approved paid
+DataForSEO second-family wave; (3) free CJ freshness re-probe at confirmation time;
+(4) the unchanged pipeline then carries to economics and decision; GOLD gates remain the
+final acceptances.
