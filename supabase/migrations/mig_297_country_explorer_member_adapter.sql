@@ -1,0 +1,32 @@
+-- mig_297 — 2026-11-20 — Phase 7 Build 2 (GPD.21): member-callable country-comparison RPC.
+-- Applied to project nxaunmyihhjixxxljcqt as migrations `country_explorer_member_adapter_v1`
+-- + `country_explorer_member_adapter_v1_tenant_key_fix` (authoritative bodies in
+-- supabase_migrations.schema_migrations). Record file only.
+--
+-- Root cause: the released frontend (src/lib/market-explorer/{api,contract}.ts +
+-- ProductCountryExplorerView) calls supabase.rpc('fn_product_country_explorer',
+-- {p_product_id}) and decodes a countries[]+views[] payload, but only the service-side
+-- 3-arg core (p_tenant, p_product_id, p_selling_markets; no authenticated grant;
+-- markets[] shape) existed — so the member country-comparison path always failed closed.
+--
+-- Fix: new 1-arg SECURITY DEFINER overload public.fn_product_country_explorer(p_product_id)
+-- (EXECUTE granted to authenticated only) that:
+--   * derives the tenant as auth.uid() — the commerce tenant key used by
+--     commerce_products.user_id / product_market_evaluations.tenant_id / saved_products
+--     (NOT fn__own_tenant(), which returns the membership application_ref — the v1
+--     mistake fixed by the follow-up migration);
+--   * enforces ownership and the commerce_discovery_hidden quarantine (-> not_found);
+--   * delegates to the untouched 3-arg core (per-country independence preserved);
+--   * reshapes to the released decoder contract: status / product{title,image via
+--     fn_product_card_display_image + "research reference only" provenance} /
+--     countries[] / views[] (evaluated countries only) / global_best_country_code /
+--     best_within_user_markets_country_code / is_fixture:false;
+--   * applies the DF.03B verified-score guard (opportunity_score only at MEDIUM/HIGH
+--     confidence), honest why_this_market text at lower confidence, evidence-coverage
+--     metric group with null ("Not available") for absent dimensions, risks passthrough,
+--     primary_platform 'ANALYSIS_REQUIRED' placeholder mapped to null.
+--
+-- Verified (emulated member): Shark 50e1b04e… → ok, 35 countries, 1 evaluated US view
+-- (WATCH / confidence NONE / score suppressed / honest why), DE = ANALYSIS_REQUIRED with
+-- no decision (decoder UNKNOWN — no cross-country borrowing); hidden product → not_found;
+-- other-tenant product → not_found; no auth → unauthenticated.

@@ -1,0 +1,23 @@
+-- mig_298 — 2026-11-20 — Phase 7 Build 3 (GPD.05): honest revenue basis for Kalodata items.
+-- Applied to project nxaunmyihhjixxxljcqt as migration
+-- `explorer_metrics_basis_kalodata_estimate_window` (anchored DO-block replace on
+-- fn_product_explorer; authoritative body in supabase_migrations.schema_migrations).
+--
+-- Defect: fn_product_explorer emitted metrics_basis with
+--   revenue_estimated = (source_label='FASTMOSS')  and  reporting_window =
+--   'UNSPECIFIED_BY_SOURCE' (hardcoded), written when FastMoss was the only analytics
+-- provider. Result: the live Kalodata US cohort displayed provider-analytics revenue
+-- WITHOUT the estimate label.
+--
+-- Fix (anchored, assertion-guarded):
+--   revenue_estimated = (source_label IN ('FASTMOSS','KALODATA'))
+--   reporting_window  = CASE WHEN source_label='KALODATA' THEN 'LAST_7_DAYS'
+--                            ELSE 'UNSPECIFIED_BY_SOURCE' END
+-- The 7-day window is genuine stored evidence: every Kalodata rank request is built by
+-- fn_kalodata_discovery_request with date_range='last7Day'
+-- (contract pulse_kalodata_request_v3_need_image); growth basis is revenue_7d_pct.
+--
+-- Verified: all 10 US explorer items now emit {revenue_estimated:true,
+-- provenance:'PROVIDER_REPORTED', reporting_window:'LAST_7_DAYS'}; locked by the new
+-- KALODATA_METRICS_BASIS_HONEST check in fn_product_explorer_selftest (mig_299).
+-- Frontend caption fixed in Lovable commit 3dfb6b1 ("estimated (provider-reported)").

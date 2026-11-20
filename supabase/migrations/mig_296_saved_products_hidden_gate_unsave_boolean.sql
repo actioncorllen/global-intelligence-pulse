@@ -1,0 +1,26 @@
+-- mig_296 — 2026-11-20 — Phase 7 Build 1 (roadmap 04.07 / GPD.18): Save/Monitor corrections.
+-- Applied to project nxaunmyihhjixxxljcqt as migration
+-- `saved_products_hidden_gate_and_unsave_boolean` (authoritative body in
+-- supabase_migrations.schema_migrations). Record file only; do not re-run blindly.
+--
+-- Live tenant-context verification (founding member 7c8ddf9d…) of the full workflow
+-- Save → Saved → Reopen → Find → Unsave found two genuine defects:
+--
+-- 1) HIDDEN-PRODUCT LEAK-BACK (BE222): save_own_product checked ownership only, and
+--    get_own_saved_products did not filter commerce_discovery_hidden, so a quarantined
+--    FASTMOSS_PROVIDER_RETIRED product could be saved and resurfaced with its title in
+--    the member's Saved list (demonstrated live with product a7db3c0f…, then rolled back).
+--    Fix: save_own_product returns status 'forbidden' for hidden products;
+--    get_own_saved_products excludes hidden rows (contract bumped to
+--    pulse_saved_products_v2). Unsave intentionally still works on hidden rows.
+--
+-- 2) UNSAVE CONTRACT MISMATCH: unsave_own_product returned "removed" as an integer
+--    ROW_COUNT, while the deployed frontend decoder (decodeUnsaveResult in
+--    src/lib/business-discovery/saved-products-api.ts) requires a boolean and
+--    classified every successful unsave as an error. Fix: 'removed', v_n > 0.
+--
+-- Verified after patch (same emulated tenant): duplicate save created=false with same
+-- saved_id; DE list empty for a US save (country context); cross-tenant save forbidden;
+-- hidden save forbidden; unsave removed=true then false; list empty; monitoring run
+-- checked=1 reliable=0 events=0 (truthful — no invented market update); all test rows
+-- rolled back (saved_products / monitor state / events all back to 0 rows).

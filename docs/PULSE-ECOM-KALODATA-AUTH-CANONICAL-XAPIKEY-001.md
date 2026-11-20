@@ -479,3 +479,65 @@ wording). Product/storefront publishing remains OFF.
 
 **Open item for founder/legal:** whether FastMoss provider terms require deletion of retained
 (unpublished, audit-only) FastMoss data on termination. Tracker: BE222.
+
+## ADDENDUM 10 — 2026-11-20: PHASE 7 — CUSTOMER WORKSPACE COMPLETION (BE223)
+
+**Scope.** Save/Monitor (04.07/GPD.18), country comparison (GPD.21), research-display honesty
+(GPD.03/05–11), responsiveness/a11y (03.10), regression preserving BE222. Verification basis:
+tenant-context RPC execution + live production-bundle greps — not a signed-in member browser
+session (that acceptance remains with the founder). Spend: 0 providers; 10.6 Lovable credits.
+
+**Build 1 — Save/Monitor (mig_296).** Full authenticated cycle verified live (emulated member,
+Shark 50e1b04e…, US): save `created=true` → duplicate `created=false` (same saved_id) → Saved
+list row+title → DE list empty (country context) → Find via `fn_product_explorer` (10 US items)
+→ unsave `removed=true` → repeat `false` → empty list; cross-tenant save `forbidden`. Two live
+defects fixed: (1) quarantined FastMoss-retired products could be saved and resurfaced in the
+Saved list (BE222 leak-back) — hidden products now `forbidden` on save and excluded from the
+list (`pulse_saved_products_v2`); (2) `unsave_own_product` returned integer `removed`, which the
+deployed decoder rejects — now boolean. Monitoring proven truthful: snapshots read only stored
+evidence (no dispatch), run on the saved Shark → checked=1 / reliable=0 / events=0; events only
+against a prior reliable baseline, deduped. All test rows rolled back (0 rows remain).
+
+**Build 2 — Country comparison (mig_297 + Lovable e9d5104/fff458d, 8.6 cr).** Root cause: the
+released decoder/view call `rpc fn_product_country_explorer(p_product_id)`, but only the
+service-side 3-arg core existed (no grant, different payload) and the view was mounted only at
+the fixture-labelled `/dev/market-explorer` — member comparison always failed closed. New
+authenticated 1-arg adapter: tenant = `auth.uid()` (the commerce tenant key; `fn__own_tenant()`
+returns the membership application_ref — v1 bug found and fixed), ownership + hidden gates →
+`not_found`, delegates to the untouched per-country core, emits the released decoder contract
+with the DF.03B verified-score guard (score only at MEDIUM/HIGH confidence) and honest
+why-this-market text. Member route `/workspace/product-markets/$productId` + one
+“Compare countries” explorer-drawer button deployed; no request-analysis action wired
+(`fn_market_candidacy_screen` is not member-callable; nothing may risk dispatch); inert
+store/ads handoff cards suppressed for members (`showNextSteps=false`). Verified: Shark → ok,
+35 countries, one evaluated US view (WATCH / confidence NONE / score suppressed), DE =
+ANALYSIS_REQUIRED with no decision (decoder UNKNOWN — zero cross-country transfer).
+
+**Build 3 — Research display (mig_298 + Lovable 3dfb6b1, 2 cr).** US cohort audit: freshness +
+first_observed truthful; growth VERIFIED on basis `revenue_7d_pct` showing genuine −66.02%;
+competitor/sellers/advertisers/saturation all UNKNOWN with claim-safety notes; WATCH +
+INSUFFICIENT explainable. Defect: `metrics_basis` hardcoded `revenue_estimated=(FASTMOSS)` and
+window `UNSPECIFIED_BY_SOURCE` → Kalodata analytics revenue displayed unlabelled. Fixed:
+estimated=true for FASTMOSS+KALODATA; `reporting_window='LAST_7_DAYS'` for KALODATA (genuine:
+every rank request is `date_range='last7Day'` by stored contract). Frontend caption now
+provenance-aware: “estimated (provider-reported)”.
+
+**Build 4 — a11y/responsive (03.10).** Playwright against live production (public pages; no
+member credentials exist here): home + /auth at 390px/1440px — no horizontal overflow, viewport
+meta, lang, single h1, alt’d images, labelled inputs, named buttons, visible focus on every tab
+stop, logical order; home has main/nav landmarks (/auth lacks landmarks — minor).
+Authenticated-workspace a11y evidence remains component-level (728/728 tests).
+
+**Build 5 — regression (mig_299).** Explorer + lanes selftests were pinned to the quarantined
+FastMoss GB cohort; retargeted to current intended behaviour: explorer v2 10/10 (incl. new locks
+`KALODATA_METRICS_BASIS_HONEST`, `FASTMOSS_RETIRED_ABSENT`) and lanes v2 4/4 (retired-provider
+empty contract). Also green: budget gate 10/10, render 13/13, stage2g, stage1 invariants 8/8,
+kalodata adapter 17/17; gallery stays at known 14/15 (pre-existing allowlist item, founder
+decision, no rights leak). State: 0 open provider budgets; FASTMOSS dispatch 0 / available
+images 0 / 47 hidden rows intact; the only “FastMoss” string in the live bundle is the retained
+video-match provenance audit label.
+
+**Deployed:** deployment 3e08062d live on www.strateloq.com (route tree carries the new member
+route; “Compare countries” and “estimated (provider-reported)” present in live chunks).
+**GOLD:** no gate ticked — GPD.18/21 engineering complete and live; acceptance needs the
+founder’s signed-in browser journey. Tracker: BE223.

@@ -1,0 +1,26 @@
+-- mig_299 — 2026-11-20 — Phase 7 Build 5: selftests retargeted to post-FastMoss reality.
+-- Applied to project nxaunmyihhjixxxljcqt as migration
+-- `retarget_explorer_and_lanes_selftests_post_fastmoss` (authoritative bodies in
+-- supabase_migrations.schema_migrations). Record file only.
+--
+-- fn_product_explorer_selftest and fn_product_discovery_lanes_selftest were pinned to
+-- the FastMoss-era GB/DE cohort that BE222 quarantined, so 4 + 2 checks failed for
+-- retirement reasons (GB total 0; lanes intentionally empty), not regressions.
+--
+-- fn_product_explorer_selftest v2 (contract pulse_product_explorer_selftest_v2_post_fastmoss),
+-- 10 checks, targets the live Kalodata US cohort: pagination (5+page2), facet/filter
+-- consistency (HIGH_GROWTH count == facet, all VERIFIED growth), search narrowing
+-- ('shark'), cover coverage, dedup, JP isolation, cross-tenant empty, plus two new locks:
+--   * KALODATA_METRICS_BASIS_HONEST — every KALODATA item carries revenue_estimated=true,
+--     reporting_window='LAST_7_DAYS', freshness.as_of (GPD.05 lock, mig_298);
+--   * FASTMOSS_RETIRED_ABSENT — no FASTMOSS-sourced item on US/GB/DE pages (BE222 lock).
+--
+-- fn_product_discovery_lanes_selftest v2 (contract
+-- pulse_product_discovery_lanes_selftest_v2_retired_provider), 4 checks: retired-provider
+-- empty contract (status ok, provider_retired='FASTMOSS', lanes/discovery_lanes empty,
+-- momentum/creators null, authority REFERENCE_ONLY), invariants present, JP isolation,
+-- cross-tenant denied.
+--
+-- Results after retarget: explorer 10/10, lanes 4/4. Unrelated suites re-run same day:
+-- budget gate 10/10, render 13/13, stage2g ok, stage1 invariants 8/8, kalodata adapter
+-- 17/17, gallery 14/15 (known pre-existing allowlist item — founder decision, unchanged).
