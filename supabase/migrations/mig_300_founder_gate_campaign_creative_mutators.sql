@@ -1,0 +1,30 @@
+-- mig_300 — 2026-11-20 — Phase 7 GOLD closeout (GPD.19/GPD.20 server-side restriction).
+-- Applied to project nxaunmyihhjixxxljcqt as migration `founder_gate_campaign_creative_mutators`
+-- (authoritative body in supabase_migrations.schema_migrations). Record file only.
+--
+-- Finding: all 12 store creation/edit/publish mutators already enforced fn_is_founder()
+-- (FORBIDDEN_FOUNDER_ONLY with a plan-appropriate message), but 9 campaign / creative /
+-- live-publish mutators granted to `authenticated` carried NO founder gate:
+--   approve_marketing_campaign_draft, fn_ad_studio_campaign_handoff, fn_cb_build_campaign,
+--   fn_creative_campaign_handoff, fn_creative_production_request (×2 overloads),
+--   fn_creative_studio_generate, fn_marketing_director_to_creative_request,
+--   fn_social_grant_live_publish.
+-- A future authenticated subscriber could have invoked campaign/creative actions that are
+-- founder-only by policy (GPD.19: prevent ALL subscriber store/ad create/edit/publish).
+--
+-- Fix: assertion-guarded DO block splices the identical fn_is_founder() gate immediately
+-- after each function's first BEGIN (aborts unless exactly 9 functions gated; aborts if
+-- any is already gated or lacks the anchor). fn_is_founder() = active founder_principals
+-- row for auth.uid(), or a non-anon no-uid (service/selftest) context — so the founder
+-- account (7c8ddf9d…, the only active principal) and all service paths are unchanged;
+-- only non-founder members are refused.
+--
+-- Verified: non-founder authenticated uid → FORBIDDEN_FOUNDER_ONLY on fn_create_free_store,
+-- fn_cb_build_campaign, approve_marketing_campaign_draft, fn_social_grant_live_publish,
+-- fn_creative_studio_generate; founder uid passes the gate (approve of a random uuid
+-- returns its normal not_found); creative-production / marketing-director / studio-routing
+-- suites all_pass after the change; explorer v2 10/10 + lanes v2 4/4 re-run green.
+-- Known amber: fn_ad_production_engine_selftest case J_regressions fails solely because it
+-- chains fn_ad_studio_lineage_selftest.N_gallery_unchanged = fn_product_gallery_selftest
+-- all_pass, i.e. the KNOWN pre-existing gallery 14/15 DATAFORSEO_MERCHANT allowlist item
+-- (founder decision, no media-rights leak) — independent of this gate.

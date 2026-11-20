@@ -541,3 +541,41 @@ video-match provenance audit label.
 route; “Compare countries” and “estimated (provider-reported)” present in live chunks).
 **GOLD:** no gate ticked — GPD.18/21 engineering complete and live; acceptance needs the
 founder’s signed-in browser journey. Tracker: BE223.
+
+## ADDENDUM 11 — 2026-11-20: PHASE 7 GOLD CLOSEOUT (BE224)
+
+**Founder acceptance recorded.** The founder's eight Phase 7 browser confirmations
+(Save; reload persistence; Saved list; Find exact; Unsave; Compare-countries opens from the
+drawer; honest single-market comparison with Analysis-required elsewhere; the
+"estimated (provider-reported)" + last-7-days label on US cards) are recorded as accepted
+human checks per the 2026-11-20 closeout directive — corroborated by four genuine founder
+browser saves in live production at 14:50 UTC (after the mig_296 contract fix).
+
+**GPD.18 monitoring acceptance (backend complete + UI shipped).** Genuine change alerts
+fired from the real 19-Nov evidence arrivals on the GB cold brew (DEMAND false→true,
+COMPETITION seller false→true; real evidence_as_of) after a documented baseline rewind to
+the genuine pre-19-Nov state; dedupe proven (identical recompute → 0); scoring alerts
+correctly suppressed at confidence NONE; stranger tenants see and check nothing; market
+filters hold. The missing monitoring/alerts panel was built (Lovable 779ae40, 3.9 credits;
+fail-closed api/hook; on-demand check scoped to the current market; truthful status line;
+"never fetches new market data" caption; honest empty state; 736/736 tests) and deployed —
+deployment 998af5d2 verified serving on www.strateloq.com.
+
+**GPD.20 server-side subscriber restriction completed (mig_300).** Nine previously ungated
+campaign/creative/live-publish mutators now enforce fn_is_founder(); empirically verified
+in both directions; service paths unchanged. The one amber selftest case
+(ad-engine J_regressions) is the known pre-existing gallery 14/15 allowlist item cascading
+through lineage anchors — independent of the gate.
+
+**GPD.05 ticked TRUE** — the first GOLD tick after GPD.04: licensed Kalodata figures carry
+country, exact product, last-7-days window, currency and the estimate label
+(founder-sighted live); unsupported evidence stays UNKNOWN in cards and APIs; sorting uses
+only genuine stored values; the product-package export hardcodes economics
+NOT_ESTABLISHED/null with published:false and a missing-information block; absence of
+evidence cannot produce TEST (invariant suites green same-day).
+
+**GOLD reconciliation.** GPD.18 FALSE — one remainder: founder sighting of the new
+monitoring panel (incl. the two genuine cold-brew alerts). GPD.20 FALSE — authenticated
+mobile/keyboard + rights-revoked-state sighting. GPD.21 FALSE — alerts sighting + first
+genuinely multi-market-evidenced product (paid acquisition decision). GPD.22 untouched.
+Spend: 0 providers; 3.9 Lovable credits (Phase 7 total 14.5). Tracker: BE224.
