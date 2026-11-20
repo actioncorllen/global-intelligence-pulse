@@ -645,3 +645,35 @@ ACCEPTED. Accepted gates now: GPD.04, GPD.05, GPD.18, GPD.20, GPD.21 (5 of 22). 
 Next unit ready: GPD.19 (server-side denial already proven; remaining = signed-in
 continuity evidence + subscriber-denial sighting), with GPD.12/13 as same-visit checks.
 Tracker: BE226.
+
+## ADDENDUM 14 — 2026-11-20: GPD.19 EXECUTION + GPD.12/GPD.13 ACCEPTED (BE227)
+
+**GPD.19 (kept FALSE, honestly).** The full member continuity chain
+(Discovery→country→product→evidence/verdict→Save→Saved→reopen→Compare→Monitoring) is
+engineering-verified (BE223–226) and founder-accepted in browser including mobile —
+reused, not re-requested. The supplier leg is truthfully unavailable: both member-facing
+supplier readers return {no_candidate, present:false} for displayed products (zero
+CONFIRMED exact-SKU matches exist all-time) and no match was invented. Subscriber
+restrictions: all 27 gated function objects re-verified intact; fresh emulated
+non-founder calls refused. Honest limit recorded: no second real member account exists
+(registration is founder-only), so live-session subscriber denial remains structural
+server-side proof. Remaining criteria named precisely on the board: first CONFIRMED
+exact-SKU supplier (paid CJ decision) or a founder ruling on the acceptance's
+"when verified" conditional, plus the real-subscriber denial sighting decision.
+
+**GPD.12 ACCEPTED.** Data-wide sweep: zero visible opportunity scores across every
+customer-visible explorer item (10/10, all band INSUFFICIENT, zero TEST); the Govee
+GB/US diagnostic scores surface only in the service-side comparison RPC flagged
+score_verified=false (no member grant) while the member RPC suppresses both; the founder
+sighted the live cards. Bonus independence evidence: genuine GB-local observed price
+£79 GBP PLATFORM_REPORTED vs US price source UNKNOWN.
+
+**GPD.13 ACCEPTED.** Every explorer sort is DESC NULLS LAST and every range filter
+requires IS NOT NULL — an unavailable metric can never rank as zero or top and never
+matches a numeric range; behavioural GROWTH sort returned the genuine values in strict
+descending order (950.18 → −87.32, all basis-VERIFIED, negatives shown); facet/filter
+consistency, search narrowing and HIGH_GROWTH purity remain selftest-locked; compare is
+the accepted comparison view.
+
+**Board:** LIVE MASTER — GOLD rows 13/14/20 updated only; 7 of 22 GPD gates now accepted
+(04, 05, 12, 13, 18, 20, 21). Spend 0; no code changes (no defect found). Tracker: BE227.
