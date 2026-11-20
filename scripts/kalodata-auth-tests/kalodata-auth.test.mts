@@ -62,6 +62,9 @@ check("T4e extractBalance data.balance", m.extractBalance({ success: true, data:
 check("T4f extractBalance data.credit", m.extractBalance({ data: { credit: 14.1 } }) === 14.1);
 check("T4g extractBalance numeric data", m.extractBalance({ data: 14.1 }) === 14.1);
 check("T4h extractBalance absent => null", m.extractBalance({ success: true, data: {} }) === null);
+check("T4i extractBalance generic fallback credit_balance", m.extractBalance({ success: true, data: { credit_balance: 14.1 } }) === 14.1);
+check("T4j extractBalance generic fallback remainingAmount string", m.extractBalance({ success: true, data: { remainingAmount: "7.5" } }) === 7.5);
+check("T4k extractBalance ignores non-numeric balance-like fields", m.extractBalance({ success: true, data: { balance_note: "n/a" } }) === null);
 
 // ---- T5: Existing product response parsing preserved (v23 shapes) ----
 const prod = { product_id: "123", title: "x" };

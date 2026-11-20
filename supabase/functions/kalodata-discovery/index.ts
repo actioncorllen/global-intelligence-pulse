@@ -1,4 +1,8 @@
 // STRATELOQ-KALODATA-SECURE-DISCOVERY-BROKER (Stage 1 COMMERCE lane)
+// v26 PATCH (2026-11-20, balance read): extractBalance gains a generic fallback (any numeric
+// balance/credit/amount/remain* field inside the data envelope), and balance_probe reports the
+// data envelope's key NAMES (data_keys; names only, never values beyond the numeric balance).
+// Auth verified live on the FREE credit/balance endpoint with the new key: BALANCE_OK, 501 resolved.
 // v24 PATCH (2026-11-20, AUTH FIX per Kalodata official guidance — Andrew Lin, 2026-11-20):
 // ROOT CAUSE of provider code 501 "The key is not allowed": the broker authenticated with a
 // "secret-key" request header. Kalodata's canonical authentication is the X-API-Key header; a
@@ -112,6 +116,16 @@ function extractBalance(body: any): number | null {
     body?.balance, body?.credit, body?.credits, (typeof body?.data === "number" ? body.data : undefined)]) {
     if (c !== undefined && c !== null) { const n = Number(c); if (Number.isFinite(n)) return n; }
   }
+  // v26 fallback: any numeric balance-like field inside the data envelope (names vary across providers).
+  const d = body?.data;
+  if (d && typeof d === "object" && !Array.isArray(d)) {
+    for (const k of Object.keys(d)) {
+      if (/balance|credit|amount|remain/i.test(k)) {
+        const n = Number((d as Record<string, unknown>)[k]);
+        if ((d as Record<string, unknown>)[k] !== null && Number.isFinite(n)) return n;
+      }
+    }
+  }
   return null;
 }
 const PROVIDER_SUCCESS_CODES: any[] = [0, "0", 200, "200", "success", "SUCCESS", "ok", "OK", true, "0000", "00000"];
@@ -213,6 +227,7 @@ Deno.serve(async (req) => {
       http_status: r.status, provider_code: code == null ? null : String(code).slice(0, 24),
       provider_msg: msgRaw == null ? null : redact(String(msgRaw)).slice(0, 160),
       balance: extractBalance(b), top_level_keys: topLevelKeys(b),
+      data_keys: (b?.data && typeof b.data === "object" && !Array.isArray(b.data)) ? Object.keys(b.data).slice(0, 15) : null,
       requested_at: requestedAt,
       request_id: r.headers.get("x-request-id") ?? r.headers.get("request-id") ?? r.headers.get("x-trace-id") ?? null,
       cost_note: "credit/balance is a FREE endpoint; no Product Rank call was made.",

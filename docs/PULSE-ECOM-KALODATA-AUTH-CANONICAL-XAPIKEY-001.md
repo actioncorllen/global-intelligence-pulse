@@ -131,3 +131,44 @@ hold none). It exists only on Kalodata's side / the founder's Kalodata account. 
 **`KALODATA_API_KEY`** with the current key (preferred; picked up automatically and keeps the old
 key for audit), or overwrite `KALODATA_SECRET_KEY`. No code change or redeploy is needed
 afterwards. Then re-run the free `balance_probe` to confirm `BALANCE_OK` and the live balance.
+
+---
+
+## ADDENDUM — 2026-11-20 (later): new key verified, image readiness completed
+
+**Authentication RESOLVED.** With the regenerated key saved as `KALODATA_API_KEY`
+(36 chars, mask `2052...b656`), the deployed broker selects it (probe: `key_env: KALODATA_API_KEY`)
+and the FREE `GET /openapi/v1/credit/balance` returns **`BALANCE_OK`** — HTTP 200, success envelope,
+no provider error code. The 501 "The key is not allowed" error is gone.
+
+**Live credit balance: 14.1 credits** (`data.totalRemain`; also `mainRemain`), matching Kalodata's
+verified figure. Read at 2026-11-20T11:06:31Z via the free endpoint — 0 credits spent.
+
+**kalodata-discovery v28** (v26/v27 were dashboard secret-save redeploys): `extractBalance` gains a
+generic numeric balance/credit/amount/remain* fallback for the `data` envelope, and `balance_probe`
+reports the envelope's key NAMES (`data_keys`). Local deterministic suite extended to **46/46 passing**.
+
+**Image readiness implemented (mig_292 / `kalodata_discovery_request_need_image`):**
+`fn_kalodata_discovery_request` now sends `need_image: 1` in the Product Rank request body
+(contract bumped to `pulse_kalodata_request_v3_need_image`; no other field changed — verified by
+key-set comparison). The ingestion side needed no change: `fn_kalodata_ingest_candidates` already
+persists the cover via `fn_extract_cover_url` (which recognises `master_image_url`) and
+`fn_persist_reference_image`, storing it as `rights_state PROVIDER_DISCOVERY_REFERENCE`,
+`authority REFERENCE_ONLY`, never displacing an existing primary asset (Product Asset Lock intact)
+and never unlocking store/ad/creative/publishing use — the research-reference vs commercially
+authorised supplier/storefront separation is preserved by construction.
+
+**Post-change tests (all pass, no writes, no provider calls):** builder body carries need_image=1
+with all nine prior fields byte-identical; `fn_extract_cover_url` unit tests (master_image_url
+extracted, /default/ placeholder filtered, non-http rejected, priority order preserved, absent→null);
+market gate unchanged (US/DE/GB/FR/ES/IT/MY/PH/SG ok, XX/BR refused); dry-run ingest of a synthetic
+rank record carrying master_image_url → SUCCESS_WITH_CANDIDATES, promoted 1, normalized present,
+zero rows written; `fn_kalodata_commerce_adapter_selftest` all_pass post-migration.
+
+**No paid requests:** zero Kalodata discovery runs / usage records today; the only provider calls
+were free credit/balance GETs.
+
+**READY:** one authorised US Product Rank request with `need_image=1` (0.1 credit, ≤100 records/page,
+10 candidates ingested per current caps) can proceed on founder approval. Expected: genuine product
+data (native product_id, title, US market, revenue/sales signals) with master_image_url persisted
+per candidate as a REFERENCE_ONLY research cover.
