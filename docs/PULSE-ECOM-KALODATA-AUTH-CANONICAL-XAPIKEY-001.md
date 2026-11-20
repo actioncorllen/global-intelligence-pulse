@@ -339,3 +339,33 @@ pass, provider budget gate 10/10. Spend this pass: 0 across all providers. Track
 **Next milestone:** founder-approved bounded DataForSEO product-level evidence wave for
 selected US Kalodata candidates (the second qualifying family) to unlock the existing CJ
 supplier-matching gate, then SKU-level CJ inventory/shipping enrichment for any concrete match.
+
+---
+
+## ADDENDUM 6 — 2026-11-20: PHASE 4B — SEARCH PERMISSION ≠ QUALIFICATION (BE219)
+
+**Verdict on the Stage-2 gate: yes, overly restrictive for search.** The ≥2-family rule is an
+intentional *qualification* invariant; the claim gate was reusing it as *search* permission
+while ignoring identity ambiguity. `fn_pod_evaluate` never reads the supplier-resolution
+table, so search results structurally cannot change decisions.
+
+**Fix (mig_294):** search permitted iff ≥1 qualifying family AND NOT branded/IP AND NOT
+identity-ambiguous (new, stricter identity requirement for search); rejections now
+`STAGE2_SEARCH_BLOCKED` with an explicit reason. The two-family qualification contract, strict
+resolver, budgets, idempotency, brand registry and every TEST/publishing gate are unchanged.
+
+**Live proof:** the RGBIC floor lamp (blocked yesterday) searched CJ free of charge
+(5 pages / 100 candidates / 0 errors) and resolved honestly to `NO_VALID_CJ_MATCH`,
+bound=false — decision remains WATCH; workspace shows `UNBOUND / dispatched: true`.
+
+**Status of the 10 US candidates:** SEARCHED_NO_MATCH 1 (lamp) · NOT_SEARCHED 8 (eligible,
+free to run on demand) · SEARCH_BLOCKED 1 (Apple bundle, BRANDED_OR_IP) ·
+CONFIRMED_EXACT_MATCH 0 · qualification 0/10 (two families still required — unchanged).
+Supplier economics explicitly incomplete everywhere (no match reached economics).
+
+**Regression:** stage2 pagination 10/10, shared identifier 3/3, multilingual 8/8, query
+expansion 10/10, boundary integrity 10/10 (check F updated to the new stronger assertion),
+concrete-identity native pass, budget gate 10/10, commerce adapter pass.
+
+**Spend:** zero — CJ points 50,000/50,000 (`usedToday: 0`), Kalodata 14.0, DataForSEO OFF.
+Tracker: BE219.

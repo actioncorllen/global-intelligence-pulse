@@ -1,0 +1,31 @@
+-- mig_294 (2026-11-20): Separate SUPPLIER-SEARCH PERMISSION from OPPORTUNITY QUALIFICATION.
+-- Production migrations: stage2_search_eligibility_v2_separation +
+-- stage2g_selftest_v2_search_blocked_assertion.
+--
+-- FINDING: fn_stage1_supplier_resolution_qualified's ">=2 independent qualifying evidence
+-- families" rule is an intentional QUALIFICATION invariant ("enough evidence to justify exact
+-- supplier resolution; NOT launch-ready"). fn_stage2_cj_search_claim reused that flag as the
+-- permission to run a free, bounded CJ catalogue search — conflating four distinct gates
+-- (search permission / exact-match evidence / fulfilment economics / TEST recommendation) —
+-- while not checking identity ambiguity for search at all.
+--
+-- CHANGE (claim gate only):
+--   search permitted iff qualifying_family_count >= 1   (no zero-evidence searches)
+--                    AND NOT branded_or_ip               (IP restriction preserved, unrelaxed)
+--                    AND NOT identity_ambiguous          (NEW: concrete identity required)
+--   rejection code STAGE2_SEARCH_BLOCKED with explicit search_block_reason.
+-- UNCHANGED: fn_stage1_supplier_resolution_qualified and every invariant (two families for
+-- QUALIFICATION; supplier/economics can never qualify), the strict resolver
+-- (CONFIRMED/AMBIGUOUS/NO_MATCH), per-run plan budgets + pacing, claim idempotency, tenant
+-- ownership, branded/IP registry, and all TEST/publishing gates. fn_pod_evaluate does not read
+-- commerce_concrete_supplier_resolution, so search results cannot change decisions.
+-- The boundary-integrity selftest check F was updated to assert the NEW stronger contract
+-- (branded fixture refused with STAGE2_SEARCH_BLOCKED / BRANDED_OR_IP and 0 rows).
+--
+-- Live proof (2026-11-20): RGBIC Wall-Wash Floor Lamp (US, Kalodata, 1 family, clean identity)
+-- previously STAGE2_NOT_SUPPLIER_QUALIFIED -> now searched (n8n exec 30710): 5 pages, 100 CJ
+-- candidates, 0 errors, resolver NO_VALID_CJ_MATCH, bound=false, decision unchanged WATCH,
+-- workspace shows UNBOUND/dispatched=true. CJ points 50,000/50,000 (usedToday 0): free.
+-- (Function bodies as applied in production: see migrations
+--  stage2_search_eligibility_v2_separation and stage2g_selftest_v2_search_blocked_assertion
+--  in supabase_migrations.schema_migrations.)
