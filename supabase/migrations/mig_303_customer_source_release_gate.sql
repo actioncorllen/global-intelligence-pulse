@@ -1,0 +1,13 @@
+-- mig_303 — 2026-11-20 — BE230: release gate for customer visibility of gated sources.
+-- Applied as `customer_source_release_gate` (authoritative body in
+-- supabase_migrations.schema_migrations). Record file only.
+-- Table public.customer_source_release: (source_store, product_id nullable, released,
+-- released_at/by, note; UNIQUE(source_store, product_id); RLS enabled with NO policies —
+-- deny-all for client roles; read only inside SECURITY DEFINER readers). A product from a
+-- gated source is customer-visible ONLY when a released=true row covers it (product row,
+-- or source-wide row with product_id NULL). Seeded released=false for the BE229 5-product
+-- GB pilot (Projecteur, Cold Brew, Govee Star Projector Exquisite, pococo, Govee Star
+-- Light Projector) — customer publication stays DISABLED until the founder flips
+-- released=true after the DataForSEO derived-data / Google Shopping display rights are
+-- documented (GPD.01 leg). Rollback = released=false; per-product revocation additionally
+-- via commerce_discovery_hidden.

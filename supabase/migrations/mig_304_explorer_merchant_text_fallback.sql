@@ -1,0 +1,18 @@
+-- mig_304 — 2026-11-20 — BE230: fn_product_explorer merchant text-fallback admission.
+-- Applied as `explorer_merchant_text_fallback_behind_release_gate` (authoritative body in
+-- supabase_migrations.schema_migrations). Six anchored, assertion-guarded replaces
+-- (each anchor must occur exactly once or the migration aborts unchanged):
+--  1-2. base join predicate: (COMMERCE_PRODUCT_NATIVE × kalodata/fastmoss — unchanged)
+--       OR (MARKETPLACE_ACTIVITY × cp.source_store='dataforseo_merchant' × EXISTS
+--       released customer_source_release row). Tenant scope (cp.user_id=v_uid), hidden
+--       quarantine (fn_discovery_product_hidden) and market scoping unchanged.
+--  3. source_label branch 'DATAFORSEO_MERCHANT' (honest attribution).
+--  4. prefiltered: has_display_image OR source_store='dataforseo_merchant'
+--     (text-fallback admission; the image gate for kalodata/fastmoss unchanged).
+--  5. hidden_pending_image counts only non-merchant image-pending items.
+--  6. items image_status: TEXT_FALLBACK when a merchant item has no cover/asset.
+-- Marketplace signals carry no sales/revenue/growth keys, so those aggregate to NULL and
+-- strip_nulls removes them — honest UNKNOWN by construction; growth_assessment UNKNOWN;
+-- competitor blocks UNKNOWN; no decision invented (NEWLY_DISCOVERED_RESEARCH_PENDING).
+-- Frontend needs no change: the released card renders data-card-layout='compact' when
+-- cover is null.

@@ -737,3 +737,27 @@ Cold Brew, two projector listings, Govee), text-fallback mechanism, reversible p
 migration, revocation and rollback drills specified. Blocked on the founder's
 text-fallback product decision + GPD.01 written confirmation for DataForSEO derived
 text-field display. No GPD.06–11 ticks. Spend 0. Tracker: BE229.
+
+## ADDENDUM 17 — 2026-11-20: MERCHANT TEXT-FALLBACK BEHIND A RELEASE GATE (BE230)
+
+**Implemented (mig_303–305), publication still disabled.** The explorer and its market
+counts now admit dataforseo_merchant products as text-fallback research cards strictly
+where a `customer_source_release` row is released=true; the gate is seeded false for the
+BE229 five-product GB pilot, so nothing is customer-visible. Tenant scoping, the hidden
+quarantine, market scoping and all kalodata/fastmoss behaviour are unchanged; the
+deployed frontend already renders a compact no-image card, so zero Lovable credits.
+
+**Drill (live, fully reversed).** Baseline GB=0/US=10 → one pilot product released →
+honest GB text-fallback card (DATAFORSEO_MERCHANT attribution, GBP 39.99, genuine 19-Nov
+dates, TEXT_FALLBACK status, revenue/sales absent — never zero, growth UNKNOWN,
+competitor blocks UNKNOWN, no invented decision) → stranger tenant 0 → **consistency
+defect caught and fixed**: the market-selector counts had not been mirrored (GB chip 0 vs
+1 card; mig_305 v4) → counts consistent → revocation via hidden row → 0 both readers →
+unhide + unrelease → GB=0, US=10, zero residue, zero released rows. Regression battery
+green (explorer v2, lanes v2, budget gate, gallery 15/15, render); Kalodata cards
+byte-identical throughout.
+
+**To release later (no engineering):** document the DataForSEO derived-data display terms
++ Google Shopping upstream conditions (GPD.01 leg), then flip released=true on the five
+pilot rows. GPD.06–11 stay FALSE — a working implementation is not customer-evidence
+acceptance. Spend: 0. Tracker: BE230.

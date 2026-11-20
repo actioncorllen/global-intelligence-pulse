@@ -1,0 +1,10 @@
+-- mig_305 — 2026-11-20 — BE230: fn_product_explorer_markets v4 mirror.
+-- Applied as `explorer_markets_mirror_merchant_release_gate` (authoritative body in
+-- supabase_migrations.schema_migrations). Found live by the BE230 drill: with one pilot
+-- product released, the explorer served 1 GB card while the market-selector counts still
+-- said GB=0 (the mig_293 defect class — counts not mirroring the card predicate). The
+-- counts CTE now UNIONs the same merchant branch (MARKETPLACE_ACTIVITY ×
+-- dataforseo_merchant × released row × not hidden) with a text_fallback_ok exemption from
+-- the display-image EXISTS requirement; core kalodata/fastmoss counting unchanged.
+-- Contract: pulse_product_explorer_markets_v4_release_gated_text_fallback.
+-- Verified: GB=1/US=10 while released; GB=0/US=10 after revocation and after rollback.
