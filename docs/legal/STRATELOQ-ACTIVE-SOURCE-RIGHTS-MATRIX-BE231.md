@@ -230,3 +230,86 @@ supply the text for capture (as with the Kalodata email).
 **Kalodata — unchanged from BE233** (no new asks; the standard-terms caveat remains, now
 with the recorded detail that kalodata.com/terms-of-service is a client-rendered app
 shell whose text a static fetch cannot read).
+
+---
+
+## BE235 (2026-11-20): FINAL provider enquiry drafts — awaiting founder approval, NOT sent
+
+These two drafts supersede all earlier versions in this document. The Kalodata enquiry
+remains withdrawn (resolved by the 2026-11-11 provider email). All five
+`customer_source_release` rows remain `released=false`.
+
+### FINAL DRAFT 1 — DataForSEO
+**Intended recipient:** support@dataforseo.com (DataForSEO's published support address;
+the in-dashboard contact/ticket channel is an equally valid route — founder's choice).
+**Reference:** your Terms of Service, updated 12 June 2026 (reviewed in full).
+
+> **Subject: Written confirmation of permitted use — displaying derived research to our SaaS customers**
+>
+> Hello,
+>
+> Strateloq Technologies operates a paid product-research SaaS platform for e-commerce
+> sellers. We use the DataForSEO API (including Merchant/Google Shopping and SERP
+> endpoints) under our account, and we have reviewed your Terms of Service (updated
+> 12 June 2026). Before enabling any customer-facing use we would like written
+> confirmation of three points:
+>
+> 1. May Strateloq display appropriately attributed/labelled **derived research findings**
+>    built from Shopping/Merchant and SERP results — including observed product titles,
+>    merchant names and country-local observed prices, presented as research with
+>    honest "observed/estimated" labelling — to **authenticated paying customers** of our
+>    platform, without reselling or redistributing raw API datasets? We read this as
+>    consistent with §7.1 (we do not compete with or adversely affect the search-engine
+>    providers), and we would value your confirmation.
+>
+> 2. Does DataForSEO require any particular **attribution**, or impose any **retention or
+>    caching restrictions**, for this display use?
+>
+> 3. Are there additional **Google Shopping, Merchant or search-engine-specific
+>    restrictions** you advise apply to that proposed display (in view of §7.2)?
+>
+> We do not display or store Shopping images, and raw API data is never resold.
+> Thank you — a short written confirmation of each point, or the applicable licence
+> sections, would be ideal.
+>
+> Kind regards,
+> Strateloq Technologies
+
+### FINAL DRAFT 2 — CJ Dropshipping
+**Intended recipient:** support@cjdropshipping.com (CJ's published support address; the
+in-dashboard ticket system or the assigned agent channel may be the surer route —
+founder's choice). CJ's public terms pages reject non-interactive review (human
+verification), so this enquiry asks for the applicable terms as well.
+
+> **Subject: Written confirmation of permitted use — supplier research display in our sourcing SaaS**
+>
+> Hello,
+>
+> Strateloq Technologies operates a paid product-research SaaS platform for e-commerce
+> sellers and uses the CJ developer API under our account for sourcing research. Before
+> any customer-facing use we would like written confirmation of five points:
+>
+> 1. May we display **supplier research data** (supplier identity and product data) to
+>    authenticated paying customers of our platform as sourcing research?
+> 2. May that display include **exact SKU, variant and stock information**?
+> 3. May it include **country-specific shipping options and landed-cost estimates**
+>    computed from CJ freight and cost data (always labelled as estimates)?
+> 4. May we show **links to CJ product pages** and display **supplier-provided product
+>    images** in that research context?
+> 5. What **retention/caching limits, attribution requirements and commercial-use
+>    restrictions** apply? To be explicit about scope: this is research display only —
+>    we do **not** seek rights for advertising creative, storefront publication or any
+>    other commercial reuse of supplier media, which our platform blocks separately.
+>
+> If there is an applicable API licence or terms document covering these points, we would
+> appreciate a copy or link.
+>
+> Kind regards,
+> Strateloq Technologies
+
+### Outstanding rights questions after BE235 (complete list)
+- **DataForSEO:** the three questions above + the upstream Google Shopping display
+  judgment that §7.2 places on Strateloq (a founder/legal decision, not a provider grant).
+- **CJ:** the five questions above (+ obtaining the terms text itself).
+- **Kalodata:** none (2026-11-11 email controls; standard-ToS caveat recorded as
+  unresolvable by static fetch — client-rendered page).
