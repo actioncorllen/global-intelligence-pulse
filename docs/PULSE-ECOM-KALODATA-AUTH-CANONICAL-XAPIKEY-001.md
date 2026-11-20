@@ -369,3 +369,40 @@ concrete-identity native pass, budget gate 10/10, commerce adapter pass.
 
 **Spend:** zero — CJ points 50,000/50,000 (`usedToday: 0`), Kalodata 14.0, DataForSEO OFF.
 Tracker: BE219.
+
+---
+
+## ADDENDUM 7 — 2026-11-20: PHASE 5 — DROPSHIPPING QUALIFICATION PASS (BE220)
+
+**Candidates evaluated.** The whole decided pool (DataForSEO pilot + Kalodata US) was scored
+with the live qualifier: 0 products fully supplier-resolution-qualified. Multi-family rows are
+legacy research concepts (identity-ambiguous + high-saturation — correctly disqualified).
+A representative generic set of US star projectors was chosen, deliberately excluding real
+brands the registry misses (Govee, DAYBETTER, Thames & Kosmos, Rossetta).
+
+**Searches performed (reuse-first, minimum-necessary).** Existing evidence inspected: 1,317 CJ
+rows (54 projector), 7 prior resolutions (GB nightlight kept AMBIGUOUS). One new bounded free
+search (n8n 30711): "Star Projector w/ Remote, Timer, 360°" US → `NO_VALID_CJ_MATCH` with
+`NO_CONCRETE_EVIDENCE` (0 candidates considered) — the identity-first resolver refuses to bind
+from one partial marketplace observation. Read-only identity screening showed the other five
+generic merchant candidates are all `INSUFFICIENT` identity — further searches would non-bind
+by design, so none were run.
+
+**Outcomes:** CONFIRMED 0 · AMBIGUOUS 1 (pre-existing GB) · SEARCHED_NO_MATCH 2 (lamp:
+supplier nonavailability after a real 100-candidate search; star projector: identity evidence
+insufficient to bind) · SEARCH_BLOCKED 1 (Apple, BRANDED_OR_IP) · NOT_SEARCHED remainder.
+
+**Economics:** `fn_resolve_supplier_economics` returns `no_candidate` for both the AMBIGUOUS
+GB nightlight and the lamp — customer economics correctly withheld until a CONFIRMED match;
+raw supplier-row data stays internal. Customer workflow verified: star projector `UNMATCHED`,
+lamp `UNBOUND`, both `dispatched: true`, both still WATCH. Regression green (boundary, budget
+gate, render, shared identifier). Spend: 0 everywhere (CJ 50,000/50,000; Kalodata 14.0;
+DataForSEO OFF).
+
+**Key finding.** The machinery is complete; candidate quality is the binding constraint. No
+current product combines authoritative concrete identity + generic/unbranded + ≥2 qualifying
+families + an actual CJ equivalent. Remaining requirements for the first supplier-qualified
+opportunity: (1) more generic product-native candidates (e.g. one authorised Kalodata page,
+0.1 credit, unbranded-niche biased, and/or MY/PH/SG), (2) the approved paid DataForSEO
+second-family wave, then (3) the existing pipeline auto-carries to economics and decision.
+Tracker: BE220.
