@@ -172,3 +172,55 @@ were free credit/balance GETs.
 10 candidates ingested per current caps) can proceed on founder approval. Expected: genuine product
 data (native product_id, title, US market, revenue/sales signals) with master_image_url persisted
 per candidate as a REFERENCE_ONLY research cover.
+
+---
+
+## ADDENDUM 2 — 2026-11-20: AUTHORISED ONE-CALL US PRODUCT DISCOVERY TEST (EXECUTED)
+
+**Controls.** Research-dispatch suppression opened for the tenant (30-min TTL) and a fail-closed
+one-call provider budget opened (`provider_call_budget` b614a5b3, KALODATA/US, max_calls=1,
+15-min TTL). Emergency stop verified off. Execution went through the canonical
+`fn_kalodata_run_discovery` path: atomic budget consume (remaining 0 immediately after dispatch —
+no retry could ever consume a second call), single-use nonce, one guarded pg_net POST (request 270)
+to `kalodata-discovery` v28, explicit page 1 (never previously delivered; earlier page-1 attempts
+had failed with 501 before purchase).
+
+**Provider result (genuine).** `SUCCESS_WITH_CANDIDATES`: HTTP 200, 10 raw candidates returned,
+10 qualified, 10 promoted (run `a57cfc37-7ca5-42b6-90ac-ed5f1177cb5f`). Sample of the real
+US TikTok Shop products ingested:
+
+| Product (title) | Native ID | Price | 7-day sales / revenue | Growth |
+|---|---|---|---|---|
+| Shark PowerPro Cordless Vacuum IZ383H/IZ386H | 1732776966801822384 | $229.99 | 7,487 units / $1,721,935 | −66.0% |
+| Beauty Finds by ULTA Beauty Holiday Fragrance Lineup For Him | 1732819733286195924 | $39.65 | 21,475 units / $851,588 | +47.5% |
+| Limited Edition 4Patriots Mystery Survival Food Kit | 1732820195618689325 | $231.50 | 3,689 units / $854,019 | −47.9% |
+| EcoFlow Delta 4 3800Wh Solar Power Station | 1732776295965102340 | $1,351.10 | — | — |
+| Insignia 50" F50 Series 4K Fire TV | 1732780180751225661 | $229.06 | — | — |
+
+**Ingestion verification.** 10 new `commerce_products` rows (23 → 33 Kalodata products), all under
+the single authorised tenant (zero wrong-tenant rows); all market-attributed US with USD pricing;
+10 `commerce_signals` COMMERCE_PRODUCT_NATIVE rows carrying sales_units / revenue / growth;
+10 active `monday_opportunity_registry` entries, so the candidates are live in the existing
+Product Discovery backend.
+
+**Images.** `need_image=1` worked: 10 `product_image_assets` rows (0 → 10 for KALODATA), each a
+genuine TikTok CDN `master_image_url` (p16-oec-ttp.tiktokcdn-us.com / ibyteimg.com), stored with
+`rights_state = PROVIDER_DISCOVERY_REFERENCE`, `authority = REFERENCE_ONLY`; primary flag granted
+only because no prior primary existed (Product Asset Lock not bypassed); no commercial/supplier
+asset rights granted.
+
+**Suppression held.** Every one of the 10 promoted candidates recorded
+`research_auto_dispatch: DISPATCH_SUPPRESSED` — zero downstream paid research calls.
+
+**Cost (actual).** Free balance read before: 14.1. After: **14.0** — exactly 0.1 credit consumed,
+the standard single Product Rank charge. Telemetry on the run records operation
+`tiktok/product/rank`, country US, `call_count: 1`, HTTP 200. Exactly one Kalodata discovery run
+was added (14 → 15 all-time).
+
+**Close-out.** Budget b614a5b3 deactivated after consumption (1/1); no active KALODATA budgets
+remain (fail-closed default restored). Dispatch suppression closed (normal settings restored).
+No additional provider requests, no publishing, no purchases, no FastMoss, no Lovable credits.
+
+**Outcome: the end-to-end Kalodata Product Discovery pipeline is live** — authentication,
+market-gated request with need_image, budget gating, tenant-private ingestion, REFERENCE_ONLY
+image persistence and telemetry all verified against real provider data.
