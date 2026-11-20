@@ -183,3 +183,50 @@ The **Kalodata draft is withdrawn** — every question it asked (derived display
 images, attribution, caching, commercial exclusion) is conclusively answered by the
 2026-11-11 email; no repeat enquiry is needed. The **DataForSEO** and **CJ** drafts stand
 unchanged and unresolved.
+
+---
+
+## BE234 (2026-11-20): DataForSEO terms captured and read in full; CJ blocked at human verification
+
+**DataForSEO — complete public ToS now on file** (capture:
+`docs/legal/captures/DATAFORSEO-TERMS-OF-SERVICE-CAPTURE-2026-11-20.md`; document stamp
+"UPDATED: 12 JUNE, 2026"; fetched 2026-11-20 via server-side egress because the session's
+own network cannot reach the host). Read in full, sections 1–8. Findings:
+- **No express prohibition anywhere** on resale, redistribution, sublicensing, display to
+  one's own customers, retention or caching; **no attribution requirement**.
+- The **only** data-usage restriction is **§7.1**: SERP data "shall not be used to compete
+  with or adversely affect the business interests of the search engine providers", with
+  **§7.2** indemnifying DataForSEO and expressly putting upstream search-engine-ToS risk
+  on the customer.
+- §5.1 distinguishes API credits from database purchases (retention of purchased data is
+  an anticipated use); §6.2 jurisdiction exclusions do not apply to Strateloq.
+
+**Matrix consequence (flags unchanged — silence is not a grant):** every DataForSEO
+display dimension moves from "no document either way" to **"ToS text on file: not
+prohibited; conditioned on §7.1; upstream Google leg = customer's own legal judgment
+(§7.2)."** The exact authorised release path for the gated GB five-product text pilot:
+1. Founder sends the trimmed enquiry below (or records a documented founder/legal
+   judgment that §7.1-compliant research display to paying customers is permitted use);
+2. Founder/legal resolves the upstream Google Shopping leg (expressly our risk per §7.2);
+3. Founder authorises production release → flip the five `customer_source_release` rows.
+Until all three: rows stay FALSE (unchanged today).
+
+### Trimmed DataForSEO draft (supersedes the BE231 six-point draft)
+Subject: Confirmation of permitted use — displaying derived research to our SaaS customers
+
+We reviewed your Terms of Service (updated 12 June 2026). Three confirmations, please:
+(1) that displaying derived research findings built from Shopping/Merchant and SERP
+results — product titles, observed local prices, merchant names, deduplicated
+listing/competition statistics, always as attributed research, never raw-data resale —
+to paying customers of our research SaaS is a permitted use consistent with §7.1;
+(2) whether you have an attribution preference or requirement for such display;
+(3) any Google Shopping-specific display guidance you provide customers in view of §7.2.
+
+**CJ — terms unretrievable non-interactively:** both known terms paths return an
+interactive "Human verification" challenge to server fetches. No text on file; the BE231
+five-point draft stands; alternatively the founder can open the terms in a browser and
+supply the text for capture (as with the Kalodata email).
+
+**Kalodata — unchanged from BE233** (no new asks; the standard-terms caveat remains, now
+with the recorded detail that kalodata.com/terms-of-service is a client-rendered app
+shell whose text a static fetch cannot read).
