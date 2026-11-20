@@ -305,3 +305,37 @@ Verification-only pass (zero provider calls of any kind, zero schema/code change
 Open gates (not prematurely marked): founding-member signed-in UI walkthrough; GOLD
 GPD.03/05–11 customer-visible + rights acceptance (8 Stage-1 units); CJ exact-SKU economics for
 the US kalodata candidates; image/display licensing (fail-closed).
+
+---
+
+## ADDENDUM 5 — 2026-11-20: PHASE 4 — SUPPLIER-QUALIFIED DISCOVERY PASS (BE218)
+
+**Founder UI acceptance recorded.** Signed-in founding member confirmed genuine Kalodata US
+cards + images at www.strateloq.com (US selected, 10 All cards, 4 High Growth) — closes the
+authenticated-UI open item.
+
+**Workspace defects.** (1) FIXED: `fn_product_explorer_markets` counted only FastMoss-era
+signals, so US read "no data yet"; mig_293 aligns it with the explorer's exact population +
+display-image gate (verified US 10=10, GB 28=28, DE 9=9; frontend untouched). (2) NOT a
+defect: "37 in research pipeline" (lifecycle total) vs 10 discovery cards (image-gated
+provider-discovery view) are different, correctly-labelled populations.
+
+**CJ supplier matching — honestly gated, zero spend.** The authorised Stage-2 CJ search
+workflow ran for the one generic candidate (RGBIC floor lamp): the existing claim gate
+rejected BEFORE any CJ call — `STAGE2_NOT_SUPPLIER_QUALIFIED / ONLY_ONE_QUALIFYING_FAMILY`.
+Claim probes for the other 9 return the same verdict (Apple bundle additionally
+`DISQUALIFIED_BRANDED_OR_IP`). By design, supplier search requires ≥2 independent qualifying
+evidence families; all 10 Kalodata candidates hold exactly one (COMMERCE_MOMENTUM). No
+ambiguous match promoted; supplier economics explicitly INCOMPLETE for all 10; CJ points
+50,000/50,000 untouched.
+
+**Decision quality.** WATCH decisions carry explicit machine-readable reasons (8 on the
+Shark), `opportunity_score_verified=false`, honest INSUFFICIENT evidence — TikTok sales alone
+promote nothing to TEST.
+
+**Regression after the fix:** discovery render 13/13, media integrity 7/7, commerce adapter
+pass, provider budget gate 10/10. Spend this pass: 0 across all providers. Tracker: BE218.
+
+**Next milestone:** founder-approved bounded DataForSEO product-level evidence wave for
+selected US Kalodata candidates (the second qualifying family) to unlock the existing CJ
+supplier-matching gate, then SKU-level CJ inventory/shipping enrichment for any concrete match.
