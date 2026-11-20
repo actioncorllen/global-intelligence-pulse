@@ -579,3 +579,38 @@ monitoring panel (incl. the two genuine cold-brew alerts). GPD.20 FALSE — auth
 mobile/keyboard + rights-revoked-state sighting. GPD.21 FALSE — alerts sighting + first
 genuinely multi-market-evidenced product (paid acquisition decision). GPD.22 untouched.
 Spend: 0 providers; 3.9 Lovable credits (Phase 7 total 14.5). Tracker: BE224.
+
+## ADDENDUM 12 — 2026-11-20: GPD.20 GOLD CLOSEOUT (BE225)
+
+**Subscriber security complete (mig_301).** All nine mig_300 mutators (both
+fn_creative_production_request overloads included) individually re-verified as a
+non-founder authenticated user → FORBIDDEN_FOUNDER_ONLY with zero side effects; founder
+and service paths pass. Equivalent-path audit: zero RLS write policies for members on any
+store/campaign/creative/media/page/social table (member-writable surface = own users row
++ own saved_opportunities); three further authenticated writers in founder-only domains
+found and gated (ad creative-asset selection, creative format apply, storefront
+product-page draft) — 24 founder-gated mutators in total; five founder-path suites green
+after the change.
+
+**Rights revocation (Product Asset Lock).** Reversible drill on the Shark US image:
+availability → UNAVAILABLE ⇒ resolver no_image, signed ref no_asset, the card is
+withdrawn from the explorer entirely (10→9 — no product displays without a rights-cleared
+image, no restricted media served); restore ⇒ back to 10 with the image.
+
+**Live-production browser automation (honest scope; no member credentials exist here).**
+Unauthenticated /workspace and /workspace/product-markets/* redirect to /auth with the
+full return path; the /auth error state renders in an alert region without crashing; the
+deployed comparison components on the fixture-labelled /dev/market-explorer route pass at
+390px and 1440px: no overflow, mobile table→snap-card swap, aria-pressed chips, 10/10
+visible-focus tab stops, zero page errors. Not claimed as a signed-in pass.
+
+**Regression** green across budget gate, media auth, product image, stage-1 invariants,
+founding-member access control (non-member uid), explorer v2 and lanes v2; known gallery
+14/15 amber unchanged (founder decision). No frontend change; deployment 998af5d2
+unchanged and exercised live.
+
+**GOLD decision.** GPD.20 stays FALSE on exactly one criterion — signed-in MOBILE
+verification: on a phone, signed in, Product Discovery → cards → product drawer →
+Compare countries → return → Saved → Monitoring panel. On that founder confirmation it
+ticks TRUE. GPD.21's remainders stay as identified (alerts sighting + paid multi-market
+evidence — founder decisions; no unpaid engineering path). Spend: 0. Tracker: BE225.

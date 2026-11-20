@@ -1,0 +1,25 @@
+-- mig_301 — 2026-11-20 — GPD.20 GOLD closeout equivalent-path sweep.
+-- Applied to project nxaunmyihhjixxxljcqt as migration
+-- `founder_gate_remaining_creative_store_writers` (authoritative body in
+-- supabase_migrations.schema_migrations). Record file only.
+--
+-- Scope of the sweep: (1) all 9 mig_300 campaign/creative/live-publish mutators
+-- (incl. both fn_creative_production_request overloads) re-tested individually as a
+-- non-founder authenticated uid → FORBIDDEN_FOUNDER_ONLY, zero side effects;
+-- (2) RLS audit: no INSERT/UPDATE/DELETE policy grants authenticated users write access
+-- to any store/campaign/creative/media/page/social table — the member-writable surface
+-- is exactly their own `users` row and their own `saved_opportunities`;
+-- (3) remaining authenticated RPC writers reviewed: store connection
+-- initiate/disconnect and storefront change-country were already founder-gated; THREE
+-- writers in founder-only domains were not:
+--   fn_ad_product_card_select_creative_asset  (ad creative asset selection, persists),
+--   fn_creative_format_apply                  (creative production format mutation),
+--   fn_save_product_page_draft                (storefront product-page draft write).
+--
+-- Fix: identical fn_is_founder() gate spliced after BEGIN (assertion-guarded; aborts
+-- unless exactly 3 gated). Verified: all 3 → FORBIDDEN_FOUNDER_ONLY as non-founder;
+-- founder/service paths intact (asset-selector, creative-format, creative-production,
+-- studio-routing and storefront-publish-lifecycle suites all green after the change);
+-- regression battery green (budget gate, media auth, product image, stage-1 invariants,
+-- founding-member access control with a non-member uid, explorer v2, lanes v2).
+-- Total founder-gated mutators after mig_300 + mig_301: 24.
