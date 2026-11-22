@@ -1,0 +1,31 @@
+-- mig_310 — 2026-11-22 — BE239 Task 4: CJ research landed-estimate "approximate" label.
+-- Applied to project nxaunmyihhjixxxljcqt as migration
+-- `cj_research_landed_estimate_approximate_label_v1` (authoritative body in
+-- supabase_migrations.schema_migrations). Record file only.
+--
+-- Driver: CJ's written reply (2026-11-22, Gmail 1a20272d6c7c3448) permits research-only
+-- freight/landed estimates ONLY IF "independently calculated and labelled approximate",
+-- and requires transactional freight to be live and uncached.
+--
+-- Compatibility review (no conflict found except the label gap):
+--   * Landed cost in fn_supplier_economics is already INDEPENDENTLY calculated
+--     (supplier_cost + freight), not taken as a CJ-authoritative landed figure.
+--   * The freight component is already labelled estimate=true / guaranteed=false in
+--     fn_supplier_delivery_state ("carrier estimated delivery range; not guaranteed").
+--   * CJ stock/freight evidence is cached in commerce_supplier_products.supplier_enrichment
+--     with observed_at + a freshness contract (fn_cj_variant_evidence_is_fresh ->
+--     needs_inventory_refresh / needs_shipping_refresh, default 24h) — matches "cache
+--     permitted, refresh inventory because stock is dynamic".
+--   * NO transactional/order/checkout freight path exists (subscriber checkout closed;
+--     founder store/order flow deferred Phase 06.06–10), so "transactional freight must
+--     be live, not cached" has no violating implementation.
+--
+-- The ONE gap: the economics object itself did not carry an explicit "approximate" label
+-- when its freight input is an estimate. Fix = additive only: on the success return, add
+--   approximate   = (NOT explicit-free-shipping)
+--   landed_basis  = 'RESEARCH_FREIGHT_ESTIMATE' | 'FIRM_FREE_SHIPPING'
+--   estimate_note = approximate-estimate disclaimer (null when free shipping)
+-- state / market_evidence_state / subscore / critical / margin / margin_pct are UNCHANGED
+-- (decision inputs untouched). Verified: estimate case -> approximate=true + note;
+-- free-shipping case -> approximate=false, note null; margins/subscores unchanged;
+-- fn_stage3b_commercial_verification_selftest 16/16 pass.

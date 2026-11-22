@@ -359,3 +359,51 @@ DATAFORSEO_MERCHANT and CJ rows. **Dispatch changes no clearance**: every DataFo
 clearance dimension remains FALSE, the five `customer_source_release` pilot rows remain
 `released=false`, and GPD.01 stays OPEN until substantive written replies are
 reconciled. The enquiries are not to be resent; follow-up is a founder chase action.
+
+## BE239 amendment — 2026-11-22 — Both provider replies RECEIVED / SUBSTANTIVE; register corrected
+
+Both BE236 enquiries received substantive written replies (founder-supplied; this
+session's Gmail connector sign-in is expired, so the messages were not independently
+sighted here — recorded with their Gmail message IDs on the same provenance basis as the
+recovered Kalodata email in BE233).
+
+### DataForSEO — Gmail `1a1fb5da11e1432d`, received 2026-11-20 23:49 UTC (Kate, DataForSEO Support)
+**Granted (provider level):** storage with no stated duration limit; resale of received
+data to clients under the DataForSEO ToS; no attribution/branding/display requirement.
+**Restriction:** ToS Section 7 remains operative (§7.1 non-compete with search-engine
+providers; §7.2 upstream risk/indemnity).
+**Register change:** `analyse_cleared = TRUE` for DATAFORSEO and DATAFORSEO_MERCHANT.
+**Held FALSE:** `display_derived_cleared`, `display_cache_images_cleared`,
+`redistribute_raw_cleared`. **Reason:** this is a provider-level grant only; the data is
+Google Shopping/Merchant-derived, and customer-facing display/redistribution depends on
+the SEPARATE, UNASSESSED Google upstream rights — §7.2 keeps that compliance on
+Strateloq. No Google rights inferred.
+
+### CJ Dropshipping — Gmail `1a20272d6c7c3448`, received 2026-11-22 08:49 UTC (CJ Support)
+**Granted:** display of supplier identity + product data to authenticated paying SaaS
+customers; exact SKU / variant / stock display; CJ product-page links; caching of
+catalogue + inventory with no specific retention limit (inventory must be refreshed —
+stock is dynamic); research-only freight/landed estimates if independently calculated and
+labelled approximate.
+**Restricted / not granted:** supplier images are NOT auto-licensed (individual copyright
++ brand permission required); transactional freight must be live-queried and must NOT be
+cached; general platform + supplier-specific IP restrictions continue.
+**Register change:** `analyse_cleared = TRUE`, `display_derived_cleared = TRUE` (text /
+data / identity / SKU / stock / links only). **Held FALSE:** `display_cache_images_cleared`,
+`redistribute_raw_cleared`, `reuse_creative_cleared`, `commercial_redistribution_cleared`.
+Freight compatibility verified (Task 4): research freight cached as an approximate
+estimate (permitted; now explicitly labelled in fn_supplier_economics — mig_310); no
+transactional/order freight path exists.
+
+### Kalodata — unchanged (BE233): analyse + display + image dims cleared, raw resale prohibited.
+
+### Net effect on gates
+- **GPD.01: still OPEN, NOT accepted.** Provider-level terms for all three active sources
+  are now resolved, but the Google Shopping/Merchant **upstream display-compliance**
+  question for DataForSEO-sourced data remains open and is a founder/legal judgment
+  (§7.2). Secondary sources (eBay/Meta/TikTok/Reddit) remain "to confirm" but are not
+  customer-display-critical under the current research-only scope.
+- **Five GB pilot `customer_source_release` rows stay `released=false`.** Dispatch and
+  replies change no release. Release requires BOTH: (1) the Google upstream assessment
+  completed and supporting DATAFORSEO_MERCHANT `display_derived_cleared=TRUE`, and (2)
+  explicit founder production-release authorization (flip rows, `released_by`=founder).
