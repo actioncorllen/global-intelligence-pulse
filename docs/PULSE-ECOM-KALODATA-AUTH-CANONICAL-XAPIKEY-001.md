@@ -867,3 +867,69 @@ dims; `platform_catalogue` 0 published; the sole live "FastMoss" string is the h
 historical provenance caption; 11 accepted GOLD gates untouched; no public signup; no
 charge, price activation or checkout opening. Tracker: BE237 (Build Evidence row 237,
 POLISHED 03.09/04.02/04.08, PINNED P0.10/W0.05, START HERE NOW-5).
+
+## Addendum 21 — 2026-11-22 — BE240: DataForSEO Merchant text-only upstream compliance review
+
+Documentary review of whether the intended GB Merchant **text-only** research display
+complies with applicable upstream rights. No provider calls, no code/release change.
+
+### 1. Production data flow (traced) — the 5 GB pilot products
+`DataForSEO Merchant/Sellers result → commerce_products (+ product_market_competitors)
+→ derived product-market evaluation → fn_product_explorer merchant text-fallback card
+(+ GPD.08/10 competitor-offers detail)`. Per-field inventory of what reaches the customer:
+
+| Field | Source class | Displayed to customer? |
+|---|---|---|
+| Product title | Direct observation (Google Shopping merchant listing title) | Yes (card) |
+| Merchant / seller names | Direct observation (Google Shopping seller identities, e.g. DealBeagle, BargainBadger, "Amazon.co.uk-Seller") | Yes, in the **competitor-offers detail** (NOT on the explorer card — fn_product_explorer does not project merchant_seller_name) |
+| Country-local observed prices (GBP) | Provider-reported measurement / direct observation (DATAFORSEO_SELLERS, price_source_class=OBSERVED) | Yes |
+| Merchant / product links | — | **No** — `observed_product_url` is NULL for every pilot row; no link is stored or displayed |
+| Derived demand & competition | Independently calculated analytical conclusion (score, decision, seller count, saturation) | Yes |
+| Source attribution / provenance | Metadata (PLATFORM_REPORTED; source DATAFORSEO_SELLERS / dataforseo_merchant) | Yes |
+| Retention / caching | Stored observations | Yes (cached; DataForSEO permits, refresh for freshness) |
+| Images / media (copyright-sensitive) | — | **No** — 0 product_image_assets across all 5; image_status=TEXT_FALLBACK; cover_url NULL. **Images confirmed blocked** at both data and projection layers. |
+
+Per-product: Projecteur (1def97b0) carries 5 named GB sellers £33.99–£39.99 (EXACT_PRODUCT);
+Govee Star Light (d985e5af) one eBay comparable $59.99 (CLOSE_COMPARABLE, USD-labelled);
+the other three are observed-empty honesty cases (no seller rows).
+
+### 2. Applicable upstream terms
+- **DataForSEO ToS §7** (captured 12 Jun 2026, repo `docs/legal/captures/DATAFORSEO-TERMS-OF-SERVICE-CAPTURE-2026-11-20.md`): §7.1 data must not compete with / adversely affect the search-engine provider; §7.2 customer bears upstream risk/indemnity. Provider permission to store/resell confirmed (BE239).
+- **Google Merchant Center Terms** (merchant-facing; scheduled update 15 Jun 2026): bind entities that *use Merchant Center to list products*. Strateloq is **not** a merchant and does **not** use Merchant Center → these terms do not govern Strateloq's use.
+- **Google Shopping Content API / developer terms**: bind **direct API users**. Strateloq makes **no** direct Google API call (data arrives only via DataForSEO; marketplace comparables via eBay Browse) → per the directive, these are **not** applied, because that agreement does not govern Strateloq's access or use.
+- **Google general ToS (automated-access prohibition)**: binds whoever accesses Google. The extractor is **DataForSEO**, not Strateloq; Strateloq never assented to Google's ToS and has no Google account or direct access → **no Google contract is in privity with Strateloq**.
+- **Non-contractual law** (the genuine residual): (a) **copyright** — prices, seller names and short product titles are facts / lack originality, and no images are shown → low; (b) **UK/EU sui generis database right** — re-utilising a *substantial part* of Google's compiled Shopping database could infringe; Strateloq displays a tiny, transformed, derived subset acquired by a third party (DataForSEO) → a genuine but narrow question; (c) DataForSEO **§7.2** assigns any residual upstream risk to Strateloq.
+(Secondary web sources on Google Shopping scraping are vendor blogs, explicitly not legal
+authority; counsel should pull Google's current policy pages directly.)
+
+### 3. Field-level compliance classification
+- **SUPPORTED / low risk:** product title; country-local observed prices; derived demand & competition; source attribution; retention & caching; images (blocked); links (not displayed).
+- **UNCERTAIN → legal sign-off:** the **named individual marketplace-seller identities** shown verbatim alongside exact observed prices in the competitor-offers detail — this is the element closest to re-utilising Google's compiled per-seller data and is the only field carrying a non-trivial database-right question.
+- Not a DataForSEO-permission question (provider permits it); purely the Google-upstream / database-right question, which DataForSEO cannot and did not clear.
+
+### 4. Release recommendation
+A **narrower rights-safe presentation eliminates the one uncertain item without concealing
+material evidence**: present the competition signal as an **aggregate** — observed seller
+**count** + observed **price range** (min–max) + exact-match flag + country + freshness —
+and either omit or anonymise the verbatim per-seller identity list (e.g. "5 GB sellers,
+£33.99–£39.99, exact-product"). The material opportunity signal (how many sellers, what
+price band, exactness) is fully preserved; only the verbatim compiled-seller list is
+withheld. Images stay blocked; no links. This is a small **backend-only** projection
+change (not a frontend rebuild) and is offered for founder decision, **not implemented**
+here.
+
+**Smallest remaining decision / narrow legal question for qualified counsel:**
+> Does displaying to authenticated paying SaaS customers a small set of factual
+> Google-Shopping-sourced observations (product titles, named marketplace-seller
+> identities, observed country-local prices) acquired via DataForSEO — with no images and
+> no links — amount to re-utilisation of a substantial part of Google's Shopping database
+> under UK/EU database right, or breach any term binding Strateloq, given Strateloq has no
+> direct Google relationship and DataForSEO §7.2 assigns upstream risk to Strateloq? And
+> does the aggregate/anonymised presentation in §4 reduce that to acceptable?
+
+### 5. Controls preserved
+5 `customer_source_release` rows remain `released=false`; image restrictions intact
+(0 assets, TEXT_FALLBACK); tenant/country isolation unchanged; Stripe LIVE closed; 11
+accepted GOLD units untouched. GPD.01 remains **OPEN** — provider terms resolved, the
+Google-upstream leg is now reduced to the single narrow legal question above plus the
+founder production-release authorization. No rows flipped; GPD.01 not accepted.
