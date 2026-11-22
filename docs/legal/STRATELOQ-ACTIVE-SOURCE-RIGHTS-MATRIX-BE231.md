@@ -342,3 +342,20 @@ ticket id), and a response-status field (AWAITING_REPLY → acknowledged → sub
 reply quoted verbatim with date), following the FastMoss-enquiry recording precedent.
 Release rows and clearance flags change only on substantive written replies (or the
 founder's documented judgments), never on dispatch.
+
+## BE238 amendment — 2026-11-22 — Both provider enquiries DISPATCHED (recording only)
+
+The two BE236-verified enquiries were sent on 20 November 2026 from the founder's own
+Gmail via their ChatGPT Gmail connection (founder-reported; this engineering session's
+Gmail connector sign-in is expired, so the messages were not independently sighted here):
+
+| Provider | Recipient | Gmail message id | Sent (UTC) | Status |
+|---|---|---|---|---|
+| DataForSEO (3-question) | support@dataforseo.com | `1a1fae86b79ff626` | 2026-11-20 21:41:38 | **SENT / AWAITING_REPLY** |
+| CJ Dropshipping (5-question) | support@cjdropshipping.com | `1a1fae87278b57da` | 2026-11-20 21:41:40 | **SENT / AWAITING_REPLY** |
+
+Recorded in `catalogue_source_rights.rights_evidence` on the DATAFORSEO,
+DATAFORSEO_MERCHANT and CJ rows. **Dispatch changes no clearance**: every DataForSEO/CJ
+clearance dimension remains FALSE, the five `customer_source_release` pilot rows remain
+`released=false`, and GPD.01 stays OPEN until substantive written replies are
+reconciled. The enquiries are not to be resent; follow-up is a founder chase action.

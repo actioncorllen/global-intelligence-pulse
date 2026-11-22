@@ -1,0 +1,38 @@
+-- mig_309 — 2026-11-22 — BE238 Task 2: research-orchestrator selftest retargeted.
+-- Applied to project nxaunmyihhjixxxljcqt as migration
+-- `retarget_research_orchestrator_selftest_v4_metered` (authoritative body in
+-- supabase_migrations.schema_migrations). Record file only.
+--
+-- Diagnosis: the 013N-era fn_research_orchestrator_selftest (contract
+-- pulse_research_selftest_v3_013n) failed 5/8 cases from ONE root cause — it drove the
+-- METERED public wrapper (trigger on_demand_user_request) and was ALLOWANCE_BLOCKED by
+-- the W0.02 plan-allowance gate added to fn_research_request_core after the selftest
+-- was written; with no run created, the attempt/finalize/cache cases all chained red.
+-- NOT a production defect: fail-closed metering of explicit fresh research is the
+-- deliberate current design (core's own comment exempts selftests via trigger).
+-- The TikTok/Meta/eBay "dispatchable" expectations were also hardcoded 013N-era
+-- assumptions; attempt rows are planned evidence slots whose states must follow the
+-- live provider_capability_registry, not a fixed provider list.
+--
+-- Replacement (contract pulse_research_selftest_v4_metered_dataforseo), 10 cases:
+--   metering_fail_closed_no_allowance   (direct fn_feature_reserve probe with a random
+--                                        uuid — NEVER drives the metered request path,
+--                                        so the selftest can never consume a real
+--                                        reservation, even if the founder later holds one)
+--   own_wrapper_is_metered              (structural lock: wrapper passes
+--                                        'on_demand_user_request')
+--   request_creates_6_category_attempts (exempt 'selftest' trigger; 6 distinct categories)
+--   auto_dispatch_suppressed_in_selftest (pulse.suppress_dispatch honoured; no paid call)
+--   attempts_match_capability_registry  (each attempt source = live registry winner and
+--                                        state encodes its availability; NO hardcoded
+--                                        providers — stays valid when the founder fixes
+--                                        the flagged stale TikTok '*' AVAILABLE row)
+--   search_demand_is_dataforseo         (DataForSEO-led architecture anchor)
+--   finalize_partial_no_blocked_gap     (unchanged invariant)
+--   unsupported_market_rejected         (unchanged country gate)
+--   foreign_tenant_not_authorized       (NEW tenant-isolation case)
+--   cache_reused_default_freshness_unmetered (cache reuse costs no allowance, even on
+--                                        the metered trigger)
+--
+-- Results: 10/10 all_pass; re-run idempotent; fn_problem_solution_selftest now 18/18
+-- (case N green); foundation + discovery suites all_pass; zero run/attempt residue.
