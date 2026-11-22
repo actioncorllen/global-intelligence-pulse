@@ -1,0 +1,46 @@
+-- mig_311 — 2026-11-22 — BE241 Task 2: aggregate customer-facing competitor-offers presentation.
+-- Applied to project nxaunmyihhjixxxljcqt as migration
+-- `aggregate_competitor_offers_presentation_v1` (authoritative body in
+-- supabase_migrations.schema_migrations). Record file only.
+--
+-- Founder authorised this ENGINEERING change only (BE241); NOT release of the 5 GB
+-- Merchant products, NOT any source-rights change, NOT GPD.01 acceptance, NOT Stripe
+-- LIVE, NOT paid API calls.
+--
+-- Change: the two CUSTOMER-FACING competitor RPCs no longer emit the verbatim per-seller
+-- list (competitor_identity + observed_product_url). They now return structured
+-- AGGREGATES. The internal evidence table product_market_competitors is UNCHANGED —
+-- provenance (identities/urls) preserved for internal evaluation; the four internal
+-- evaluators that still carry identity (fn_pmc_evaluate, fn_pmc_summary,
+-- fn_assemble_real_product_market, fn_stage3b_market_pricing) are NOT frontend RPCs and
+-- are intentionally left intact (internal provenance). No customer-reachable RPC emits
+-- identity/url after this change (audited: workspace/product/ad intelligence, discovery
+-- intelligence and finalize_research_run all clean).
+--
+-- fn_product_competitor_evidence -> contract pulse_product_competitor_evidence_v2_aggregated:
+--   * competitors = [] (verbatim list withheld)
+--   * count = observed OFFER count (listings), NOT seller count
+--   * offers_aggregate[] grouped by source x platform x match_class x currency, each with
+--     observed_offers, distinct_sellers (ONLY when every row in the group carries an
+--     identity, else NULL/UNKNOWN), distinct_sellers_known, price_low/high (single
+--     currency), match_label (Exact product | Comparable product), newest_observed_at,
+--     source, confidence, limitations — NO identity, NO url.
+--   * price_summary extended: offers, distinct_sellers, sellers(=distinct where verifiable
+--     else NULL — fixes the prior offers-labelled-as-sellers conflation), exact_offers,
+--     comparable_offers, single-currency low/median/high, excluded_other_currency.
+--   * freshness + ad_summary + authority=REFERENCE_ONLY retained; new invariants
+--     offers_not_equated_to_sellers + verbatim_seller_list_withheld.
+-- fn_ecommerce_competitor_intelligence -> pulse_ecommerce_competitor_intelligence_v2_aggregated:
+--   per product x country x platform x match_class x currency aggregate; identity/url removed.
+--
+-- VERIFIED (post-change, before a tooling interruption): fn_product_competitor_evidence_selftest
+-- 5/5 (MARKET_REQUIRED, FASTMOSS_EMPTY_HONEST, JP isolation, POPULATED_RANGE_ORDERED,
+-- CROSS_TENANT_REJECTED — count now = offer count); stage3b 16/16; w004 11/11; no
+-- customer-reachable RPC emits competitor_identity/observed_product_url.
+-- PENDING (interrupted by a Supabase MCP destructive-statement confirmation timeout on the
+-- drill's synthetic INSERT/DELETE; the DO block never committed, so no residue): the
+-- explicit 9-scenario drill (two-country, multi-offer-one-seller, distinct sellers,
+-- observed-empty, missing identity, GBP vs USD, exact vs comparable, release OFF/rights
+-- revoked, tenant isolation) and the reversible release-on drill (flip 5 rows, verify,
+-- restore to FALSE). To be re-run non-destructively. Release rows were NOT touched and
+-- remain released=false.

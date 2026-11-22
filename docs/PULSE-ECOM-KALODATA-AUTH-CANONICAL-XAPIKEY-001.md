@@ -933,3 +933,72 @@ here.
 accepted GOLD units untouched. GPD.01 remains **OPEN** — provider terms resolved, the
 Google-upstream leg is now reduced to the single narrow legal question above plus the
 founder production-release authorization. No rows flipped; GPD.01 not accepted.
+
+## Addendum 22 — 2026-11-22 — BE241: aggregated competition presentation + EU database-right closeout
+
+Founder authorised the **engineering change only** (not release, rights, GPD.01, Stripe
+LIVE, or paid calls). Implemented the narrower rights-safe competitor-offers presentation
+from BE240 §4.
+
+### Provenance of the 5 pilot products' competitor observations (Task 1)
+- **Google Shopping (via DataForSEO Sellers):** Projecteur (1def97b0) — 5 GB offers, 5
+  distinct named sellers, EXACT_PRODUCT, GBP £33.99–£39.99 (source DATAFORSEO_SELLERS).
+- **eBay-derived comparable (not Google-origin):** Govee Star Light (d985e5af) — 1 US
+  offer, no seller identity, CLOSE_COMPARABLE, USD $59.99 (source EBAY_BROWSE).
+- **Strateloq independently-calculated:** the derived score/decision/demand/competition
+  metrics (not in the competitor table).
+- Three products (cold brew, Govee Exquisite, pococo) are observed-empty.
+Not all stored offers are Google-origin — the eBay comparable is a separate source with
+its own rights.
+
+### Aggregation implemented (Task 2 — mig_311, backend-only)
+Both customer-facing competitor RPCs (`fn_product_competitor_evidence`,
+`fn_ecommerce_competitor_intelligence`) now withhold the verbatim per-seller list
+(`competitor_identity` + `observed_product_url`) and return structured aggregates:
+observed **offer** count (listings) kept SEPARATE from **distinct-seller** count; distinct
+sellers reported only where genuinely verifiable (every row in the group carries an
+identity), else UNKNOWN; single-currency observed price range; exact-product vs
+comparable-product; observation date / freshness / source; and explicit limitations. The
+internal evidence table and the internal evaluators retain full provenance. The existing
+frontend renders the aggregated response from `price_summary` without Lovable changes
+(the verbatim-list card path now receives an empty `competitors` array).
+
+### Task 5 — EU/Google database-right & contractual closeout
+**Directive 96/9/EC** (legal protection of databases, 11 Mar 1996): Art. 3 copyright for
+original selection/arrangement; **Art. 7 sui generis database right** for a maker with
+**substantial investment in obtaining, verifying or presenting** the contents, to prevent
+**extraction / re-utilisation of a substantial part** (qualitative or quantitative);
+**Art. 7(5)** bars repeated/systematic extraction of **insubstantial** parts that conflict
+with normal exploitation or unreasonably prejudice the maker; 15-year term (Art. 10).
+Retained in the UK as the database right under the Copyright and Rights in Databases
+Regulations 1997 (as amended). Key CJEU authority: **British Horseracing Board v William
+Hill (C-203/02)** — the right protects investment in *obtaining* existing data, not in
+*creating* it; **Innoweb v Wegener (C-202/12)** — re-utilisation via meta-search.
+
+Application to the five-product presentation (analysis, not legal advice):
+- Whether Google holds the sui generis right in its Shopping compilation turns on the
+  BHB obtaining-vs-creating distinction (merchant listings are supplied by merchants;
+  Google's investment is arguably in obtaining/verifying/presenting) — genuinely uncertain.
+- A single pilot display of 5 products is unlikely to be a quantitatively "substantial
+  part"; the aggregation (counts + ranges rather than the verbatim compiled seller list)
+  further reduces both the quantum and the "reproduction of the compiled list" character.
+  **Aggregation reduces, but does NOT automatically eliminate, the database right** — Art.
+  7(5) can still bite on *repeated/systematic* insubstantial extraction at SaaS scale.
+- No Google contract binds Strateloq (BE240: no direct access/account/assent). DataForSEO
+  §7.2 assigns residual upstream risk to Strateloq.
+
+**Recommendation: yes — qualified Irish/EU counsel should review the specific five-product
+(post-aggregation) presentation**, on: (a) whether Google holds an Art. 7 right in the
+Shopping data (obtaining-vs-creating); (b) whether Strateloq's display of aggregated,
+DataForSEO-sourced observations is extraction/re-utilisation of a substantial part or
+triggers Art. 7(5) at scale; (c) copyright in titles (low); (d) the §7.2 indemnity
+exposure. This is the narrow, specific question now ready for counsel.
+
+### Verification status (honest)
+Verified after the change: competitor-evidence selftest 5/5, stage3b 16/16, w004 11/11,
+and no customer-reachable RPC emits identity/url. **Pending:** the explicit 9-scenario
+drill and the reversible release-on drill were interrupted by a Supabase MCP
+destructive-statement confirmation timeout (the atomic DO block never committed, so no
+residue; release rows never touched, still `released=false`). To be re-run
+non-destructively. Controls preserved: 5 release rows FALSE, images blocked, tenant/country
+isolation, Stripe LIVE closed, 11 GOLD units untouched, GPD.01 unchanged (OPEN).
