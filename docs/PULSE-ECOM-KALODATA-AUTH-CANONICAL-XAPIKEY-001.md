@@ -1331,3 +1331,24 @@ New `public.fn_set_research_variant_designation(tenant, product, attributes[], v
 
 ### T5–T7 — economics, regression, safeguards
 Economics not run (no customer-eligible verified exact variant; no provider calls). Regression green: pd_release 13/13 (`all_green`), exact-variant engine 11/11, cross-supplier identity 13/13, research-variant-designation 5/5, stage3b. Safeguards intact: FastMoss retired (0 functions), CJ images blocked, 5 Merchant release rows FALSE, Stripe public checkout closed, founding-member-only, founder-only store/ads, tenant/country isolation, provider-budget enforcement, PAL, 11 GOLD gates. **GPD.16/17/19 remain NOT ACCEPTED** — the full pipeline (identity → designation → engine → economics) is now built and proven end-to-end, but no customer-eligible product yet has the authoritative identity it requires. **Exact next action:** founder authorises one specific CJ product-detail acquisition (as in BE248) for a founder-tenant research product, then designate its variant; the engine verifies and economics follow.
+
+---
+
+## Addendum 32 — BE251 First customer-eligible CJ-native product: determination + bounded acquisition request
+
+**Date:** 2026-11-23. Read-only determination; **no DB changes, no provider calls, $0.** Engine/RPC/image safeguards not rebuilt.
+
+### T1/T2 — no eligible already-acquired candidate; no authoritative founder link
+The authorised CJ catalogue holds **exactly two** probed (variant-catalogue) products, both excluded for a customer demo: the **leather patch** `2608261145001630400` (fresh, 20 variants — but the directive forbids reusing the system-tenant leather patch as customer proof) and the **ski-mask** `2609290358281623700` (**33.4 days stale**, fails the engine's freshness window, **and** FastMoss-linked on the demand side — excluded). `fresh_probed_non_leatherpatch_non_fastmoss = 0`. Separately, **0 of 261 founder-tenant products** carry an authoritative CJ-native / GTIN identity, so no existing founder product can be authoritatively linked to a fresh CJ product. Every other CJ supplier row is unprobed (`variant_count=0`) and stale.
+
+### T3/T4 — fresh evidence is required; acquisition needs new authorisation
+Because no eligible, fresh, probed, non-excluded CJ product exists and no founder product has authoritative CJ identity, **existing data is not sufficient** to establish the first *customer-eligible* CJ-native exact-variant journey. A fresh CJ acquisition of a founder-selected product is necessary. Per the directive this requires **explicit founder authorisation** — BE248's one-off allowance was for the leather patch only and is **not** reused, and the leather patch itself is not reused.
+
+**Bounded acquisition request (smallest justified set; for founder authorisation):**
+- **Product:** ONE CJ product the founder selects with a genuine research use case in a supported market (GB/DE/FR/ES/IT/US/MY/PH/SG) — **not** the leather patch and **not** a FastMoss-origin product. (Founder names the pid, or confirms a specific candidate.)
+- **Endpoints (all free):** `authentication/getAccessToken` ×1; `product/query?pid=<pid>` ×1 (variant catalogue); and only if a specific variant is designated and economics are wanted, `product/stock/queryByVid` ×1 + `logistic/freightCalculate→<market>` ×1.
+- **Calls:** ≤4. **Entitlement:** existing "CJ Dropshipping API" credential (live). **Limits:** CJ standard rate limits only. **Cost:** **$0** (reads are free). **Existing authorisation:** none for a new product — **new explicit authorisation required.**
+- **On authorisation**, the fully-built mechanism completes the journey: create a founder-tenant **supplier-origin** research item (clearly labelled supplier-origin, not a market winner) via the existing authorised process; designate the variant via `fn_set_research_variant_designation` (BE250); verify via the BE246 engine; economics via `fn_resolve_supplier_economics` (margins UNKNOWN without a credible selling price); surface through the research interface with images blocked + tenant/country isolation.
+
+### Regression + safeguards
+Green: pd_release 13/13 (`all_green`), exact-variant engine 11/11, research-variant-designation 5/5. Intact: 0 released Merchant rows, Stripe public checkout closed, 0 FastMoss functions, CJ images blocked, 0 EXACT overclaims, 11 GOLD gates. **GPD.16/17/19 remain NOT ACCEPTED** — not marked on a supplier-catalogue import or system-tenant evidence. **Remaining blocker:** one founder-authorised, founder-selected CJ product acquisition (as specified above); everything downstream is built and proven.
