@@ -1352,3 +1352,31 @@ Because no eligible, fresh, probed, non-excluded CJ product exists and no founde
 
 ### Regression + safeguards
 Green: pd_release 13/13 (`all_green`), exact-variant engine 11/11, research-variant-designation 5/5. Intact: 0 released Merchant rows, Stripe public checkout closed, 0 FastMoss functions, CJ images blocked, 0 EXACT overclaims, 11 GOLD gates. **GPD.16/17/19 remain NOT ACCEPTED** — not marked on a supplier-catalogue import or system-tenant evidence. **Remaining blocker:** one founder-authorised, founder-selected CJ product acquisition (as specified above); everything downstream is built and proven.
+
+---
+
+## Addendum 33 — BE252 CJ product shortlist + acquisition decision (proposal only)
+
+**Date:** 2026-11-23. Read-only shortlist from the existing CJ catalogue; **no provider calls, $0, no DB changes.** Excluded: leather patch `2608261145001630400`, FastMoss-origin evidence (ski-mask `2609290358281623700`), category/identity conflicts, and unsupportable commercial claims. All figures are **stored historical** evidence (observed Sept–Oct 2026); none has a probed variant catalogue, so current variants/stock/freight are **UNKNOWN** until a fresh probe, and **none is a market winner** (no independent demand evidence).
+
+### Five-product GB shortlist
+| # | Product | CJ PID | SKU | Function | Supplier cost (hist.) | Last obs | Notes |
+|---|---|---|---|---|---|---|---|
+| 1 ⭐ | Rain Cloud Air Humidifier / 7-colour night-light aroma diffuser | `2103378852506546177` | CJSN3195865 | Desktop humidifier + aroma + night-light | $8.61 USD, 650 g | 2026-09-28 | Single function; likely few variants (colour/plug); coherent category (Night Lights); strong GB home/wellness use case |
+| 2 | Portable Nano-Ion Facial Steamer | `2104518362322178049` | CJMB3206221 | Facial steamer (beauty) | $11.70 USD, 155 g | 2026-09-29 | Single function; likely few variants; clear GB beauty use case |
+| 3 | 10-pack LED GU10 Bulbs 7 W | `2100846071883689986` | CJTH3176429 | LED spotlight bulbs | $10 USD, 300 g | 2026-09-20 | Simple; likely 1–2 variants (warm/cool white); clear GB home use |
+| 4 | Digital Camera Shoulder Bag (DSLR/SLR) | `2104139826061291521` | CJSY3202279 | Camera carry bag | $14 USD, 520 g | 2026-09-27 | Accessory; likely few variants (size/colour) |
+| 5 | Children's Touch-Screen Electronic Piano Toy | `2104100222843138050` | CJYZ3201504 | Kids' music toy | $11 USD, 300 g | 2026-09-27 | Likely 1–2 variants; plausible GB toy use case |
+
+Rejected examples: Grim-Reaper costume (many size variants → ambiguity); "Premium ZIP Trading Card Binder" (stored under category *Dual SIM Card* → identity conflict); "99,000,000 LM Military Tactical Flashlight" (unsupportable commercial claim).
+
+### Recommendation (not a market-opportunity ranking)
+**#1 — Rain Cloud Air Humidifier, CJ PID `2103378852506546177`.** Preferable because: a clear single-function consumer product with a coherent category and a strong, supportable GB home/wellness use case; low historical supplier cost ($8.61) giving later economics headroom; likely **few, understandable variants** (colour/plug), which minimises the variant ambiguity the exact-SKU engine guards against and maximises the chance of a single clean exact variant; lightest/freshest of the strongest options. Ordering reflects demonstration suitability, **not** verified market opportunity.
+
+### Bounded acquisition proposal (PROPOSAL ONLY — do not execute until founder authorises the exact PID + scope)
+- **Product:** one only — CJ PID `2103378852506546177`.
+- **Endpoints (free):** `authentication/getAccessToken` ×1; `product/query?pid=2103378852506546177` ×1 (current variant catalogue, cost, title); then only if a specific variant is designated and economics wanted, `product/stock/queryByVid` ×1 + `logistic/freightCalculate→GB` ×1.
+- **Max 4 free CJ API requests; $0;** existing "CJ Dropshipping API" credential + the BE248 n8n pattern; **no broad catalogue refresh.**
+- **Authorisation:** none yet — requires explicit founder sign-off on this PID and scope (BE248's allowance is not reused). If authorised, the supplier-origin research item is created via the existing founder-tenant workflow with clear CJ-origin provenance, tenant/country isolation, genuine variants, CJ images blocked, and **real exact-variant evidence required before any GPD.16/17/19 acceptance** — never masquerading as an independently discovered market winner.
+
+**GPD.16/17/19 remain NOT ACCEPTED** (shortlist/recommendation is planning, not verified evidence).
