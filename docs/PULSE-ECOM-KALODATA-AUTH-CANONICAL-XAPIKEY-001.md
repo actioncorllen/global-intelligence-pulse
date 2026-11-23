@@ -1583,3 +1583,37 @@ Missing: a GTIN (or manufacturer brand+MPN) for a specific US discovery **and** 
 
 ### Validation / security
 No DB writes (no defect to fix; no identifier manufactured). No new provider calls; $0. FastMoss retirement, tenant/country isolation, CJ image-rights block, PAL, DataForSEO upstream/customer-release restrictions, 5 locked Merchant rows, Stripe controls and the 11 accepted GOLD gates all preserved. Intelligence kept separated (discovery identity vs product-specific demand vs category demand vs supplier identity); no attribute/demand bleed. **GPD.16/17/19 remain NOT ACCEPTED.**
+
+## Addendum 40 — BE259 restore & verify the Discovery → Verified-Supplier → Profit journey; cross-provider identity decision (read-only, $0, 0 new calls)
+
+**Date:** 2026-11-23. Assessment of the original business model's implementation + the decisive identity-bridge decision. No rebuild; no new provider calls; BE256/257/258 evidence preserved and separate.
+
+### What is already working (inspection, not rebuild)
+- **Genuine US discovery** (DataForSEO Merchant / Google Shopping): product records with product-specific US signals (`MARKETPLACE_ACTIVITY`), seller name, price, freshness, market isolation; FastMoss retired.
+- **Opportunity/profitability engine** (`fn_ecommerce_product_intelligence_core`): returns `lifecycle` (`early_opportunity_state` RESEARCH_PRIORITY/DISCOVERED, `commercially_validated`, `stage1_supplier_resolution_qualified`, disqualifiers branded_or_ip / identity_ambiguous / observed_high_saturation, qualifying_family_count), `evidence_families`, `observed_counts`, `freshness`, `supplier_resolution`. GPD.12 customer-facing score suppression intact (no scores exposed; no diagnostic tiers reactivated). Economics via `fn_resolve_supplier_economics` (honest `no_candidate`/UNKNOWN without an exact variant; $10/unit ad assumption + ~$25–30 net target model retained from prior BE work).
+- **Product Card fields present**: identity, market, evidence summary, demand/competition observations, freshness, `supplier_resolution` (bound/status), economics, opportunity classification, Save/Monitor (GPD.18 accepted). Image rights fail-closed; 5 Merchant pilots unreleased.
+- **Supplier-sourceable publication gate — verified enforced SERVER-SIDE and fails closed.** Validation: cross_supplier_identity `variant_verified=0`, `bound_and_verified=0`; concrete_supplier_resolution `bound=0` of 9. The only bound cross-identity is the excluded GB FastMoss ski-mask (SAME_PRODUCT_IDENTITY, not EXACT, **not** bound at the concrete layer the card reads). So **no product surfaces as a confirmed/sourceable opportunity** — unverified-supplier products stay in evidence-pending (RESEARCH_PRIORITY/DISCOVERED, `commercially_validated=false`). **No demonstrated defect → no fix applied** (none invented).
+
+### End-to-end journey — honest progress (backend-verified; no browser claim)
+For the genuine US discovery `ca945686` (google_product_id `17536943141369248154`, "Walmart - Seller", $14.99, GENERIC_OK): discovery ✓ → product-specific US evidence ✓ (thin: 1 marketplace signal/competitor) → identity (name-based platform_id + google_product_id; **no authoritative cross-supplier identifier**) → **exact supplier match ✗ (no authoritative bridge)** → supplier URL ✗ → exact variant ✗ → US economics UNKNOWN → Product Card renders **evidence-pending (RESEARCH_PRIORITY)**, correctly NOT sourceable → Save/Monitor available. The journey stops at *exact supplier match* — exactly the capability gap, not a pipeline bug.
+
+### The real blocker (not ingestion): cross-provider exact-identity mechanism
+Generic white-label US dropship discoveries carry no barcode and no manufacturer/model identity; neither DataForSEO Merchant listing data nor CJ exposes a shared GTIN/MPN, so an identifier bridge is unattainable for generics. Per §8, a product-detail call that *could* return a GTIN is insufficient alone because no prospective authorised supplier (CJ) can expose/verify the same GTIN. Provider capability assessment (existing evidence, no calls):
+- **DataForSEO** — Google Shopping **product-detail** could add the full merchant-offer set + specs + GTIN/brand *when the merchant published them* (MODERATE yield branded, LOW generic); gives a competitor retail offer URL, not a dropship sourcing link. Chargeable.
+- **CJ** — rich product/variant ids, **direct supplier product URL**, stock + US shipping (`shippingCountryCodes`), variant SKUs — but **no GTIN/MPN**, so it cannot be the matched side of an identifier bridge for a barcode-less generic.
+- **AliExpress / BigBuy** — not activated; rights NOT presumed. BigBuy (EU wholesaler) typically carries EANs and direct URLs; AliExpress carries variant ids + direct URLs. Either *could* supply authoritative identifiers, but only via a new licensed integration/partnership (founder decision).
+
+### Decisive recommendation — the capability that actually resolves the gap
+**Best credible method for the dropshipping model = product-image vision matching** (compare a discovery's merchant image ↔ candidate supplier variant images to establish exact equivalence), paired with the supplier's **direct product URL + exact variant SKU + stock/US-freight**. This is the general solution for barcode-less white-label generics (visually identical across Google-Shopping/CJ/AliExpress), uses imagery already in evidence under *analyse* rights (customer display stays blocked), and is exactly the `variant_image_vision_unavailable` evidence the BE246 engine already names as missing. It is a **new internal capability (vision), not a provider credit.**
+
+**Smallest useful next step (no spend approved):**
+- **Primary (recommended):** stand up a bounded **image-vision equivalence check** on ONE pair — US discovery `ca945686` vs CJ `2610010255571606100` variants — using already-stored images. $0 provider cost; needs a vision capability/tool; resolves the generic case the right way.
+- **Alternative (identifier route, branded only):** ONE DataForSEO Google Shopping **product-detail** call on the **branded** Govee `d985e5af` (`18034214886779403846`) to test GTIN/brand retrieval — chargeable (confirm exact cost vs provider budget) — worthwhile **only** if paired with a brand-authorised supplier that exposes the same GTIN (new supplier strategy + IP review); **not** recommended for generics, and not repeated low-yield calls.
+- **Do NOT** redefine Strateloq as a supplier-catalogue browser, approximate matching, or branded-only discovery.
+
+### Strongest candidate
+- Generic dropship model: **`ca945686`** (resolvable via image-vision, option A).
+- Identifier/branded model: **`d985e5af`** Govee (resolvable via product-detail GTIN, but needs brand-authorised sourcing).
+
+### Security / tracker
+FastMoss retirement, 18-country isolation, founding-member + founder-only controls, PAL, provider licensing, CJ image block, Stripe, Save/Monitor, timestamps and the 11 accepted GOLD gates all preserved. No DB writes; no API calls. **GPD.16/17/19 remain NOT ACCEPTED**; GPD.06–11/22/01 unchanged (no new evidence; not re-audited). GOLD GPD.16 + Build Evidence updated with this finding.
