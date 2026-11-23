@@ -1380,3 +1380,39 @@ Rejected examples: Grim-Reaper costume (many size variants → ambiguity); "Prem
 - **Authorisation:** none yet — requires explicit founder sign-off on this PID and scope (BE248's allowance is not reused). If authorised, the supplier-origin research item is created via the existing founder-tenant workflow with clear CJ-origin provenance, tenant/country isolation, genuine variants, CJ images blocked, and **real exact-variant evidence required before any GPD.16/17/19 acceptance** — never masquerading as an independently discovered market winner.
 
 **GPD.16/17/19 remain NOT ACCEPTED** (shortlist/recommendation is planning, not verified evidence).
+
+## Addendum 34 — BE253 founder-approved CJ acquisition EXECUTED; product delisted; GPD.16/17/19 still NOT ACCEPTED
+
+**Date:** 2026-11-23. Founder granted explicit approval to acquire the BE252-recommended product. Executed within every hard limit: **$0; 2 of 4 CJ requests used; no retries; no activation; one product only.**
+
+### Authorised + executed
+- One product only: Rain Cloud Air Humidifier, **CJ PID `2103378852506546177`** (hist. SKU CJSN3195865, $8.61, obs 2026-09-28).
+- n8n workflow `zwTkywEYKsmojs6g` retargeted from the BE248 leather-patch pid to this pid using **surgical `setNodeParameter` JSON-Pointer patches** (CJ Detail query param + Build Enrichment fallback) + a metadata rename. This avoided the SDK credential-unbind risk: the founder-set bindings (CJ Dropshipping API on CJ Auth; Supabase account on POST Ingest) were **left intact** (`autoAssignedCredentials:[]`, verified by re-fetch). Activation stayed off. Executed manually (execution 30722), free CJ endpoints only.
+
+### Real CJ response
+- Call 1 `authentication/getAccessToken` → success (access token never recorded anywhere).
+- Call 2 `product/query?pid=2103378852506546177` → **`code 1602002, result=false, "Product has been removed from shelves", data=null`.**
+- **2 of 4 CJ requests used; $0** (CJ `pointsInfo` is a free daily rate-limit allowance, not a monetary charge; no paid endpoint touched).
+
+### Honest reconciliation (non-destructive)
+- The ingest (`fn_ingest_cj_product_media`, UPDATE-only) merged an **empty** enrichment into the pre-existing global supplier row `97b4d58f…`. Corrected so it reads as a delisting, not a "successful 0-variant probe": `availability_status=REMOVED_FROM_SHELVES`, `variant_catalog_status=UNAVAILABLE_PRODUCT_DELISTED`, `be253_probe={outcome, cj_code 1602002, cj_message, pid, cj_request_id, observed_at, directive}`. `raw` (historical Sept-2026 fields incl. sellPrice 8.61 / productSku CJSN…) untouched.
+
+### Exact-variant verification — fail-closed (mig_330)
+- `fn_be253_delisted_probe_check()` (durable, self-rolling-back fixture) runs the BE246 engine against the REAL delisted supplier row: **`exact=false`, reason `variant_catalog_absent_or_unprobed`, identity_method `CJ_NATIVE_NAMESPACE`.** Safety property proven: a delisted / empty-catalog product never verifies EXACT even with authoritative CJ-native identity.
+- No founder-tenant customer-eligible research item was created — a delisted product is not customer-eligible. `0` false-EXACT rows for the pid.
+
+### Economics / customer journey
+- **Not run / not applicable.** No genuine exact variant → supplier economics correctly WITHHELD. No customer-eligible product → no browser journey to demonstrate. No stock/freight calls made (the remaining 2 of the 4-call budget were scoped to this now-dead pid).
+
+### Safeguards
+- No system-tenant→founder copy; no synthetic demand/variant/economics inserted. Image/rights gates untouched (`CJ.display_cache_images_cleared` stays FALSE; enrichment `images:[]`). No Merchant release; founding-member policy unchanged; no payment/licensing changes.
+- Regression: **pd_release all_green=true (13/13)**, research_variant_designation selftest **5/5**, be253_delisted_probe **ok**.
+
+### Acceptance + escalation (founder decision required)
+- **GPD.16, GPD.17, GPD.19 remain NOT ACCEPTED.** No GOLD flip. The single authorised product is unavailable at the supplier; exact-SKU verification cannot proceed on it. This is a genuine external blocker (supplier delisting), not a fixable technical failure.
+- **Founder to authorise ONE specific replacement PID.** The BE252 shortlist #2–#5 remain candidates, but all were observed Sept 2026 — like #1, which has since been delisted — so **live availability must be re-confirmed by a fresh bounded probe.** A different product requires fresh sign-off; BE253's remaining 2 calls were scoped to the humidifier.
+  - #2 Portable Nano-Ion Facial Steamer — `2104518362322178049` (CJMB3206221, $11.70)
+  - #3 10-pack LED GU10 Bulbs 7 W — `2100846071883689986` (CJTH3176429, $10)
+  - #4 Digital Camera Shoulder Bag — `2104139826061291521` (CJSY3202279, $14)
+  - #5 Children's Touch-Screen Piano Toy — `2104100222843138050` (CJYZ3201504, $11)
+- Standing recommendation for the next acquisition: have the probe confirm live availability **first** (auth + product/query), and only then spend stock/freight calls — so a delisted product never consumes the economics budget.

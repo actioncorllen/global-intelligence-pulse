@@ -1,0 +1,42 @@
+-- mig_330 — 2026-11-23 — BE253: founder-approved bounded CJ acquisition outcome + fail-closed proof.
+-- Record file only (authoritative body in schema_migrations / pg_get_functiondef).
+--
+-- Context: BE253 authorised ONE controlled, zero-charge CJ product/detail acquisition for the
+--   founder-recommended Rain Cloud Air Humidifier (CJ PID 2103378852506546177, hist. SKU CJSN3195865,
+--   hist. cost $8.61 observed 2026-09-28), to drive the first real customer-eligible exact-SKU
+--   verification (GPD.16/17/19). Cap: ≤4 free CJ requests incl. auth; $0; existing CJ credential +
+--   BE248 n8n pattern; no catalogue refresh; no retries; no activation.
+--
+-- Execution (n8n workflow zwTkywEYKsmojs6g, retargeted via surgical setNodeParameter patches that left
+--   the founder-set credential bindings intact; execution 30722, manual, 2026-11-23):
+--     call 1  authentication/getAccessToken      -> success
+--     call 2  product/query?pid=2103378852506546177 -> code 1602002, result=false,
+--             "Product has been removed from shelves". data=null.
+--   2 of 4 CJ requests used; $0 (CJ "points" are a free daily rate-limit allowance, not a charge;
+--   no paid endpoint called). Access token NOT recorded anywhere.
+--
+-- Data reconciliation (non-destructive): the ingest (fn_ingest_cj_product_media) merged an EMPTY
+--   enrichment into the existing global supplier row (id 97b4d58f..., source cjdropshipping,
+--   source_product_id 2103378852506546177). That row's supplier_enrichment was corrected to read as a
+--   delisting rather than a successful 0-variant probe:
+--     availability_status      = 'REMOVED_FROM_SHELVES'
+--     variant_catalog_status   = 'UNAVAILABLE_PRODUCT_DELISTED'
+--     be253_probe              = { outcome, cj_code 1602002, cj_message, pid, cj_request_id,
+--                                  observed_at, directive 'BE253', note }
+--   raw (historical Sept-2026 fields incl. sellPrice 8.61, productSku CJSN...) left untouched.
+--
+-- This migration adds fn_be253_delisted_probe_check(): a durable, self-contained regression fixture.
+--   It inserts a transient founder-tenant commerce_products row with the authoritative CJ-native
+--   identity (candidate:pid:cjdropshipping:2103378852506546177), runs the BE246 exact-variant engine
+--   (fn_cross_supplier_exact_variant_check) against the REAL now-delisted supplier row, asserts the
+--   safety property, and ROLLS BACK the fixture in-function (nothing persisted in the founder tenant).
+--   Result: ok=true; engine_exact=false; engine_reasons=["variant_catalog_absent_or_unprobed"];
+--   identity_method=CJ_NATIVE_NAMESPACE. Safety property proven: a delisted / empty-catalog product
+--   NEVER verifies EXACT, even though its identity is authoritative.
+--
+-- Outcome: the single founder-approved product is delisted at the supplier and is therefore NOT a real,
+--   purchasable, customer-eligible SKU. Exact-SKU verification cannot proceed for it. GPD.16/17/19 remain
+--   NOT ACCEPTED. No founder-tenant customer-eligible research item was created (a delisted product is
+--   not eligible). No GOLD. No retry; no auto-selection of a replacement (the product choice is the
+--   founder's decision). Regression after the change: pd_release all_green=true (13/13),
+--   research_variant_designation selftest 5/5, be253_delisted_probe ok=true, 0 false-EXACT rows.
