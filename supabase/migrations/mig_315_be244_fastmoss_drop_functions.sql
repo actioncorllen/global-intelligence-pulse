@@ -1,0 +1,13 @@
+-- mig_315 — 2026-11-23 — BE244 part 3: drop all FastMoss DB functions.
+-- Applied as `be244_fastmoss_drop_functions`. Record file only.
+-- First removed the last references so no caller breaks at runtime:
+--   * fn_stage1_early_opportunity_selftest: retired FastMoss-suite case 16 (Kalodata suite case 17 kept).
+--   * fn_stage1_evidence_identity_selftest: dropped the FastMoss conjunct (Kalodata adapter check kept).
+--   * fn_pd_release_verification: removed fn_fastmoss_run_discovery from the sensitive-function list and
+--     retargeted its grants check + rolled-back release-safety dispatch probe to fn_kalodata_run_discovery.
+-- Then DROP FUNCTION (by exact regprocedure signature) for every public.*fastmoss* function:
+--   7 operational (fn_fastmoss_discovery_request x2 overloads, _enrich_from_response, _ingest_candidates,
+--   _ingest_candidates_ml, _integrate_reference_videos, _record_lane_outcome, _run_discovery) + 6 FastMoss
+--   selftests (_commerce_adapter_selftest, _enrich_selftest, _identity_integrity_selftest,
+--   _kalodata_allmarket_fixture_selftest, _multilane_selftest, _product_video_reference_selftest).
+-- Post-condition asserted: 0 public.*fastmoss* functions remain. Full regression green afterward.

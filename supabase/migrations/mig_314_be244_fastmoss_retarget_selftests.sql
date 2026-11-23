@@ -1,0 +1,11 @@
+-- mig_314 — 2026-11-23 — BE244 part 2: retarget FastMoss-vehicle selftests to current providers.
+-- Applied as `be244_fastmoss_retarget_dependent_selftests`. Record file only.
+-- * fn_provider_budget_gate_selftest: driver + label FastMoss -> Kalodata (identical budget gate
+--   fn_provider_budget_try_consume + fn_net_post_guarded -1 sentinel; all budget invariants preserved). 12/12 pass.
+-- * fn_discovery_media_integrity_selftest: check G retargeted to fn_kalodata_ingest_candidates
+--   (generic persist/media-integrity checks A–F unchanged). 7/7 pass.
+-- * fn_stage1_supplier_resolution_selftest: removed obsolete FastMoss case 18 (Kalodata adapter case 19
+--   is the current-provider invariant); fixed case 23 idempotency to the durable marker
+--   CACHE_REUSED_IN_FLIGHT (the stale 'pulse_research_request_v4_idempotent' pin broke after BE238's
+--   v5_metered rename) — genuine idempotency invariant (active-logical-key unique index + in-flight
+--   dedup) preserved, NOT suppressed. 21/21 pass. Resolves the BE243 18/23 failures.

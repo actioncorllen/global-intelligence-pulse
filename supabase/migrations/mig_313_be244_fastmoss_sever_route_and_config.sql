@@ -1,0 +1,9 @@
+-- mig_313 — 2026-11-23 — BE244 (permanent FastMoss removal) part 1.
+-- Applied as migration `be244_fastmoss_sever_route_and_config` (authoritative body in
+-- supabase_migrations.schema_migrations). Record file only.
+-- * fn_multi_lane_discovery_plan: removed the FastMoss COMMERCE-lane branch (the sole active
+--   DB route that built a FastMoss request). Kalodata and all other lanes preserved; the
+--   COMMERCE lane is now Kalodata-only. No FastMoss provider object / fastmoss_request field.
+-- * fn_pd_release_verification: (array edit deferred to mig_315 — anchor; see there).
+-- * DELETE FROM discovery_provider_market_config WHERE provider ILIKE 'fastmoss' (20 rows,
+--   all already enabled=false) — FastMoss removed from supported-provider / routing config.

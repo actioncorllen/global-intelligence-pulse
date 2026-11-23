@@ -1077,3 +1077,64 @@ Controls preserved: 5 release rows FALSE, Stripe LIVE closed, GPD.01 OPEN, 11 GO
 images blocked, tenant/country isolation intact. GPD.16/17/19 remain NOT accepted (no real-world
 evidence). Pre-existing, not caused here: fn_stage1_supplier_resolution_selftest 20/22
 (18_fastmoss_green retired-adapter, 23_idempotency_pass) — flagged, not in scope.
+
+## Addendum 24 — 2026-11-23 — BE244: FastMoss integration PERMANENTLY REMOVED
+
+Founder directive (permanent): FastMoss is no longer a provider. All active and dormant FastMoss
+integrations removed; not retained as a fallback. No paid provider calls; no Lovable spend.
+
+### 1. Backend / edge
+- **Edge functions neutralized** (the actual FastMoss API callers): `fastmoss-discovery` (v22) and
+  `fastmoss-product-detail` (v35) now return HTTP 410 `PROVIDER_RETIRED`, make NO external request,
+  read NO secret, route to NO provider. (Supabase MCP has no delete; neutralized to inert stubs.)
+- **Active DB route severed**: `fn_multi_lane_discovery_plan` COMMERCE lane is Kalodata-only
+  (mig_313); FastMoss request-build / provider object / field removed.
+- **FastMoss DB functions dropped** (mig_315): 7 operational + 6 selftests, by exact signature;
+  post-condition asserts 0 remain. `fn_fastmoss_commerce_adapter` did not exist.
+- **Provider config**: `discovery_provider_market_config` FastMoss rows (20, across markets incl. the
+  18 supported) deleted; `provider_capability_registry`, `discovery_lane_registry`,
+  `commerce_supplier_provider_config` already had none.
+- **Credential**: edge secret `FASTMOSS_CLIENT_SECRET` is now unused by any function. The MCP cannot
+  delete secrets — **FOUNDER ACTION: remove `FASTMOSS_CLIENT_SECRET` in the Supabase dashboard**
+  (Project → Edge Functions → Secrets). It is inert meanwhile (no function reads it).
+
+### 2. n8n
+No FastMoss-named workflow exists (search = 0); no discovery/commerce workflow references FastMoss.
+The historical FastMoss workflow was removed in BE222. Any residual node pointing at the retired edge
+is inert (410). No enabled FastMoss workflow or schedule; no execution can initiate a FastMoss request.
+
+### 3. Frontend
+No active FastMoss provider selector, badge-as-choice, discovery/refresh control, loading/error state
+or subscription prompt exists (removed in BE222). The only remaining FastMoss strings in the live
+bundle are **historical source-attribution** on retained research records (video-match provenance
+caption "Matched via FastMoss discovery — … not exact-SKU verified"; a "Source: FastMoss" link on
+retained reference videos; a label-dictionary entry). Per the directive these are **preserved** as
+required historical attribution. No Lovable change (no defect).
+
+### 4. Provider registry / database / 18 markets
+FastMoss absent from all active routing, supported-provider lists and scheduled dispatch config across
+all 18 markets (and the extra legacy markets). Historical audit evidence **retained, quarantined,
+non-customer-visible**: 47 FastMoss-origin `commerce_products`, 42 `commerce_signals`, 38
+`product_image_assets` kept; the explorer selftest's `FASTMOSS_RETIRED_ABSENT` lock = true confirms
+none surface as current intelligence. No shared structures dropped; no unrelated rows/migrations touched.
+
+### 5. Tests (BE243 failures repaired; no suppression)
+`fn_stage1_supplier_resolution_selftest` now 21/21 — case 18 (FastMoss adapter) retired (Kalodata case
+19 is the current invariant); case 23 idempotency fixed to the durable `CACHE_REUSED_IN_FLIGHT` marker
+(the active-logical-key unique index + in-flight dedup invariant preserved). Budget-gate retargeted to
+Kalodata (all fail-closed budget invariants preserved). Media-integrity check G retargeted to Kalodata.
+
+### 6. Verification (acceptance)
+0 callable FastMoss API integrations (edges 410); 0 enabled FastMoss workflows/schedules; 0 active
+FastMoss provider routes; FastMoss credentials needed by Strateloq = none (secret inert, flagged for
+founder deletion); 0 customer-facing FastMoss provider options (only historical attribution); 0
+FastMoss launch dependencies; 0 FastMoss DB functions. Regression all green: stage1 supplier-resolution
+21/21, early-opportunity, evidence-identity, budget-gate, media-integrity, Kalodata adapter, multi-lane,
+explorer v2, lanes v2, competitor-evidence, stage3b, cross-supplier, founding-access — DataForSEO / CJ /
+Kalodata unaffected.
+
+### 7. Safeguards preserved
+5 `customer_source_release` rows FALSE; Kalodata rights preserved (display cleared), DataForSEO Merchant
+display FALSE; Stripe LIVE closed (0 active plans); founding-member-only (6 new / 3 accepted, no
+auto-approval); PAL + supplier-image block (BE243) intact; tenant/country isolation; 11 accepted GOLD
+units unchanged. A historical FastMoss provenance label in retained evidence is NOT an active integration.
