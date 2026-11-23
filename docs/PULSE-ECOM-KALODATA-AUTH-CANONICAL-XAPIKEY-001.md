@@ -1213,3 +1213,31 @@ Economics already flows: `fn_resolve_supplier_economics` reads `variant_verified
 
 ### T7 — regression + safeguards
 Green: pd_release 13/13 (`all_green`), exact-variant engine 11/11, cross-supplier identity 13/13, stage1 supplier-resolution, stage3b, competitor-evidence 5/5, stage2 shared-identifier, concrete-identity, supplier-gallery. Zero fixture residue. Safeguards intact: 5 release rows FALSE, public checkout closed, CJ images blocked, Kalodata/CJ/DataForSEO rights unchanged, 11 GOLD gates unchanged, 0 FastMoss functions. **GPD.16/17/19 NOT accepted** — the engine exists and is proven, but no genuine real-world exact evidence exists yet; acceptance awaits the one costed CJ detail probe above (founder decision) or a product with an authoritative shared identifier.
+
+---
+
+## Addendum 27 — BE247 First real CJ exact-variant evidence: preflight + image-leak closure + acquisition request
+
+**Date:** 2026-11-23. Objective: move the first authoritative CJ-native product (Leather Patch for Sofa; CJ pid `2608261145001630400`; research product `2f6f6101`; **system/seed tenant** `00000000-0000-4000-8000-000000000001`) toward genuine exact-variant verification via the smallest justified acquisition. Engine NOT rebuilt; completed regression NOT repeated. **No CJ API call was executed; ZERO spend.**
+
+### T1 — CJ product-detail preflight
+1. **Endpoint:** the existing CJ integration (n8n credential "CJ Dropshipping API", `2IV5tXPu9jAItjKh`) uses `GET https://developers.cjdropshipping.com/api2.0/v1/product/query?pid=<pid>` for product detail + variant IDs (returns `data.variants[]` = `{vid, variantKey/variantNameEn, variantSku, variantSellPrice, variantWeight, variantImage}`), plus `product/stock/queryByVid` and `logistic/freightCalculate` for inventory/shipping. Established manual workflows exist (`Dvxf28AzZ741CVFz`, `OxH9sb6jKCqiqXOk`, `ZbhPyAuvDD4h4xid`); no duplicate client needed.
+2. **Cost/quota:** CJ product/query, stock and freightCalculate are **free** (no provider credits; subject only to CJ's standard request rate limits).
+3. **Entitlement/credentials:** working CJ credential present and backing a live search workflow; provider config `CJDROPSHIPPING` `enabled`, `access_state=AVAILABLE`.
+4. **Budget:** `provider_call_budget` holds **no CJ row** (all rows are DATAFORSEO_*/KALODATA, all inactive) — CJ is free and was never credit-budgeted; `activation_authorizations` empty; `research_budget_config` a disabled SG row. **No existing founder-approved budget expressly covers this call.**
+5. **Image exposure:** acquisition stores CJ image URLs in `supplier_enrichment` (backend). The economics interface blocks them (mig_312). **A latent leak was found and fixed:** the customer-facing research function `fn_product_supplier_candidate` emitted raw CJ image URLs ungated via the variant `image`, `reference_images[]`, `media.sample_images` and `media.gallery_images`. **mig_324 + mig_325** gate all four on the provider's `display_cache_images_cleared` (cj→'CJ'), emitting NULL/`[]` when unlicensed; image counts retained. Verified on the real ski-mask case under the owner's auth context: research output now contains **zero** `cjdropshipping.com`/`oss-cf` URLs, matching the economics interface.
+
+### T2 — acquisition authorisation: NOT PRESENT → not executed
+No existing founder-approved budget permits the call, so per the directive the acquisition was **not executed**. Acquisition request tabled for founder approval:
+- **Calls (all free):** (1) `POST authentication/getAccessToken`; (2) `GET product/query?pid=2608261145001630400` → variant catalog + `variant_count`; and only if the product is multi-variant and economics are wanted, (3) `product/stock/queryByVid` + (4) `logistic/freightCalculate` to GB. **Minimum for verification = 2 calls; ≤4 total. One product only; no catalogue refresh.**
+- **Cost/quota impact:** $0; no credits; CJ rate limits only.
+- **Approval requirement:** express founder authorisation to run a single parameterised CJ product-detail probe for this one pid (the existing detail workflow is ski-mask-hardcoded, so a minimal parameterisation or founder-run is required — no new provider client).
+
+### T3/T4 — verification + economics: not reached this build
+No new evidence acquired, so the engine verdict is unchanged: `fn_cross_supplier_exact_variant_check` returns `exact=false`, `product_identity_method=CJ_NATIVE_NAMESPACE`, reason `variant_catalog_absent_or_unprobed`. Economics therefore stays `CANDIDATE_LISTING` basis, margin WITHHELD/UNKNOWN, CJ images blocked. (If the authorised probe runs and the product proves genuinely single-variant — or a researched-side variant is designated with matching attributes — the engine would then verify EXACT and economics would recompute.)
+
+### T5 — customer-research eligibility (tenant isolation)
+The leather patch is a **system/seed-tenant** product (`00000000-0000-4000-8000-000000000001`), not a founder/customer product. Even a successful supplier-identity verification there would **not** satisfy GPD.19: no system-tenant result is transferred or copied into the founder tenant, and supplier-identity verification is distinct from a customer-visible supplier-positive journey in a real tenant. GPD.19 cannot be accepted from a system-tenant verification.
+
+### T6 — outcome
+**GPD.16 / GPD.17 / GPD.19 remain NOT ACCEPTED** (no live exact evidence). Safeguards intact: 5 Merchant release rows FALSE, Stripe LIVE closed, CJ images blocked in **both** economics and research interfaces now, 11 GOLD gates unchanged, 0 FastMoss. **Smallest next action:** founder authorises the single free CJ `product/query` probe for pid `2608261145001630400`; on return the BE246 engine evaluates it (single-variant may qualify; multi-variant without research-side designation stays unverified).

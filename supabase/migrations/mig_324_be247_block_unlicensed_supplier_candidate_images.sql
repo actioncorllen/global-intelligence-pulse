@@ -1,0 +1,6 @@
+-- mig_324 — 2026-11-23 — BE247 T1.5/T4: block an ungated CJ image-exposure path. Record file only.
+-- fn_product_supplier_candidate (customer-facing; EXECUTE to authenticated) emitted each variant's raw
+-- supplier image URL from the variant catalog with NO rights gate — a parallel leak to the one mig_312
+-- fixed in fn_resolve_supplier_economics. Now gated on the supplier provider's display_cache_images_cleared
+-- (cj% -> 'CJ'); emits NULL when images are not individually licensed. Prerequisite for safely acquiring
+-- any CJ variant catalog that carries image URLs.

@@ -1,0 +1,6 @@
+-- mig_325 — 2026-11-23 — BE247 T1.5/T4: close the remaining ungated image-URL surfaces in
+-- fn_product_supplier_candidate. Record file only. reference_images[], media.sample_images and
+-- media.gallery_images were still emitting raw CJ CDN URLs. All three now gated on the provider's
+-- display_cache_images_cleared (cj% -> 'CJ'); emit [] when not licensed. Image COUNTS retained
+-- (integers, not URLs). Verified on the real ski-mask case under the owner's auth context: the research
+-- output now contains zero cjdropshipping.com / oss-cf URLs, matching the economics interface.
