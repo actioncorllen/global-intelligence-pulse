@@ -1,0 +1,12 @@
+-- mig_343 — 2026-11-23 — BE266 §4: capture a supplier-PROVIDED direct product URL during CJ ingestion.
+-- Record file only (authoritative body in schema_migrations / pg_get_functiondef).
+--
+-- Root cause (verified): across all 1,317 CJ rows, 0 carry any product-page URL key in raw or
+-- supplier_enrichment (only image URLs exist); the CJ product-query schema has no productUrl field. So the
+-- NULL product_url is NOT a mapping defect of existing data. BUT fn_ingest_cj_product_media never promoted a
+-- product URL to the product_url column that the Product Card / direct-link readiness evaluator read -> a
+-- confirmed integration gap. Fix (success path only): product_url = coalesce(v_purl, product_url) where
+-- v_purl is a supplier-provided https cjdropshipping.com URL from the enrichment payload (product_url or
+-- productUrl). Never invents, guesses or scrapes a URL; a non-authorised/absent URL leaves product_url
+-- unchanged. Fail-closed path, historical preservation and PID coherence are unchanged. The result now
+-- reports product_url_captured. BE256 fail-closed selftest preserved 7/7.

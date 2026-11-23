@@ -1,0 +1,19 @@
+-- mig_344 — 2026-11-23 — BE266 §1: correct the brand/IP screen for the generic-only directive + re-screen.
+-- Record file only (authoritative data change applied to commerce_product_brand_registry + commerce_products).
+--
+-- Demonstrated defects in the registry-driven screen fn_is_branded_or_ip_sensitive:
+--   * FALSE POSITIVE: bare token 'galaxy' (-> "Samsung Galaxy") over-matched generic astronomy/star
+--     projectors, wrongly flagging the genuine US generic discovery 9128d818 ("2026 Upgraded Galaxy Star
+--     Projector") as BRANDED_OR_IP_REVIEW.
+--   * FALSE NEGATIVES: real consumer brands missing from the registry (Govee, Anker, ...) -> 6 Govee products
+--     sat in the active WATCH recommendations as GENERIC_OK.
+-- Changes (data, not logic — the function is sound):
+--   * UPDATE: deactivate brand_token='galaxy' (active=false) with an explanatory note.
+--   * INSERT (guarded by NOT EXISTS): govee, anker, dyson, bose, sony, samsung, xiaomi, logitech, fitbit,
+--     gopro, dji, philips, lego — distinctive, low-collision tokens. 'samsung' replaces the 'galaxy'
+--     false-positive and still catches Samsung Galaxy products.
+--   * UPDATE: re-screen the founder tenant's commerce_products.extended->>'screening_state' with the corrected
+--     screen (records preserved; only the screening_state key recomputed). 9128d818 -> GENERIC_OK; Govee ->
+--     BRANDED_OR_IP_REVIEW.
+-- Verified: generic galaxy/star projectors + coaxial -> not flagged; Govee/Anker/Samsung -> flagged. Historical
+-- records preserved; 18-country architecture untouched.

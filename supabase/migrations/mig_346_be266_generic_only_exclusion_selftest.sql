@@ -1,0 +1,9 @@
+-- mig_346 — 2026-11-23 — BE266 §1/§11: generic-only discovery eligibility + branded-exclusion selftest.
+-- Record file only (authoritative body in schema_migrations / pg_get_functiondef).
+--
+-- fn_generic_only_discovery_selftest() — read-only. Asserts:
+--   GENERIC_GALAXY_PROJECTOR_NOT_BRANDED, COAXIAL_GENERIC (generics not flagged),
+--   GOVEE_BRANDED, ANKER_BRANDED, SAMSUNG_BRANDED (real brands flagged),
+--   NO_BRANDED_IN_RECOMMENDATIONS (0 branded in fn_monday_top_opportunities ready/watch for a real tenant),
+--   GENERIC_ONLY_POLICY_PRESENT (discovery_policy.generic_only present).
+-- Result on apply: ok=true, 7/7.

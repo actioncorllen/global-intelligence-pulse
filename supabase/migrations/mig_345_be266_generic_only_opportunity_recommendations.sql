@@ -1,0 +1,16 @@
+-- mig_345 — 2026-11-23 — BE266 §1: enforce generic-only in the customer-facing opportunity recommendations.
+-- Record file only (authoritative body in schema_migrations / pg_get_functiondef).
+--
+-- Demonstrated gap: neither fn_discovery_product_hidden (manual hide table only) nor fn_monday_top_opportunities
+-- (the customer recommendations producer, reached via get_own_opportunity_recommendations) excluded branded/
+-- IP-sensitive products, so a BRANDED_OR_IP_REVIEW product with a non-AVOID decision would appear in customer
+-- recommendations. Fix: add ONE predicate to the best CTE WHERE —
+--   AND NOT (public.fn_is_branded_or_ip_sensitive(cp.title)->>'flagged')::boolean
+-- using the live brand screen so it always reflects the current registry. Branded products are excluded from
+-- ready_to_test + watchlist; historical records are preserved (not deleted/hidden). All ranking/tiering/
+-- image-rights logic unchanged; discovery_policy.generic_only note added; contract ->
+-- pulse_monday_top_opportunities_v5_generic_only.
+--
+-- Verified: founder tenant recommendations (limit 50) -> 0 branded, 0 Govee in watchlist; the generic US
+-- discovery 9128d818 is now eligible. Regression GREEN: pd_release 13/13, stage1_opportunity_invariants 8/8,
+-- RVD 5/5, BE256 7/7, competitor 6/6, ledger 6/6, link-readiness 4/4, generic_only 7/7.
