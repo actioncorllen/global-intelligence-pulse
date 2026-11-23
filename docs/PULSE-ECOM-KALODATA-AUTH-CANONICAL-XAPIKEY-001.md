@@ -1559,3 +1559,27 @@ pd_release all_green 13/13, RVD selftest 5/5, BE256 fail-closed 7/7. CJ pid brid
 
 ### GOLD — GPD.16/17/19 remain NOT ACCEPTED
 No acceptance on supplier-catalogue identity alone. GPD.16 blocked by the absence of an authoritative US-discovery→CJ bridge (and, for the CJ item alone, an undesignated 15-variant set). GPD.17 economics UNKNOWN. GPD.19 supplier-positive journey not sightable (no bound exact variant; backend only). 11 accepted gates preserved.
+
+## Addendum 39 — BE258 US-discovered product identity resolution for supplier matching (read-only, $0, 0 new provider calls)
+
+**Date:** 2026-11-23. Goal: resolve the evidence gap blocking genuine US discoveries from reaching exact supplier verification — by checking whether authoritative identifiers are present in raw discovery payloads but lost at ingestion. Existing evidence + no-cost engineering only; no FastMoss; no switch to a CJ-origin product.
+
+### What identifiers the US discoveries actually carry (ca945686 et al.)
+The DataForSEO Merchant (Google Shopping) ingestion stores, in `commerce_products.extended`: `market`, `merchant_source=google_shopping`, `merchant_seller_name` (e.g. ca945686 "Walmart - Seller", a37f20e0 "hearthfell", d985e5af "Govee", 84af56b0 "Wayfair"), `screening_state` (GENERIC_OK vs BRANDED_OR_IP_REVIEW), `product_family_key`, `listing_position`, and **`dataforseo_merchant_product_id`** — the provider-native Google-Shopping product id (ca945686 = `17536943141369248154`, d985e5af = `18034214886779403846`); `native_identity_kind = google_product_id`. The same native id is also on each product's `MARKETPLACE_ACTIVITY` signal (`native_id`, `marketplace=GOOGLE_SHOPPING`).
+
+### Were usable identifiers lost at ingestion? NO
+The provider-native google_product_id is **retained** (extended + signal). BE257 reported "native_id/gtin (none)" only because it queried the keys `google_product_id`/`product_id`/`platform_id` — the real key is `dataforseo_merchant_product_id`. Nothing authoritative was dropped.
+
+### Is a cross-supplier authoritative identifier present anywhere? NO — source-data limitation
+A GTIN/UPC/EAN/MPN scan across **all** stored evidence (every DataForSEO-merchant product's `extended`, every `commerce_signals` value/evidence, every `product_market_competitors` row) returns **0**. The Google-Shopping listing results genuinely supply only a Google-namespace product id + seller + title + price — never a GTIN/MPN/brand-model. This is a confirmed **upstream source-data limitation**, not an ingestion defect. No honest mapping fix can add a GTIN that the source never provided; none was fabricated.
+
+### Can an authoritative supplier bridge be established now? NO
+A google_product_id is a Google-Shopping-namespace id, **not interchangeable** with a CJ pid, and no shared GTIN exists (the CJ product `2610010255571606100` also exposes no GTIN/UPC/EAN/MPN — CJ-native `pid`/`productSku` only). The BE246 engine (BE257) returns `no_authoritative_product_identity` for both the generic (`ca945686`) and branded (`d985e5af`) discovery vs the CJ pid. No authorised supplier source exposes a GTIN for these generic products (CJ does not; BigBuy/AliExpress are not activated). So the US discoveries and the CJ supplier-origin item `534d98bc` remain correctly **separate** — no match proven; no product/supplier pair named.
+
+### Precise missing evidence + most credible next acquisition path
+Missing: a GTIN (or manufacturer brand+MPN) for a specific US discovery **and** a supplier that exposes the same identifier.
+- **Proposed request (NOT authorised; present for decision):** one DataForSEO Merchant **product-detail/specification** lookup by google_product_id for ONE US discovery (e.g. branded Govee `d985e5af` native id `18034214886779403846`, best odds of a published brand/GTIN). **Endpoint:** DataForSEO Merchant product-info. **Calls:** 1. **Cost:** chargeable DataForSEO credits (confirm exact cost against the provider budget before authorising; $0 spent now). **Expected evidence:** brand/MPN/GTIN/specs **if** the merchant published them — MODERATE odds for a branded listing, **LOW** for generic marketplace listings (ca945686 "Walmart - Seller"). **Destination:** n/a (identity, not shipping).
+- **Honest caveat:** even a retrieved US GTIN cannot bridge to **this** CJ product (CJ has no GTIN). For GENERIC white-label dropship products an identifier bridge is realistically unattainable from any authorised source; the credible routes are (a) a **branded** discovery matched to a **brand-authorised** supplier (new supplier strategy + IP review), (b) image-vision corroboration (capability not available), or (c) verify the CJ item on its **own supplier-origin terms** via a legitimate 1-of-15 variant designation (no US-discovery equivalence claimed).
+
+### Validation / security
+No DB writes (no defect to fix; no identifier manufactured). No new provider calls; $0. FastMoss retirement, tenant/country isolation, CJ image-rights block, PAL, DataForSEO upstream/customer-release restrictions, 5 locked Merchant rows, Stripe controls and the 11 accepted GOLD gates all preserved. Intelligence kept separated (discovery identity vs product-specific demand vs category demand vs supplier identity); no attribute/demand bleed. **GPD.16/17/19 remain NOT ACCEPTED.**
