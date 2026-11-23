@@ -1138,3 +1138,44 @@ Kalodata unaffected.
 display FALSE; Stripe LIVE closed (0 active plans); founding-member-only (6 new / 3 accepted, no
 auto-approval); PAL + supplier-image block (BE243) intact; tenant/country isolation; 11 accepted GOLD
 units unchanged. A historical FastMoss provenance label in retained evidence is NOT an active integration.
+
+---
+
+## Addendum 25 — BE245 CJ supplier qualification (GPD.16/17/19): exact-SKU evidence verdict + release-harness repair
+
+**Date:** 2026-11-23. **Scope:** zero-cost engineering + verification. **No paid/quota provider calls.
+No release-row, rights, billing, or GPD.01 change.** FastMoss remains permanently retired (not touched).
+
+### 1. Task 1 — exact-variant qualification (opp `56a6af36-68f7-4138-9d29-941245f266b2` / GB / CJ `2609290358281623700`)
+Verdict: **exact-SKU verification is NOT achievable for this candidate, and acceptance would be dishonest.**
+Evidence (read-only, persisted + static):
+- The system's own persisted verdict in `commerce_concrete_supplier_resolution` is `identity_result = NO_VALID_CJ_MATCH`, `bound = false`, `selected_sku = null`, `selected_supplier = null`. The CJ row was considered and scored `match_class = CLOSE_COMPARABLE`, `shared_identifier = false`, `attrs_ok = false` (opportunity = "Novelty **Old Man Face** Ski Mask"; CJ candidate = "**Realistic** Winter Ski Face Mask" — distinguishable, not same identity).
+- The opportunity's concrete identity rests on a **single retired-FastMoss product-native observation** (`product_native_providers:["fastmoss"]`, `marketplace_listing_titles:0`), with **no authoritative identifier** (gtin/brand/model all null; only FastMoss-internal ids).
+- Schema-wide there is **no structured authoritative-identifier column** (GTIN/UPC/EAN/MPN/ASIN scan = empty). No opportunity↔supplier pair anywhere can be linked by a shared structured identifier.
+- The writer `fn_resolve_cross_supplier_identity` is an **honest floor**: `'variant_verified', true` appears **0** times and `'variant_verified', false` **25** times (hardcoded false on every return path); the tier `EXACT_VARIANT_VERIFIED` is **never assigned**. It can reach at most `SAME_PRODUCT_IDENTITY` from family/form heuristics and structurally refuses to promote resemblance/family-match to exact-SKU. Selftest `fn_cross_supplier_identity_selftest` 13/13, incl. `oldman_potential_no_verified_exact` (potential=8, **verified_exact=0**) and `exact_sku_strict_gate`.
+- **Precondition to flip `variant_verified` false→true** (honest): an authoritative shared identifier (GTIN/UPC/EAN/MPN) present on BOTH the demand product and the CJ variant, OR supplier-native variant IDs confirmed as the same physical variant, OR a verified image-vision exact-variant tool. None exists; and the demand identity came from FastMoss (permanently retired), so no richer demand-side identifier can be obtained.
+
+### 2. Task 2 — fresh CJ evidence path, cost, quota, budget, authorization
+- CJ integration is **passive RPC ingest only** — there is **no CJ Supabase edge function / live CJ caller**. Fresh evidence enters via `fn_ingest_cj_variant_evidence(p_pid, p_vid, p_sku, p_market, p_inventory, p_shipping, p_observed_at)`; freshness contract `fn_cj_variant_evidence_is_fresh(pid,vid,market,max_age_hours)`.
+- For the target: the fresh-evidence table is **`present:false`** for GB — **no stored inventory and no stored GB shipping** (both `needs_refresh=true`). The only cached CJ detail lives in `commerce_supplier_products.supplier_enrichment` and is **33.3 days old** (observed 2026-10-21), with **no stored product-page URL** (`has_product_url=false`).
+- CJ config: `provider=CJDROPSHIPPING`, `enabled`, `access_state=AVAILABLE` ("Primary supplier source (live)"). Rights (BE239, intact): `analyse_cleared=TRUE`, `display_derived_cleared=TRUE`; `display/images/raw/reuse/commercial = FALSE`.
+- Cost/quota/budget: the in-DB provider budget gate (`fn_provider_budget_try_consume`) governs **metered discovery providers**, not CJ ingest; there is no configured live CJ caller to meter. A CJ product-detail refresh would be an **external** acquisition (CJ Dropshipping API / portal).
+- **A paid/quota CJ call is NOT genuinely required for this candidate**, because it cannot cross the identity gate: a CJ detail call returns CJ-side data only and cannot establish same-product identity with a retired-FastMoss demand product that carries no authoritative identifier, and the CJ candidate is already scored a non-match (`attrs_ok=false`). **No costed acquisition plan is proposed for this candidate** — it would spend for evidence that still cannot produce acceptance. A costed CJ call becomes worthwhile only for a *genuine same-product* candidate that already shares an authoritative identifier with a CJ listing (none today).
+
+### 3. Task 3 — landed cost / margin
+Reused `fn_resolve_supplier_economics` (read contract inspected; non-persisting). For the target: no `EXACT_VERIFIED` variant exists (basis stays `CANDIDATE_LISTING`), and there is no customer-facing selling price for a verified same product, so **net margin is correctly WITHHELD / UNKNOWN**. Landed cost exists only as a **33-day-stale approximate research estimate** (`supplier_cost=1.83 USD`; `gb_landed_usd_displayed_variant=5.34 USD`), labelled approximate per mig_310. Supplier images remain **BLOCKED** (CJ `display_cache_images_cleared=false`; resolver image gate maps `cj%→'CJ'`).
+
+### 4. Task 4 — customer research integration + isolation
+No exact match exists for this candidate (`NO_VALID_CJ_MATCH`), so **nothing new is surfaced** to the UI. Safeguards intact: supplier-image block (mig_312), 5 `customer_source_release` rows FALSE (no unreleased DataForSEO Merchant publication), tenant `CROSS_TENANT_REJECTED` + country isolation (regression green).
+
+### 5. Task 5 — regression + release-harness repair
+Green: `fn_stage1_supplier_resolution_selftest` 21/21 (incl. `23_idempotency_pass`; case 18 removed), `fn_cross_supplier_identity_selftest` 13/13, `fn_stage2_shared_identifier_selftest` 3/3, `fn_multi_lane_discovery_selftest` 16/16, `fn_provider_budget_gate_selftest` 10/10, `fn_discovery_media_integrity_selftest` 7/7, `fn_product_competitor_evidence_selftest` 5/5 (offers≠sellers honest), `fn_mig310_reliability_selftest` 7/7. **0 FastMoss DB functions remain.**
+
+`fn_pd_release_verification`: **mig_316** repaired the area-18 outbound-denial **positive control** (it opened a budget for the retired `'FASTMOSS'` provider then called the kalodata driver → dead control, pass=null). Retargeted the fixture budget to `'KALODATA'`/`'DE'`; the routed driver now reaches the guard and is provably blocked (`request_id='-1'`, no enqueue). Result: `failed` 3→2; area 18 PASS, area "1-4,10,15" stable PASS (underlying `fn_stage1_early_opportunity_selftest` independently 20/20).
+
+**Two remaining red areas are PRE-EXISTING STALE ASSERTIONS — left unchanged, proposed corrections tabled for founder approval** (they are release-readiness pass criteria the founder reserves; their real safeguards are independently GREEN):
+- **Area 7** `NOT EXISTS(... analyse OR display_derived OR images OR raw OR reuse)` — false since KALODATA's GOLD `display+images` rights (and CJ's BE239 `analyse+display_derived`). Real publication/commercial gates (`commercial_redistribution_cleared`, `redistribute_raw_cleared`, `reuse_creative_cleared`) are **FALSE for all providers**, and the release-gated `DATAFORSEO_MERCHANT` source has `display/images/commercial/raw/reuse` all FALSE. **Proposed:** assert `NOT EXISTS(... WHERE commercial_redistribution_cleared OR redistribute_raw_cleared OR reuse_creative_cleared)` AND the Merchant source's display/images FALSE — allowing the legitimate GOLD/research grants.
+- **Area 12-13** asserts `LICENSED_ENABLED=13 AND DISABLED_ADAPTER_ONLY=5 AND NO_PROVIDER=0` — the pre-FastMoss-removal topology. Current: `market_count=18`, `NO_PROVIDER=0` (no silent drop — real safeguard holds), `LICENSED_ENABLED=9 / DISABLED_ADAPTER_ONLY=9`. **Proposed:** assert `market_count=18 AND NO_PROVIDER=0 AND (LICENSED_ENABLED + DISABLED_ADAPTER_ONLY = 18)` (no market dropped; none live-routed to an unlicensed provider) rather than fixed enabled-counts that legitimately vary as markets are toggled.
+
+### 6. Outcome
+**GPD.16 / GPD.17 / GPD.19 remain NOT ACCEPTED** — the exact-SKU / fresh-evidence standard is not met and cannot be met zero-cost for the strongest candidate. GPD.01 remains open. Safeguards preserved: 5 release rows FALSE, billing closed to public ("founder-only pilot active; public checkout closed"), CJ/Kalodata/DataForSEO rights unchanged, supplier-image block intact, isolation intact, 11 GOLD units unchanged, FastMoss zero. **Credits/paid calls consumed this build: ZERO.**

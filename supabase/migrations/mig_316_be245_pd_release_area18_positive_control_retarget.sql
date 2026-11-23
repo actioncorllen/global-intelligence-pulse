@@ -1,0 +1,32 @@
+-- mig_316 — 2026-11-23 — BE245: repair fn_pd_release_verification area-18 positive control.
+-- Applied as `mig_316_pd_release_area18_positive_control_retarget`. Record file only
+-- (authoritative body lives in schema_migrations / pg_get_functiondef).
+--
+-- DEFECT (residue of BE244's mig_315 retarget): the area-18 OUTBOUND-DENIAL POSITIVE CONTROL
+-- opened a provider budget for the now-retired 'FASTMOSS' provider and then called
+-- fn_kalodata_run_discovery — which consumes a 'KALODATA' budget. With no KALODATA budget the
+-- driver returned BUDGET_BLOCKED and never reached the outbound guard (fn_net_post_guarded under
+-- pulse.block_outbound='on'), so the -1 sentinel never fired. The control reported pass=null —
+-- a DEAD positive control that proved nothing.
+--
+-- FIX (surgical, anchored; length-preserving FASTMOSS->KALODATA): open the fixture budget for
+-- 'KALODATA' (the provider the driver actually consumes) in the same enabled market 'DE'
+-- (KALODATA enabled markets = DE,ES,FR,GB,IT,MY,PH,SG,US). The routed driver now passes its
+-- budget gate, reaches the outbound guard, and is provably blocked (request_id='-1', no enqueue).
+-- Anchors asserted before EXECUTE: exactly 1 `fn_provider_budget_open('FASTMOSS'` and exactly 1
+-- 'FASTMOSS' literal total in the function; 0 after. This also removes the last 'FASTMOSS' string
+-- from the harness (completes BE244's FastMoss-reference cleanup).
+--
+-- SCOPE NOTE: this changes NO pass criterion — it repairs a broken fixture so an EXISTING
+-- safeguard assertion (the outbound guard blocks any routed provider driver) can execute.
+-- Effect: fn_pd_release_verification failed 3 -> 2 (area 18 now PASS, area "1-4,10,15" stable
+-- PASS). The two remaining red areas are PRE-EXISTING STALE ASSERTIONS, left unchanged pending
+-- founder approval (they encode release-readiness pass criteria the founder reserves):
+--   * area 7  — asserts every catalogue_source_rights flag is FALSE; false since KALODATA's GOLD
+--               display+image rights were granted (and CJ's BE239 analyse+display_derived). The
+--               real publication/commercial gates (commercial_redistribution/raw/reuse) are
+--               universally FALSE. Proposed correction tabled for approval.
+--   * area 12-13 — asserts LICENSED_ENABLED=13 / DISABLED_ADAPTER_ONLY=5; current licensed
+--               topology is 9/9 across the same 18 markets with NO_PROVIDER=0 (no market dropped,
+--               the real safeguard). Proposed correction tabled for approval.
+-- No paid provider calls. No release-row, rights, billing, or GPD.01 change.
