@@ -1241,3 +1241,19 @@ The leather patch is a **system/seed-tenant** product (`00000000-0000-4000-8000-
 
 ### T6 — outcome
 **GPD.16 / GPD.17 / GPD.19 remain NOT ACCEPTED** (no live exact evidence). Safeguards intact: 5 Merchant release rows FALSE, Stripe LIVE closed, CJ images blocked in **both** economics and research interfaces now, 11 GOLD gates unchanged, 0 FastMoss. **Smallest next action:** founder authorises the single free CJ `product/query` probe for pid `2608261145001630400`; on return the BE246 engine evaluates it (single-variant may qualify; multi-variant without research-side designation stays unverified).
+
+---
+
+## Addendum 28 — BE248 Limited CJ acquisition: bounded probe built; execution blocked on credential binding
+
+**Date:** 2026-11-23. Founder approved **one bounded, zero-charge** CJ product-detail acquisition (pid `2608261145001630400`, leather patch, system/seed research product `2f6f6101`): ≤4 free CJ requests, $0, existing credential/integration, no catalogue refresh.
+
+**Preflight re-confirmed:** CJ `product/query`, `product/stock/queryByVid`, `logistic/freightCalculate` are **free** reads under the current account (not credit-metered); `getAccessToken` throttled ~1/300s (token cached), reads ~1 req/sec, daily caps far above 4 — ≤4 sequential requests fit. **$0.** Reused credential `2IV5tXPu9jAItjKh` ("CJ Dropshipping API"); still exactly one such credential (no duplicate client).
+
+**Built:** n8n workflow `zwTkywEYKsmojs6g` "Pulse — CJ Detail Probe (Leather Patch, BE248)" — Run → CJ Auth (`getAccessToken`) → CJ Detail (`product/query?pid=2608261145001630400`) → Build Enrichment (variant_catalog + `detail_observed_at`) → POST Ingest (`fn_ingest_cj_product_media`). Two free CJ calls; stock/freight deferred (not needed for identity verification).
+
+**Execution blocked (0 CJ requests, $0):** manual run `30720` failed at CJ Auth with **"Credentials not found"** *before any outbound HTTP call*. `create_workflow_from_code` reported that HTTP Request nodes were "skipped during credential auto-assignment — must be configured manually": the **n8n MCP does not let an agent bind credentials to HTTP Request nodes** (a security guardrail). Editing an existing bound workflow hits the same guardrail (agent writes unbind HTTP-node credentials), and all existing CJ *detail* workflows are hardcoded to other pids. So the authenticated call cannot be made autonomously through the MCP.
+
+**Verification unchanged (no new evidence):** `fn_cross_supplier_exact_variant_check` for the leather patch (system tenant) stays `exact=false`, `product_identity_method=CJ_NATIVE_NAMESPACE`, reason `variant_catalog_absent_or_unprobed`. Economics `CANDIDATE_LISTING`, margin UNKNOWN; no inventory/shipping acquired; catalog still unprobed. Image gates, tenant isolation and PAL preserved; no system→founder tenant transfer; no Merchant release; Stripe unchanged.
+
+**Smallest next action (one-time human step, then zero-cost):** in the n8n UI open `zwTkywEYKsmojs6g` (`https://tradingb.app.n8n.cloud/workflow/zwTkywEYKsmojs6g`), bind the existing "CJ Dropshipping API" credential to the **CJ Auth** and **CJ Detail** nodes and "Supabase account" to **POST Ingest**, then **Run** once (2 free CJ calls). On return, the BE246 engine evaluates the real variant catalog — a genuinely single-variant product may verify EXACT; a multi-variant product without a research-side variant designation returns UNKNOWN (no manufactured match). Optional ≤2 further free calls (`stock/queryByVid` + `freightCalculate→GB`) complete economics if verified.
