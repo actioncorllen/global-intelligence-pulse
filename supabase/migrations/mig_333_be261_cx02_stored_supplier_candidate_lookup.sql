@@ -1,0 +1,27 @@
+-- mig_333 — 2026-11-23 — BE261 CX.02: stored-catalogue supplier-candidate lookup.
+-- Record file only (authoritative body in schema_migrations / pg_get_functiondef).
+--
+-- New read-only helper fn_supplier_candidate_lookup_stored(p_tenant, p_product_id, p_market, p_limit):
+-- given a genuine US-discovered product, it finds candidate CJ supplier products from the ALREADY-ACQUIRED
+-- stored catalogue — NO new provider call ($0). It reuses the existing spec-builder
+-- (fn_derive_concrete_product_identity) and the existing scorer (fn_market_supplier_match), so it does not
+-- duplicate matching logic or relax the BE246 identity engine.
+--
+-- Safety / identity boundary (BE261 §CX.02, Tests 4-6):
+--   * SECURITY DEFINER with a tenant guard (auth.uid()=p_tenant OR service_role) + product-ownership check.
+--   * Pre-filters by the distinctive head noun (longest non-numeric product_noun token) and REQUIRES >=1
+--     additional distinguishing token in the candidate title (concept corroboration, not a confidence score);
+--     ranked by shared-token count. This prevents unrelated items (e.g. dash cams) being surfaced.
+--   * A brand-in-title EXACT_CONFIRMED from the scorer is downgraded (no authoritative shared identifier in a
+--     stored lookup), so the lookup NEVER emits EXACT. Every candidate carries
+--     classification=CANDIDATE_REQUIRES_VERIFICATION, authoritative_identity=false, variant_verified=false,
+--     bound=false. Title/brand/image similarity locates candidates; it cannot establish exact identity.
+--   * STABLE/read-only: writes nothing; cannot set bound/variant_verified/commercially_validated/sourceable.
+--
+-- Verified live on the US discovery ca945686 vs the stored CJ catalogue: 16 candidates, the BE256 CJ star
+-- projector 2610010255571606100 ranked #1 (6 shared tokens), 0 provider calls, and a boundary assertion that
+-- no candidate is EXACT/bound/variant_verified/authoritative (any_exact_or_bound=false). Authoritative EXACT
+-- still requires the BE246 engine (SHARED_GTIN|CJ_NATIVE_NAMESPACE|AUTHORITATIVE_SUPPLIER_REF + designated
+-- variant) + the server-side sourceable publication gate — unchanged by this helper.
+--
+-- Grant: EXECUTE to authenticated, service_role.
