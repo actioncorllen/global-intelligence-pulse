@@ -1,0 +1,24 @@
+-- mig_334 — 2026-11-23 — BE263 §2: rights enforcement in the customer-facing intelligence core.
+-- Record file only (authoritative body in schema_migrations / pg_get_functiondef).
+--
+-- Demonstrated defect: fn_ecommerce_product_intelligence_core derived and exposed customer-facing claims
+-- from sources WITHOUT analyse_cleared — e.g. observed_advertisers.count=5 sourced solely from
+-- META_AD_LIBRARY, and ADVERTISING_EMERGENCE (META) / MARKETPLACE_VALIDATION (EBAY) evidence families
+-- marked QUALIFYING with contributes_to_qualification=true — without consulting catalogue_source_rights.
+-- A prior successful API response does not establish permission for commercial analysis/display.
+--
+-- Smallest safe correction (additive post-pass over the already-built output; upstream accepted
+-- qualification engine fn_stage1_early_opportunity_state unchanged):
+--   * v_uncleared := source_providers with analyse_cleared=false (FASTMOSS, EBAY, META_AD_LIBRARY, TIKTOK,
+--     REDDIT, EBAY_MARKETPLACE).
+--   * Any evidence family whose source is uncleared -> state='NOT_AUTHORISED', qualifying=false,
+--     contributes_to_qualification=false, strength/observed_detail nulled, rights_note added. Historical
+--     evidence is retained; it is simply excluded from customer-facing analysis/display.
+--   * observed_advertisers (META_AD_LIBRARY) -> count=null, observation_kind='NOT_AUTHORISED'.
+--   * Added a 'rights_enforcement' object (policy retain_distinct_from_analyse_display, uncleared_sources, note).
+--   Cleared sources (DATAFORSEO, KALODATA, COMMERCE/PROVIDER_OBSERVED) are unchanged.
+--
+-- Verified on coaxial cable (US): ADVERTISING_EMERGENCE/MARKETPLACE_VALIDATION/COMMUNITY_SOCIAL ->
+-- NOT_AUTHORISED + non-contributing; SEARCH_DEMAND (DataForSEO) stays QUALIFYING/contributing;
+-- observed_advertisers NOT_AUTHORISED (derived "5" no longer exposed). Regression GREEN: pd_release 13/13,
+-- RVD 5/5, BE256 7/7. No change to the 11/22 GPD acceptance.
