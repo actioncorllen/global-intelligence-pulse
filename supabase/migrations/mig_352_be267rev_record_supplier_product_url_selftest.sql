@@ -1,0 +1,8 @@
+-- mig_352 — 2026-11-23 — BE267 (rev) §4: selftest for founder-verified supplier-URL recording.
+-- Record file only (authoritative body in schema_migrations / pg_get_functiondef).
+--
+-- fn_record_supplier_product_url_selftest() — the one real write is inside a rolled-back sub-transaction, so
+-- the real CJ record's product_url stays NULL. Checks: FORBIDDEN_WITHOUT_SERVICE (service_role guard),
+-- INVALID_ORIGIN_REJECTED (non-cjdropshipping https), NOT_PRODUCT_LEVEL_REJECTED (homepage), SUPPLIER_NOT_FOUND,
+-- VALID_URL_RECORDED (valid CJ product URL stored with FOUNDER_VERIFIED provenance), PRODUCT_URL_PERSISTED_IN_TX,
+-- NO_PERSIST_AFTER_ROLLBACK (real record still NULL). Result on apply: ok=true, 7/7.

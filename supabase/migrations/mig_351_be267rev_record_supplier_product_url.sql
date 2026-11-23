@@ -1,0 +1,15 @@
+-- mig_351 — 2026-11-23 — BE267 (rev) §2: record a founder-VERIFIED official supplier product URL.
+-- Record file only (authoritative body in schema_migrations / pg_get_functiondef).
+--
+-- Context: CJ's authorised API (product/query) returns NO product-page URL — verified on n8n workflow
+-- zwTkywEYKsmojs6g execution 30723 (CJ Detail node fields: productImage/productSku/productName/variants/
+-- weight/video; no productUrl/productLink/href). CJ's 22 Nov reply authorises DISPLAY of direct CJ product
+-- links, and the founder will not send an enquiry, so the official link is obtained from CJ's own merchant
+-- portal (authorised) and recorded here. fn_record_supplier_product_url(p_source, p_supplier_product_id,
+-- p_url, p_verified_by='founder', p_note) validates and stores a URL passed to it — it NEVER invents or
+-- constructs a URL. Guards: service_role only; must be an https cjdropshipping.com product-level URL (rejects
+-- otherwise); supplier row must exist. Stores commerce_supplier_products.product_url + a
+-- product_url_provenance block (method=FOUNDER_VERIFIED_SUPPLIER_PORTAL, verified_by, recorded_at). The URL is
+-- a CONFIRMED link, not an assumed one; recording it does NOT verify exact-product identity (the candidate
+-- stays CANDIDATE_REQUIRES_VERIFICATION) — the BE265 link-readiness evaluator then blocks only on identity.
+-- Selftest (mig_352) 7/7.
