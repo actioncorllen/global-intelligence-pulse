@@ -1,0 +1,18 @@
+-- mig_348 — 2026-11-23 — BE267 §5/§6: automatic CJ image-rights classification.
+-- Record file only (authoritative body in schema_migrations / pg_get_functiondef).
+--
+-- fn_cj_image_display_classification(p_source, p_supplier_product_id, p_image_ref=NULL) -> jsonb. Read-only.
+-- Outcomes: DISPLAY_AUTHORISED | RIGHTS_UNVERIFIED | DISPLAY_RESTRICTED | REVIEW_REQUIRED.
+--   * Reuses catalogue_source_rights.display_cache_images_cleared as the provider-global baseline (CJ=false ->
+--     RIGHTS_UNVERIFIED; e.g. Kalodata=true -> DISPLAY_AUTHORISED) and the commerce_supplier_image_rights
+--     evidence store for image/supplier/product-specific permissions.
+--   * Most-specific scope wins (image > product > supplier > provider); an image-level decision overrides a
+--     broader one. Revoked evidence (revoked_at) is ignored. Contradiction at the same specificity, or a
+--     DISPLAY_AUTHORISED row lacking research_display scope, => REVIEW_REQUIRED.
+--   * display is SEPARATE from the other rights: the output 'rights' object carries research_display,
+--     temporary_cache, image_analysis, advertising_reuse (each only if the authorising scope grants it) and
+--     customer_download which is ALWAYS false. Only DISPLAY_AUTHORISED (with research_display) may enter the
+--     customer image-display path. No blanket CJ permission is ever inferred from one supplier/product.
+--
+-- Verified live: real CJ image (cjdropshipping/2610010255571606100) -> RIGHTS_UNVERIFIED, display_allowed=false,
+-- all separate rights false. Selftest (mig_349) 8/8.

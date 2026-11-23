@@ -1,0 +1,10 @@
+-- mig_349 — 2026-11-23 — BE267 §12: image-rights classifier selftest.
+-- Record file only (authoritative body in schema_migrations / pg_get_functiondef).
+--
+-- fn_cj_image_rights_selftest() inserts SYNTHETIC evidence rows (is_synthetic=true) inside a sub-transaction
+-- that is ALWAYS rolled back (nothing persists; synthetic is never counted as a genuine CJ authorisation).
+-- Checks: REAL_CJ_IMAGE_UNVERIFIED (real CJ image default-blocked), AUTHORISED_DISPLAY_ONLY (display granted
+-- but analysis/cache/download false), RESTRICTED_HIDDEN, AMBIGUOUS_REVIEW_REQUIRED (contradiction),
+-- IMAGE_OVERRIDE_WINS (image-level overrides product-level), REVOKED_IGNORED, SUPPLIER_LEVEL_SCOPE (supplier
+-- grant covers a product of that supplier, download still false), NO_SYNTHETIC_PERSISTED (rollback confirmed).
+-- Result on apply: ok=true, 8/8.

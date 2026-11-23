@@ -1,0 +1,17 @@
+-- mig_350 — 2026-11-23 — BE267 §5/§7: gate the customer Product Card image-display path on the classifier.
+-- Record file only (authoritative body in schema_migrations / pg_get_functiondef). Applied in two steps
+-- (mig_350 fallback branch, mig_350b authoritative branch); this documents the final function.
+--
+-- Demonstrated integration defect: fn_product_card_display_image returned supplier/marketplace images with
+-- has_image=true WITHOUT a display-rights check — on BOTH the authoritative branch (fn_ad_product_card_authority
+-- was returning a CJ SUPPLIER_PROVIDED image as authoritative, e.g. product e453eed4) and the non-authoritative
+-- fallback. Fix: for an externally-sourced image (source_provider LIKE CJ%/EBAY/DATAFORSEO/META/TIKTOK/REDDIT/
+-- MARKETPLACE/SUPPLIER) the function now consults fn_cj_image_display_classification and returns the image
+-- ONLY when display_allowed (DISPLAY_AUTHORISED); otherwise has_image=false, reason=image_rights_unverified,
+-- so the FE keeps its rights-safe placeholder and continues to show permitted product data (name, price, SKU,
+-- variants, specs). Genuine customer-authorised assets (uploads, authorised-reference generations, non-supplier
+-- providers) are NOT gated by the supplier-image classifier — genuinely authorised images are not blocked.
+-- Tenant guard + Product Asset Lock unchanged.
+--
+-- Verified: CJ product e453eed4 -> has_image=false, RIGHTS_UNVERIFIED (CJ image suppressed; product data
+-- intact). pd_release 13/13 (GOLD asset-lock/image gates intact).

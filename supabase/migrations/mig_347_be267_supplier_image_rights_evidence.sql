@@ -1,0 +1,15 @@
+-- mig_347 — 2026-11-23 — BE267 §5: image/supplier/product-specific image-rights EVIDENCE store.
+-- Record file only (authoritative DDL applied to the database).
+--
+-- New table public.commerce_supplier_image_rights (minimal model extension; catalogue_source_rights remains
+-- the provider-global baseline, Product Asset Lock unchanged). Columns: id, source, supplier_id,
+-- supplier_product_id, image_ref, decision (DISPLAY_AUTHORISED|DISPLAY_RESTRICTED|REVIEW_REQUIRED),
+-- permission_scope jsonb (research_display/cache/analysis/download/advertising), licence_evidence, provenance,
+-- verified_at, revoked_at, is_synthetic (test marker — never counted as genuine), created_at. ABSENCE of a row
+-- => RIGHTS_UNVERIFIED (CJ images are not automatically licensed). RLS: authenticated SELECT, service_role ALL.
+-- Partial index on (source, supplier_product_id, image_ref) WHERE revoked_at IS NULL.
+--
+-- §4 finding that motivates this: CJ provides NO machine-readable per-image authorisation — stored CJ records
+-- carry only a blanket media_rights=SUPPLIER_PROVIDED_REFERENCE_ONLY (4 rows; none on 1,313) and
+-- rights_state=SUPPLIER_PROVIDED/UNKNOWN on asset rows (provenance, not a display licence). So genuine
+-- documented permissions (if obtained via the §11 CJ clarification) live in this evidence store.
