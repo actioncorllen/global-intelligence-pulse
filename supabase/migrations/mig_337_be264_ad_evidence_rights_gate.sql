@@ -1,0 +1,23 @@
+-- mig_337 — 2026-11-23 — BE264 §3 CX.10 / §2: advertising evidence rights gate.
+-- Record file only (authoritative body in schema_migrations / pg_get_functiondef).
+--
+-- Defect: fn_product_ad_evidence (feeds the "Advertising & competition" section, AdEvidenceSection ->
+-- platformStateLabel) computed observed_advertisers / observed_creatives from META_AD_LIBRARY and TIKTOK —
+-- the only ad sources, both analyse_cleared=false — and returned them in the payload
+-- (observed_advertisers_total=5 for coaxial US). In the US market the FE hides it (Meta coverage
+-- SOURCE_UNSUPPORTED -> "Not available"), but in an EU/UK market (coverage AVAILABLE/OBSERVED) the FE would
+-- render the uncleared count as "N advertisers". A latent rights leak at the data boundary; §2 requires
+-- advertiser counts to use only authorised evidence.
+--
+-- Smallest safe fix: each platform's observed counts are gated on its source's analyse_cleared
+-- (m_auth/tt_auth from catalogue_source_rights). When a source is uncleared: observed_advertisers /
+-- observed_creatives / dates / max_days -> null, coverage_state -> NOT_AUTHORISED, and the coverage class is
+-- forced to a non-OBSERVED verdict so uncleared data can neither show a count nor assert
+-- OBSERVED / ZERO_WITH_ADEQUATE_COVERAGE (low competition). observed_advertisers_total / _creatives_total
+-- are null when no authorised ad source exists. combined_competition_state stays
+-- ADVERTISING_COMPETITION_UNKNOWN. Raw signals are retained for audit; a rights_enforcement object lists the
+-- withheld uncleared sources. No provider-rights flags changed.
+--
+-- Verified live: coaxial US -> meta observed_advertisers null, coverage NOT_AUTHORISED,
+-- observed_advertisers_total null, combined ADVERTISING_COMPETITION_UNKNOWN. The decodePlatform/
+-- platformStateLabel path renders no count. pd_release 13/13, RVD 5/5, BE256 7/7 green.

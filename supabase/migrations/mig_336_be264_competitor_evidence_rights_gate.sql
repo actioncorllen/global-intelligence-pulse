@@ -1,0 +1,21 @@
+-- mig_336 — 2026-11-23 — BE264 §3 CX.10 / §2: competitor evidence rights gate.
+-- Record file only (authoritative body in schema_migrations / pg_get_functiondef).
+--
+-- Demonstrated customer-visible defect: fn_product_competitor_evidence (feeds the "Competitor prices"
+-- drawer, CompetitorEvidenceSection -> priceRangeLine) surfaced offers from EBAY_BROWSE (provider EBAY,
+-- analyse_cleared=false AND display_cleared=false) as OBSERVED competitor prices. For the real US record
+-- "coaxial cable" (77004cbb) it returned 98 eBay offers with a customer-visible price range — unauthorised
+-- analysis/display of an uncleared source. §2 names "competitor counts" and §3 requires unauthorised
+-- competitor data suppressed.
+--
+-- Smallest safe fix: every scan of product_market_competitors is gated to sources whose provider is
+-- analyse_cleared, via a rights-table-driven, fail-closed prefix match:
+--   EXISTS (SELECT 1 FROM catalogue_source_rights r WHERE r.analyse_cleared
+--           AND upper(c.source) LIKE upper(r.source_provider)||'%')
+-- so DATAFORSEO_SELLERS -> DATAFORSEO (cleared) stays; EBAY_BROWSE -> EBAY (uncleared) and any unlisted
+-- source are excluded from count / offers_aggregate / price_summary / ad_summary / freshness. Raw rows are
+-- retained for audit; a rights_enforcement object reports excluded_uncleared_offers (aggregate only).
+--
+-- Verified live (founder tenant): coaxial US -> observation UNKNOWN, count 0, excluded_uncleared_offers 98
+-- (customer sees "No competitor prices observed"); DataForSEO-sourced GB product 1def97b0 -> still OBSERVED,
+-- 5 offers, $33.99–$39.99, 0 excluded (no over-suppression). Selftest updated in mig_338 (6/6).

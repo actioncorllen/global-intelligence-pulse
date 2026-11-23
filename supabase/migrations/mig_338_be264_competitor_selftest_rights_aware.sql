@@ -1,0 +1,12 @@
+-- mig_338 — 2026-11-23 — BE264 §3: make fn_product_competitor_evidence_selftest rights-aware.
+-- Record file only (authoritative body in schema_migrations / pg_get_functiondef).
+--
+-- After mig_336 the old POPULATED_RANGE_ORDERED check failed: it picked the product with the most offers
+-- (eBay-heavy) and asserted OBSERVED, but uncleared offers no longer populate the range. Updated:
+--   * POPULATED_RANGE_ORDERED_CLEARED_ONLY — selects the populated-range fixture from analyse_cleared
+--     sources only (DataForSEO), still asserts OBSERVED with low<=median<=high.
+--   * UNCLEARED_SOURCE_EXCLUDED (new) — selects a product whose offers are from uncleared sources (eBay)
+--     and asserts observation=UNKNOWN, count=0, rights_enforcement.excluded_uncleared_offers>0.
+--   * MARKET_REQUIRED, FASTMOSS_PRODUCT_EMPTY_HONEST, COUNTRY_ISOLATION_JP_EMPTY, CROSS_TENANT_REJECTED
+--     unchanged. Contract -> pulse_product_competitor_evidence_selftest_v2_rights_aware.
+-- Result on apply: ok=true, 6/6.

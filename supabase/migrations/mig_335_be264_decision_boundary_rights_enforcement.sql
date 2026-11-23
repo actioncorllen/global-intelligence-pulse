@@ -1,0 +1,48 @@
+-- mig_335 — 2026-11-23 — BE264 §2: rights enforcement at the DECISION boundary.
+-- Record file only (authoritative body in schema_migrations / pg_get_functiondef).
+--
+-- Context: BE263 (mig_334) corrected the DISPLAY/analysis layer — the customer-facing intelligence core
+-- (fn_ecommerce_product_intelligence_core) stopped EXPOSING fields derived from sources without
+-- analyse_cleared (observed_advertisers, uncleared evidence families). But that was an additive post-pass
+-- over an already-built output. BE264 §2 verifies the layer underneath: are the FINAL DECISIONS themselves
+-- (opportunity classification / early-opportunity state / supplier-resolution qualification) computed using
+-- only authorised evidence?
+--
+-- Demonstrated defect: the orchestrator fn_stage1_early_opportunity_state counted EVERY present/qualifying
+-- evidence family toward qualifying_family_count / present_family_count / qualified / early_opportunity_state,
+-- regardless of the family's source rights. On the real US record "coaxial cable" (77004cbb) this produced
+-- early_opportunity_state = RESEARCH_PRIORITY driven by THREE qualifying families, two of which are uncleared:
+--   * ADVERTISING_EMERGENCE  <- META_AD_LIBRARY (analyse_cleared=false)  — "5 distinct advertisers"
+--   * MARKETPLACE_VALIDATION <- EBAY            (analyse_cleared=false)
+--   * SEARCH_DEMAND          <- DATAFORSEO      (analyse_cleared=true)   — the only authorised family
+-- So uncleared observations were materially changing the authorised decision — exactly what BE263's display
+-- fix did NOT reach, because the upstream qualification engine was unchanged.
+--
+-- Smallest safe fix (at the computation boundary, in the orchestrator only):
+--   * v_uncleared := source_providers with analyse_cleared=false (from catalogue_source_rights).
+--   * Map each evidence family -> provider, mirroring the intelligence core:
+--       ADVERTISING_EMERGENCE->META_AD_LIBRARY, SEARCH_DEMAND->DATAFORSEO, COMMUNITY_SOCIAL->REDDIT,
+--       MARKETPLACE_VALIDATION->EBAY, COMMERCE_MOMENTUM->internal commerce (authorised).
+--   * A family whose provider is uncleared is excluded from the decision: present=false, qualifying=false,
+--     state='NOT_AUTHORISED', rights_note added. The family record is RETAINED in evidence_families for audit
+--     (historical detail preserved); it simply cannot contribute to the counts or the state.
+--   * Recompute qualifying_family_count / present_family_count / early_opportunity_state from the authorised
+--     families only. qualified is re-derived CONSERVATIVELY: qualified_g := qualified AND (authorised
+--     qualifying families >= 2). The gate can only ever DOWNGRADE a decision; it never upgrades one.
+--   * Added a 'rights_enforcement' object (applied_at=decision_boundary, uncleared_sources, the ungated counts
+--     for audit, note) and an invariant uncleared_evidence_excluded_from_decision=true.
+--   The underlying investigation function fn_stage1_supplier_resolution_qualified is UNCHANGED (its full
+--   detail is still returned nested under supplier_resolution for audit); no provider calls; no writes.
+--
+-- Verified live (US):
+--   * coaxial 77004cbb: ungated qual_ct=3/present=3/RESEARCH_PRIORITY  ->  gated qual_ct=1/present=1/EMERGING,
+--     qualified=false. The two uncleared qualifying families (META, EBAY) are NOT_AUTHORISED + non-contributing;
+--     only SEARCH_DEMAND (DataForSEO) remains. The customer-facing core now returns EMERGING for this product
+--     (BE263 display suppression still intact — both layers now enforce rights).
+--   * Positive control (no over-suppression): across 60 active US products the gate downgraded only the 2 that
+--     depended on uncleared evidence; 1 product still reaches RESEARCH_PRIORITY on cleared (DataForSEO)
+--     evidence alone, and 57 DISCOVERED are unchanged.
+--   * Isolation: GB market -> DISCOVERED(0) (no cross-country leak); wrong tenant -> DISCOVERED(0) (no
+--     cross-tenant leak).
+--   * Regression GREEN in clean service context: pd_release 13/13, RVD 5/5, BE256 7/7. No change to the
+--     11/22 GPD acceptance. No provider calls; $0.
