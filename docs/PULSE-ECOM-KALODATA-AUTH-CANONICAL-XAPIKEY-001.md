@@ -1491,3 +1491,39 @@ Execution path: retarget the existing bound workflow `zwTkywEYKsmojs6g` to this 
 
 ### Integrity preserved
 Category-level US demand (e453eed4) is kept distinct from product-specific demand (UNKNOWN for this CJ item) and from CJ supplier identity; no similarly-named CJ product is claimed to match a specific Merchant listing. Founder-tenant ownership, Product Asset Lock, CJ image-rights block, US market isolation, the 5 locked DataForSEO Merchant pilots, Stripe public-checkout restrictions, FastMoss retirement and all 11 accepted GOLD gates are untouched. No new integrations, no Lovable changes, no API calls.
+
+## Addendum 37 — BE256 live CJ acquisition, fail-closed ingestion fix, exact-variant verification (US star projector)
+
+**Date:** 2026-11-23. Founder-approved bounded live acquisition of the US star projector. **2 of 4 CJ requests used, $0; no stock/freight; no retries; activation off; credentials never exposed.**
+
+### Task A — CJ ingestion made fail-closed (mig_331, proven mig_332 7/7)
+`fn_ingest_cj_product_media` now validates the provider payload and fails closed: success requires probe_ok + a well-formed non-empty variant_catalog + cj_result≠false; otherwise it records honest availability only (REMOVED_FROM_SHELVES for code 1602002, else UNAVAILABLE_OR_UNVERIFIED), preserves historical data, never writes an empty catalogue as a fresh probe, never bumps enrichment_observed_at, never marks a delisted product purchasable, and never invents a delisting verdict for malformed data. Wrong-PID and not-found reject with no write. The n8n Build Enrichment node was hardened to match (validates result/data/pid/variants; emits a fail-closed payload with no fabricated catalogue) — defense-in-depth, no duplicate service. Verified with 7 rolled-back synthetic scenarios (no live CJ): success, delisted(+history preserved), data:null, wrong PID(no write), malformed items, malformed collection, not_found.
+
+### Task B — live acquisition (n8n zwTkywEYKsmojs6g, exec 30723, manual)
+Retargeted to pid `2610010255571606100` via surgical `setNodeParameter` (credentials preserved; verified). CJ Auth (call 1) + `product/query` (call 2) → **code 200, result true, "Success"**. Product is **LIVE**: SKU `CJJT3213323`, "USB Star Projector Night Light With Interchangeable Film Discs Moon Galaxy Saturn Patterns For Kids Bedroom Decor", category Home Improvement > Indoor Lighting > Night Lights, price range $6.08–$10.76, **15 genuine variants** (film-disc/glass-cover patterns; 3 "Glass Cover/Sheets" count SKUs at $7.29/$9.03/$10.76 + 12 single-pattern discs at $6.08). CJ points are free (no charge).
+
+### Task C — ingest
+Hardened `fn_ingest_cj_product_media` accepted the success: supplier row `37dd09e5` now carries probe_ok, AVAILABLE_PROBED, FRESH_PROBE_OK, product_sku CJJT3213323, 15-variant catalogue, 15 images (reference-only), enrichment_observed_at 2026-11-23. Stored record matches the live response. No duplicate row.
+
+### Task D — founder-tenant research provenance
+No prior founder product, CJ bridge, or CJ-origin research item existed for this PID. Introduced a controlled founder-tenant research item `534d98bc-bf51-4f57-8269-4c5961f071f2`: product_identity `candidate:pid:cjdropshipping:2610010255571606100` (CJ_NATIVE_NAMESPACE), identity_basis platform_id, source CJ Dropshipping, market US, owner = founder tenant, visibility TENANT_PRIVATE, product_role candidate; demand/sellers/advertisers/profitability **UNKNOWN**, opportunity **INSUFFICIENT_EVIDENCE**; provenance records CJ-origin and that category-level US star/galaxy demand (e453eed4) is context only, not product-specific demand. No system-tenant copy; no role bypass.
+
+### Task E — exact-variant engine verdict (held UNVERIFIED, honestly)
+`fn_cross_supplier_exact_variant_check` → **exact=false, reason `ambiguous_no_variant_designation`**, identity method CJ_NATIVE_NAMESPACE; `fn_resolve_cross_supplier_identity` (persisted) → identity_tier **UNVERIFIED**, **bound=false**, confidence NONE, variant_verified false, total_variant_count 15, concept STRONG_SAME_PRODUCT, corresponding_variant_count 0 (all 15 OTHER_OR_AMBIGUOUS). The product is genuinely multi-variant with no unambiguous source-observed single variant and **no founder/customer choice has occurred**, so EXACT is held UNVERIFIED and the 15 film-disc options are reported for a genuine choice. **No variant was auto-selected.** (Single-variant rules do not apply — it is 15-variant.)
+
+### Task F — US inventory & freight
+**Not run.** No genuine exact variant established → stock/freight not justified; 2 of 4 CJ calls used, remaining 2 deliberately unspent. US landed cost + margin **UNKNOWN**. No GB/GBP substitution.
+
+### Task G — customer research integration (backend-verified)
+Chain exercised under founder tenant/US isolation: identity resolution (UNVERIFIED/unbound) → `fn_product_supplier_candidate` / `fn_ecommerce_product_intelligence_core` emit **no** CJ CDN URLs → `fn_resolve_supplier_economics` returns **no_candidate** (margin UNKNOWN). Honest INSUFFICIENT_EVIDENCE throughout. No browser-journey claim (backend only).
+
+### Task H — image rights, security, regression
+No `cjdropshipping`/`oss-cf` URLs in any customer-facing function output for the product (verified). PAL, CJ image block (display_cache_images_cleared stays FALSE), the 5 DataForSEO Merchant release rows (FALSE), Stripe public checkout, founding-member access, founder-only mutators, provider rights, tenant/country isolation and FastMoss retirement all untouched. Regression: **pd_release all_green 13/13** (also asserts 0 Merchant release rows released), **RVD 5/5**, **BE256 fail-closed 7/7**, BE253 probe ok.
+
+### GOLD acceptance — GPD.16/17/19 remain NOT ACCEPTED (genuine progress recorded)
+- **GPD.16:** first live, available, customer-eligible founder-tenant CJ-native product with a fresh 15-variant catalogue + authoritative identity — but EXACT is UNVERIFIED pending a genuine 1-of-15 variant designation, then stock/variants proof. NOT accepted.
+- **GPD.17:** economics no_candidate/UNKNOWN (no exact variant; no US stock/freight; no credible same-product US selling price). NOT accepted.
+- **GPD.19:** honest supplier-origin research chain exists but no bound exact variant → supplier-positive journey not sightable; backend only. NOT accepted.
+
+### Remaining blocker (single, founder-specific)
+A genuine founder/customer **choice of one film-disc variant** (15 options; e.g. HD-Galaxy 1 `CJJT321332307GT`, HD-Cosmic Journey `CJJT321332306FU`, HD-12 Glass Sheets `CJJT321332303CX`, …). On that choice, `fn_set_research_variant_designation` records it → BE246 re-run (expected EXACT) → then the remaining ≤2 CJ calls (stock + US freight, with an authorised US destination — ZIP not to be invented) → US economics → customer Save/Monitor sighting. No further acquisition is authorised until the founder designates the variant (and supplies a US destination for freight).

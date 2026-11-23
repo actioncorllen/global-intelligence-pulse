@@ -1,0 +1,14 @@
+-- mig_332 — 2026-11-23 — BE256 Task A verification harness.
+-- Record file only (authoritative body in schema_migrations / pg_get_functiondef).
+--
+-- fn_be256_ingest_failclosed_selftest() inserts a transient cjdropshipping fixture row carrying a
+-- HISTORICAL variant_catalog + an old enrichment_observed_at, then calls fn_ingest_cj_product_media
+-- with a battery of payloads and asserts, before ROLLING BACK in-function (nothing persisted; no live CJ):
+--   1 success_accepted                    -> status ok, variant_catalog written (2), AVAILABLE_PROBED, enrichment_observed_at bumped
+--   2 delisted_rejected_hist_preserved    -> recorded_unavailable, REMOVED_FROM_SHELVES, historical variant_catalog intact, no obs bump
+--   3 data_null_rejected_not_delisted     -> recorded_unavailable, UNAVAILABLE_OR_UNVERIFIED (not delisted)
+--   4 wrong_pid_rejected_no_write         -> rejected_pid_mismatch, row unchanged
+--   5a malformed_items_failclosed         -> recorded_unavailable, reason malformed_variant_items, historical preserved, no obs bump
+--   5b malformed_collection_failclosed    -> recorded_unavailable, reason no_or_malformed_variant_collection
+--   6 not_found_no_insert                 -> not_found (never inserts a new row)
+-- Result on apply: ok=true, 7/7.

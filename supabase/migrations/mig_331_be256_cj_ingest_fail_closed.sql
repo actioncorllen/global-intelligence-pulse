@@ -1,0 +1,33 @@
+-- mig_331 — 2026-11-23 — BE256 Task A: make CJ supplier ingestion fail closed.
+-- Record file only (authoritative body in schema_migrations / pg_get_functiondef).
+--
+-- Defect (exposed by BE253): fn_ingest_cj_product_media merged ANY payload — including an
+-- unsuccessful CJ response (result:false / code:1602002 / data:null) whose Build Enrichment node
+-- produced an empty variant_catalog:[] — as a fresh, successful variant probe (enrichment_observed_at
+-- bumped), requiring later manual reconciliation.
+--
+-- Fix: fn_ingest_cj_product_media(text,jsonb) now validates before writing and FAILS CLOSED.
+--   * rejected_no_pid         — null/blank p_pid.
+--   * not_found               — no cjdropshipping row for p_pid (never inserts).
+--   * rejected_pid_mismatch   — payload cj_pid contradicts p_pid → NO write.
+--   * success (status ok)     — requires probe_ok (explicit or inferred), a well-formed NON-EMPTY
+--       variant_catalog (array of objects each with a non-empty vid) and cj_result != 'false';
+--       only then merge the full enrichment, set variant_catalog_status=FRESH_PROBE_OK,
+--       availability_status (default AVAILABLE_PROBED), enrichment_observed_at=now(), image_url.
+--   * recorded_unavailable    — any unsuccessful / empty / malformed response: merge ONLY honest
+--       status fields (availability_status, variant_catalog_status=NO_FRESH_VARIANTS_PROBE_UNSUCCESSFUL,
+--       last_probe{outcome,reason,cj_result,cj_code,cj_message,cj_request_id,observed_at,directive});
+--       PRESERVE historical variant_catalog/images; do NOT bump enrichment_observed_at; do NOT write
+--       an empty catalogue as fresh. availability_status = REMOVED_FROM_SHELVES only for cj_code 1602002
+--       (or an explicit delisting marker); otherwise UNAVAILABLE_OR_UNVERIFIED — never invents a
+--       delisting verdict for merely malformed/uncertain data. The function never calls stock/freight.
+--
+-- Defense-in-depth: the n8n Build Enrichment node (workflow zwTkywEYKsmojs6g) was also hardened to
+-- validate the provider response (result true, data non-null, data.pid === expected pid, non-empty
+-- variants) and emit a fail-closed payload (no fabricated catalogue) with probe_ok + cj markers, so the
+-- backend gate receives the right signals. No duplicate ingestion service was introduced.
+--
+-- Verified by mig_332 fn_be256_ingest_failclosed_selftest(): 7/7 rolled-back synthetic scenarios
+-- (success accepted; delisted rejected + historical preserved; data:null rejected/not-delisted;
+-- wrong PID rejected with no write; malformed items + malformed collection fail closed; not_found no
+-- insert). No live CJ requests consumed by the tests.
