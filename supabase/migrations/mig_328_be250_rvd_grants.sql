@@ -1,0 +1,3 @@
+-- mig_328 — 2026-11-23 — BE250 T3: grants for fn_set_research_variant_designation (record only).
+-- REVOKE ALL FROM PUBLIC + anon; GRANT EXECUTE TO authenticated, service_role (applied via a DO block so the
+-- text[] arg in the 8-arg signature is preserved). Defence-in-depth alongside the in-function tenant guard.

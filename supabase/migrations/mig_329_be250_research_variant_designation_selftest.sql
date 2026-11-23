@@ -1,0 +1,7 @@
+-- mig_329 — 2026-11-23 — BE250 T3: fn_research_variant_designation_selftest. Record file only.
+-- 5 rolled-back synthetic scenarios (zero residue): (1) attributes resolve to a unique catalog variant then
+-- the BE246 engine verifies EXACT on an authoritative CJ-native product; (2) ambiguous attributes rejected;
+-- (3) a preference on a non-authoritative product is recorded but the engine still returns
+-- no_authoritative_product_identity (preference cannot establish identity); (4) conflicting designation
+-- rejected without overwrite; (5) cross-tenant/wrong-auth rejected. Proves workflow + engine integration,
+-- not a real supplier acceptance.

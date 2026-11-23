@@ -1,0 +1,9 @@
+-- mig_326 — 2026-11-23 — BE250 T1: reconcile the legacy EXACT_SUPPLIER_IDENTITY_RESOLVED overclaim on the
+-- founder kids'-nightlight-projector binding (opp e453eed4, GB). Record file only (authoritative body in
+-- schema_migrations). Non-destructive UPDATE: downgraded only the operational verdict fields
+-- (identity_result 'EXACT_SUPPLIER_IDENTITY_RESOLVED' -> 'NO_VALID_CJ_MATCH', bound true -> false) to the
+-- honest value the current resolver assigns to every comparable row, and PRESERVED the originals verbatim in
+-- provenance.be250_reconciliation (supplier_match_evidence, selected_sku, selected_variant, concrete_identity
+-- and the original step1/step2 provenance narrative untouched). Stops the overclaim surfacing as verified in
+-- fn_product_bound_supplier_identity (has_bound_supplier now false) and fn_ecommerce_product_intelligence_core
+-- (status now NO_VALID_CJ_MATCH, variant_state null). Idempotent (WHERE identity_result='EXACT...').

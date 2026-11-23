@@ -1,0 +1,10 @@
+-- mig_327 (+327b guard) — 2026-11-23 — BE250 T3: public.fn_set_research_variant_designation. Record file only.
+-- Research-side variant designation workflow: retains a product's colour/size/model/quantity (+ optional
+-- supplier-native sku/vid), basis SOURCE_OBSERVED vs USER_SELECTED, source + timestamp + tenant. Rejects
+-- ambiguous/conflicting designations; optionally resolves attributes to the single matching variant in an
+-- already-probed CJ catalog (refuses on 0 or >1 match; never a random pick). Writes selected_variant_sku/vid
+-- + required_variant_attributes that the EXISTING BE246 engine reads (no duplicate engine). It sets
+-- authoritative_identity=false and NEVER establishes product identity — a USER_SELECTED preference cannot
+-- make identity authoritative (the engine evaluates authoritative cross-source identity independently).
+-- SECURITY DEFINER, search_path='', tenant-auth guard (auth.uid()=p_tenant OR service_role). mig_327b added
+-- the guard; mig_328 set grants (authenticated/service_role; revoked PUBLIC/anon).
