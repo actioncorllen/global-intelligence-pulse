@@ -1416,3 +1416,48 @@ Rejected examples: Grim-Reaper costume (many size variants → ambiguity); "Prem
   - #4 Digital Camera Shoulder Bag — `2104139826061291521` (CJSY3202279, $14)
   - #5 Children's Touch-Screen Piano Toy — `2104100222843138050` (CJYZ3201504, $11)
 - Standing recommendation for the next acquisition: have the probe confirm live availability **first** (auth + product/query), and only then spend stock/freight calls — so a delisted product never consumes the economics budget.
+
+## Addendum 35 — BE254 US market pivot: US product discovery + 5-product shortlist + recommendation (read-only, $0)
+
+**Date:** 2026-11-23. Founder directive: change the supplier-qualification target market **GB → US**; prioritise newly discovered, product-specific US opportunities over old CJ catalogue items; do **not** continue the delisted Rain Cloud Humidifier or auto-pick another Sept-2026 CJ catalogue item. **No new CJ/DataForSEO acquisition authorised** — reuse existing evidence; request one bounded approval only after selecting the strongest candidate. Executed **read-only on product data ($0, 0 provider calls)**; only the GOLD tracker + this doc were written.
+
+### What the stored US evidence actually shows
+- **Kalodata US video research: 0 rows** (`kalodata_video_research` market='US'). No US TikTok social/ad evidence stored.
+- **Fresh US cohort (first-observed 2026-11-20, evaluated 2026-11-23):** ~25+ `dataforseo_merchant` **star/galaxy/night-light projector** listings (identity_basis platform_id, US $14.99–$139.99) + a few `kalodata` US TikTok Shop items. The projectors are product-specific and US but **thin** (1 signal each, n=1 competitor) and **mostly branded** (Govee, POCOCO, Rossetta, Anysun, DAYBETTER, Monster, Cowin, Slagawa, Tradufa, Morfone, Thames & Kosmos) → not CJ-exact-matchable without substitution. The Kalodata US items are largely big-brand/retail (Insignia Fire TV, Shark, ULTA, EcoFlow, refurb MacBook, 4Patriots) → poor CJ/dropship fit.
+- **Richest independent US demand** sits on category-level `normalized_name` concepts: **"kids nightlight projector"** (e453eed4 — **394 demand signals**; 56 US competitors $4.95–$283.99 median $17.95; MEDIUM; coverage 0.63; score 73) and "coaxial cable" (77004cbb — multi-source US search + Meta Ad Library + eBay, score 88.6, but a commodity → unsuitable for exact-SKU dropshipping).
+- **eBay US price observations** (`market_price_observations`, Sept 2026, EBAY_BROWSE, **not product-linked**): genuine USD price+listing-depth for ~30 generic dropship queries (e.g. automatic laser cat toy $5–$73.99/622 listings; cordless tire inflator $11.99–$189.99/16,792; smart bird feeder camera; smart flame humidifier $6.99–$135.99/55).
+- **Supplier bridge reality:** `commerce_cross_supplier_identity` holds exactly **one** CJ bridge — the **EXCLUDED** GB FastMoss ski-mask (56a6af36 ↔ 2609290358281623700, SAME_PRODUCT_IDENTITY, not EXACT, variant_verified=false). **Zero US→CJ bridges; zero EXACT-verified bridges anywhere.** CJ catalogue holds **75** projector/galaxy/night-light SKUs but **0 probed** (no variant catalogues).
+- **Freshness honesty:** the Nov-20 cohort is "first observed by Strateloq 2026-11-20" (recent DB import), **not** genuinely new-to-market — bedroom galaxy/star projectors are an established US category. Data-quality flag: Govee d985e5af carries a **GBP** price (not US evidence; excluded from US economics).
+
+### Five-product US shortlist (honest; existing evidence reused only)
+| # | Product | Authoritative identifier | Source · first obs | US demand evidence | US competition | US price (USD) | Supplier-match feasibility | Missing evidence / confidence | Suitability |
+|---|---|---|---|---|---|---|---|---|---|
+| 1 ⭐ | **Bedroom star/galaxy night-light projector (generic)** | Concept e453eed4 (`normalized_name`; NOT single-SKU) + generic listings ca945686/a37f20e0/bf40764c (`platform_id`, name-based) | reddit 2026-09-05 + dataforseo_merchant 2026-11-20 | **Strong** — 394 signals, 56 US competitors median $17.95; corroborated by 25+ fresh listings | 56 independent US competitor listings | $14.99–$139.99 (merchant); $4.95–$283.99 concept | **HIGH** — 75 CJ generic SKUs (0 probed); needs 1 chosen SKU | No authoritative single-SKU identity; no CJ bridge; no verified variant. **MEDIUM (category) / LOW (SKU)** | **BEST research candidate** (anchor to GENERIC SKU) |
+| 2 | Generic "13-in-1 Planetarium / 360° Sky" projector | 84af56b0 / ca945686 (`platform_id`, name-based) | dataforseo_merchant 2026-11-20 | Weak standalone (shares #1 category demand) | n=1 merchant listing | $14.99 / $69.99 | HIGH (same CJ pool) | Thin (1 signal); no CJ bridge. **LOW** | Concrete SKU anchor for #1 |
+| 3 | RGBIC wall-wash / corner floor lamp | 207dbaa8 (`platform_id`, TikTok Shop) | kalodata (US) 2026-11-20 | **Minimal** — single listing; coverage 0.0 | None observed independently | $30 | MODERATE (CJ has generic RGBIC lamps) | No independent demand/competition; no CJ bridge. **LOW** | Fresh + TikTok-native; needs demand first |
+| 4 | Automatic laser cat toy | None (query-level only) | eBay-US 2026-09-11 | 622 US listings | 622 US listings (presence, not sellers) | $5–$73.99 median $27.99 | MODERATE/HIGH (classic CJ dropship) | Older; no product record/identity; no bridge. **LOW** | Genuine generic dropship; needs identity + re-observation |
+| 5 | Cordless portable tire inflator | None (query-level only) | eBay-US 2026-09-11 | 16,792 US listings (deepest) | 16,792 US listings (presence) | $11.99–$189.99 median $30.95 | MODERATE (CJ carries inflators) | Older; no identity; high competition; no bridge. **LOW** | High-volume utility; needs identity + freshness |
+
+Excluded with reason: coaxial cable (richest signals but commodity → exact-SKU/dropship meaningless); branded projectors + Kalodata retail brands (Govee/POCOCO/Insignia/Shark/ULTA/EcoFlow/MacBook/4Patriots → IP + not CJ-exact-matchable). No invented revenue, seller identities or demand; absence treated as UNKNOWN, never "low competition".
+
+### Recommendation (Task 3)
+**#1 Bedroom star/galaxy night-light projector (generic).** Best *combination* of durable independently-observed US demand (e453eed4: 394 signals, 56 US competitors, median ~$18), freshness corroboration (Nov-20 cohort), clear function/problem (sleep/ambience/kids' night-light) and genuine CJ supplier-match feasibility (75 generic SKUs). Deliberately **not** the highest-score row (coaxial cable 88.6) — chosen on evidence quality + supplier feasibility + IP safety. **Caveats:** demand evidence is category-level (not a single authoritative SKU); fresh product-specific listings are thin; **no authoritative exact-SKU CJ bridge exists yet**; must anchor to a *generic* CJ projector (not branded) to avoid substitution/IP risk.
+
+### Task 4 — exact supplier matching
+No existing authoritative US→CJ identity bridge (0). 75 generic CJ projector SKUs available (0 probed). Matching a CJ look-alike to a branded listing would be prohibited substitution. BE246 engine + BE250 designation ready but have nothing authoritative to verify. **Smallest acquisition:** one bounded CJ probe to select + bind a specific generic CJ galaxy-projector SKU, then verify the exact variant.
+
+### Task 5 — US economics (honest UNKNOWN)
+US selling-price evidence exists (merchant $14.99–$139.99; concept median $17.95). No verified exact CJ variant ⇒ no CJ unit cost, no US inventory/shipping eligibility, no US freight ⇒ **US landed cost + margin = UNKNOWN**. GB freight / GBP prices not used.
+
+### Task 6 — bounded provider-call request (NOT executed; needs explicit founder sign-off; BE253 allowance NOT reused)
+- **Product:** recommended generic bedroom star/galaxy night-light projector (specific CJ pid chosen from the search result).
+- **Endpoints (free):** `getAccessToken` ×1; `product/list?keyword` (US) ×1 to pick ONE generic CJ SKU; `product/query?pid=<chosen>` ×1 for the variant catalogue; then only after a clean exact variant is designated: `product/stock/queryByVid` ×1 + `logistic/freightCalculate`→**US** ×1.
+- **Calls/cost:** ≤4 free CJ requests, **$0**; existing CJ credential; no catalogue refresh/retries/activation.
+- **Expected evidence:** authoritative CJ SKU + variant catalogue → BE246 exact verification → US stock + US freight → US landed cost/margin.
+- **Optional (chargeable, NOT requested now):** DataForSEO US search/ads deepening — deferred.
+
+### Task 7 — safeguards
+Read-only on product data; writes limited to GOLD tab + this doc. US isolation, founder-tenant ownership, Product Asset Lock, CJ image block (display_cache_images_cleared FALSE), the 5 locked DataForSEO Merchant pilots (untouched/not exposed), customer research-only permissions, attribution/freshness, honest UNKNOWN — all intact. Demand (DataForSEO/eBay/Meta) and supply (CJ) kept distinct. Save/Monitor unaffected.
+
+### Task 8 — GOLD roadmap
+Updated only **LIVE MASTER — GOLD** rows GPD.16/17/19 (status/next-action/evidence/date) for the US pivot — **no acceptance flips** (requirements unmet). GPD.06–11 / GPD.22 remain blocked on the GPD.01 display-rights leg, not on evidence; the new US evidence supporting them is recorded here rather than by flipping those gates.
