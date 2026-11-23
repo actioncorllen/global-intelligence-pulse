@@ -1461,3 +1461,33 @@ Read-only on product data; writes limited to GOLD tab + this doc. US isolation, 
 
 ### Task 8 — GOLD roadmap
 Updated only **LIVE MASTER — GOLD** rows GPD.16/17/19 (status/next-action/evidence/date) for the US pivot — **no acceptance flips** (requirements unmet). GPD.06–11 / GPD.22 remain blocked on the GPD.01 display-rights leg, not on evidence; the new US evidence supporting them is recorded here rather than by flipping those gates.
+
+## Addendum 36 — BE255 US projector supplier-selection preflight (read-only, $0, no API calls)
+
+**Date:** 2026-11-23. Continues BE254 (US market, generic star/galaxy/night-light projectors). Inspected the existing CJ projector supplier records only — no provider calls, no market re-investigation, no writes except this doc + GOLD GPD.16 next-action. Field audit of the 63 decorative/relevant CJ projector rows: all carry supplierName/sourceFrom/weight; **none** carries list-level variants, **none** carries any stored US/country shipping hint, **none** is flagged delisted, **0** are probed. So shipping eligibility + current availability are UNKNOWN from the catalogue and must come from the probe (not claimed from historical records).
+
+### Three-product comparison (generic, CJ-native, no known delisting, no FastMoss)
+| # | CJ PID | SKU | Product | Cat | Hist. price (USD) | Weight | CJ obs / last seen | Listed | Variant-risk | Notes |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 1 ⭐ | `2610010255571606100` | CJJT3213323 | USB Star Projector Night Light w/ Interchangeable Film Discs — Moon/Galaxy/Saturn, Kids Bedroom Decor | Night Lights | $6.08–$10.76 | 119–150 g | 2026-10-01 / 2026-10-07 | 3 | Moderate — price/weight range ⇒ 2+ variants, but "film-disc" structure likely a small bounded set | Freshest; cleanest match to the category + e453eed4 demand concept; strong margin headroom vs US $14.99–$139.99 selling evidence |
+| 2 | `2608140601331627400` | CJYD3060486 | Starry Sky Light USB Mini Projector | Home Office Storage | $4.92–$7.99 | 93–115 g | 2026-08-14 / 2026-09-05 | 7 | Moderate | Simple generic starry-sky mini; most CJ listings (7); miscategorised but clearly a starry projector |
+| 3 | `2607070309131601200` | CJYD2971278 | Portable USB Starry Sky Projection Night Light w/ Interchangeable Slides | Projectors | $1.25–$3.68 | 29–88 g | 2026-07-07 / 2026-09-11 | 5 | Moderate | Lowest cost; slide-based variants; oldest of the three |
+
+Considered, not selected: `2608250310481611400` (corporate-gift dual-mode, $0.28–$9.72 / 2–139 g — very wide range ⇒ high variant ambiguity) and `2609030253321622100` (children's bedtime story machine — different function). HD/home-theater video projectors excluded as a different category; keyword false-positives (projector screens, car/Halloween/Christmas projectors, headlight bulb, jewellery, apparel) excluded.
+
+### Recommendation — ONE CJ PID: `2610010255571606100` (SKU CJJT3213323)
+- **Name:** USB Star Projector Night Light With Interchangeable Film Discs (Moon/Galaxy/Saturn), Kids Bedroom Decor. **Source/obs:** CJ catalogue, observed 2026-10-01 (last seen 2026-10-07). **Hist. price:** $6.08–$10.76 USD. **Weight:** 119–150 g. **Shipping:** no historical US shipping data stored → UNKNOWN until the probe. **Delisting:** none known (availability still unverified).
+- **Why suitable for a US founder-tenant demonstration:** freshest decorative star/galaxy night-light projector; a clean generic CJ-native identity (CJ PID + SKU = the CJ_NATIVE_NAMESPACE the BE246 engine accepts); clear function + real problem (kids' sleep/ambience night-light); understandable, bounded variant structure (interchangeable film discs) that minimises the ambiguity the exact-SKU engine guards against; low supplier cost giving genuine margin headroom against the observed US selling band; directly in the BE254-recommended category and corroborated (at category level only) by the e453eed4 US demand concept.
+- **Variant-verification risks:** price/weight ranges imply ≥2 variants (colour / disc-set / plug); if multiple true SKU variants exist, a legitimate single-variant designation (or a genuine customer choice) is required before EXACT verification — exactly the ambiguity that blocked the delisted humidifier. The "film-disc" structure suggests a smaller, bounded set than a 35-variant item, but this must be confirmed by the probe.
+- **Licensing / identity concerns:** none material — generic (no brand impersonation; "Moon/Galaxy/Saturn" is descriptive, not a mark); CJ images remain reference-only/blocked; this is a CJ supplier-origin research item and is **not** asserted to match any specific DataForSEO Merchant listing.
+
+### Corrected bounded 4-call acquisition proposal (NOT executed; needs founder sign-off on PID + scope; $0)
+1. `authentication/getAccessToken` — only if an existing valid token cannot be safely reused.
+2. `product/query?pid=2610010255571606100` — variant catalogue, cost, title, current availability. **No `product/list`** (the exact PID is already stored).
+3. `product/stock/queryByVid?vid=<designated>` — only if the product is available AND one legitimate variant has been designated (BE250 RVD).
+4. `logistic/freightCalculate`→**US** — only if the verified variant + remaining allowance justify it.
+
+Execution path: retarget the existing bound workflow `zwTkywEYKsmojs6g` to this PID via the same surgical `setNodeParameter` patch (credential bindings preserved), confirm availability first, then BE246 exact-variant verification → US economics. **GPD.16 / GPD.17 / GPD.19 stay OPEN until genuine acceptance evidence is obtained.**
+
+### Integrity preserved
+Category-level US demand (e453eed4) is kept distinct from product-specific demand (UNKNOWN for this CJ item) and from CJ supplier identity; no similarly-named CJ product is claimed to match a specific Merchant listing. Founder-tenant ownership, Product Asset Lock, CJ image-rights block, US market isolation, the 5 locked DataForSEO Merchant pilots, Stripe public-checkout restrictions, FastMoss retirement and all 11 accepted GOLD gates are untouched. No new integrations, no Lovable changes, no API calls.
