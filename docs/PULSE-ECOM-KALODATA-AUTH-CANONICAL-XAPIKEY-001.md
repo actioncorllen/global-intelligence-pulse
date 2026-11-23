@@ -1022,3 +1022,58 @@ honest, currency correct — no Lovable change required. **BE241/BE242 engineeri
 verification COMPLETE.** Still open and separate: the EU/Google 96/9/EC legal assessment
 (qualified Irish/EU counsel, per §Task 5 above) and the explicit founder production-release
 decision. Release rows remain FALSE; GPD.01 OPEN; 11 GOLD units unchanged.
+
+## Addendum 23 — 2026-11-23 — BE243: supplier qualification (GPD.16/17/19) + image-rights fix
+
+Supplier qualification from EXISTING data only — no paid provider calls, no new integrations.
+
+### Strongest genuine exact-SKU candidate (GPD.16)
+- Opportunity `56a6af36-68f7-4138-9d29-941245f266b2` — "Novelty Old Man Face Ski Mask, Thermal
+  Dralon Balaclava" (GB, founder tenant; FastMoss-origin discovery).
+- CJ supplier `2609290358281623700` — "Realistic Winter Ski Face Mask", SKU family `CJMZ3207828`,
+  cost $1.83, 60 g; 8 of 35 CJ variants correspond to the discovered concept.
+- Identity: `SAME_PRODUCT_IDENTITY`, MEDIUM confidence, product-form match, concept corroborated.
+- **Not exact-SKU verified:** `variant_verified=false`, `exact_sku_status=EXACT_SKU_UNVERIFIED`,
+  binding `UNBOUND_UNTIL_EXACT_SKU`; missing evidence = variant-image vision unavailable, no shared
+  product identifier, exact variant unconfirmed. The only *bound* resolution row in the whole
+  system is `CONCRETE_PRODUCT_AMBIGUOUS` (opp e453eed4) — ambiguous, not exact.
+- **GPD.16 NOT accepted.** The binding constraint is exact-variant verification (vision/identifier
+  or a paid CJ exact-SKU confirmation), not tooling. No paid call authorised.
+
+### Economics (GPD.17)
+- Real GB landed estimate: supplier $1.83 + CJ freight $3.51 (CJPacket Ordinary, 4–9 days) = **$5.34
+  (£4.07)**, excludes duties/VAT/customs/payment/ads/returns/platform fees; freight labelled
+  approximate research estimate (mig_310); per-variant GB stock present (mix IN_STOCK / OUT_OF_STOCK
+  factory-replenishable).
+- **Not acceptable yet:** cost_basis LISTING_REPRESENTATIVE, shipping_basis LISTING_SAMPLED, evidence
+  32.5 days STALE (>14 d), margin withheld (no confirmed selling price + requires exact variant).
+  **GPD.17 NOT accepted.**
+
+### GPD.19 supplier-positive leg
+No confirmed exact-SKU supplier bound to a displayed/released product (the 5 GB merchant pilots are
+`released=false`; the ski-mask is a candidate, not a released product). **Supplier-positive leg NOT
+satisfied.**
+
+### Defect repaired (mig_312)
+`fn_resolve_supplier_economics` emitted unlicensed CJ CDN image URLs in the customer-facing response.
+Fixed fail-closed: image URL emitted only when the provider's `display_cache_images_cleared` is TRUE
+(CJ=FALSE) → NULL + `BLOCKED_SUPPLIER_IMAGE_UNLICENSED`. Verified no CJ URL leaves the server;
+economics/labels unchanged. Honors CJ terms (images not licensed) and PAL.
+
+### CJ permissions applied (BE233/BE239)
+Supplier data + SKU/stock/freight research authorised and shown (aggregated, honest). Images BLOCKED
+(now enforced at source). Freight estimates approximate-labelled. **Note:** CJ product-page *links*
+are authorised but **0 `product_url` are stored** across all 1,317 CJ rows — links cannot be shown
+without acquisition.
+
+### Remaining real-world blockers (all require authorised paid acquisition — none taken here)
+1. Exact-variant verification for a genuine binding (GPD.16).
+2. Fresh CJ evidence — all cached evidence 25–33 days stale (>14 d).
+3. Confirmed selling price + exact variant for margin (GPD.17).
+4. A confirmed exact-SKU supplier bound to a released/displayed product (GPD.19).
+5. CJ product-page link acquisition (0 stored).
+
+Controls preserved: 5 release rows FALSE, Stripe LIVE closed, GPD.01 OPEN, 11 GOLD units unchanged,
+images blocked, tenant/country isolation intact. GPD.16/17/19 remain NOT accepted (no real-world
+evidence). Pre-existing, not caused here: fn_stage1_supplier_resolution_selftest 20/22
+(18_fastmoss_green retired-adapter, 23_idempotency_pass) — flagged, not in scope.

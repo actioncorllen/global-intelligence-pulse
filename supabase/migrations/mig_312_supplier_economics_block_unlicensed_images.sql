@@ -1,0 +1,28 @@
+-- mig_312 — 2026-11-23 — BE243: block unlicensed supplier image URLs in supplier economics.
+-- Applied to project nxaunmyihhjixxxljcqt as migration
+-- `supplier_economics_block_unlicensed_images_v1` (authoritative body in
+-- supabase_migrations.schema_migrations). Record file only.
+--
+-- Defect (demonstrated): fn_resolve_supplier_economics (customer-facing; authenticated-granted;
+-- referenced by the live product-explorer bundle and by fn_verdict_change_conditions) emitted raw
+-- CJ CDN image URLs (oss-cf.cjdropshipping.com) in candidate_variant_prices[].image and
+-- exact_variant.image, tagged REFERENCE_ONLY, with NO rights gate — while CJ's written terms
+-- (BE233/BE239) do NOT license supplier images without individual copyright/brand permission
+-- (catalogue_source_rights CJ display_cache_images_cleared = FALSE) and the directive requires
+-- images blocked. The live frontend does not render these (it maps sku/vid/class/price/weight/
+-- stock/shipping/missingEvidence, never .image), so there was no visible leak, but the unlicensed
+-- URLs travelled in the customer-facing API response.
+--
+-- Fix (fail-closed, anchored splice; 4 edits): read the provider's display_cache_images_cleared
+-- (CJ source 'cjdropshipping' -> register 'CJ') into v_img_cleared, then emit the image URL only
+-- when cleared; otherwise NULL + image_status='BLOCKED_SUPPLIER_IMAGE_UNLICENSED'. image_rights
+-- label unchanged. No economics/decision field touched; evidence_summary.with_image now 0.
+--
+-- Verified (opp 56a6af36 / GB, CJ pid 2609290358281623700): no 'cjdropshipping.com' string
+-- anywhere in the output; first variant image_status=BLOCKED_SUPPLIER_IMAGE_UNLICENSED; with_image=0;
+-- economics unchanged (landed $5.34), approximate label intact (mig_310), EXACT_SKU_UNVERIFIED,
+-- margin withheld. Regression: stage3b 16/16, cross_supplier_identity, concrete_identity,
+-- stage1_invariants 8/8, supplier_gallery_ingest 7/7, stage2_cj_pagination, stage2g_boundary,
+-- supplier_sourcegeneric all pass. KNOWN PRE-EXISTING (NOT caused — that selftest does not call
+-- this function): fn_stage1_supplier_resolution_selftest 20/22, failing 18_fastmoss_green (retired
+-- FastMoss adapter) + 23_idempotency_pass (pg-catalog check).
