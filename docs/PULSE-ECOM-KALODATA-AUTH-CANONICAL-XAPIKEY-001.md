@@ -1287,3 +1287,26 @@ pd_release 13/13 (`all_green`), exact-variant engine 11/11, cross-supplier ident
 
 ### Outcome
 **GPD.16 / GPD.17 / GPD.19 remain NOT ACCEPTED** — genuine real CJ evidence is now acquired and the identity is authoritatively confirmed, but exact-SKU is UNKNOWN by design (multi-variant, no research-side designation). **Remaining blocker:** a research/opportunity-side designation of one specific variant (colour+size) mapping to a CJ vid/sku on a real customer product (single-variant auto-qualification does not apply to this 20-variant product); then economics (stock/freight ≤2 further free calls + a credible selling price).
+
+---
+
+## Addendum 30 — BE249 Real exact-variant customer journey: no customer-eligible candidate qualifies
+
+**Date:** 2026-11-23. Read-only investigation (prior BE246 engine + BE248 acquisition not repeated). **0 provider requests, $0** — BE248's unused CJ allowance was explicitly **not** reused for a different product.
+
+### T1 — customer-eligible candidate discovery
+Only two tenants hold products: founder `7c8ddf9d` (261, TENANT_PRIVATE) and the system seed (1, the leather patch — not customer-eligible). No separate founding-member product tenants. Founder binding tables: `commerce_concrete_supplier_resolution` has 9 rows (8 `NO_VALID_CJ_MATCH`/unbound; 1 bound = `e453eed4`); `commerce_cross_supplier_identity` has 1 row (ski-mask `56a6af36`, SAME_PRODUCT_IDENTITY, `variant_verified=false`, FastMoss-origin). No DataForSEO Merchant product has a CJ supplier candidate (Google-namespace only); Merchant pilots stay release-gated.
+
+**Quantitative verdict (261 customer-eligible products):** **0** with authoritative product identity, **0** with a research-side variant designation, **1** with a CJ supplier link (non-authoritative).
+
+### T2 — research-side variant-designation preservation
+The architecture **can** store a designation: `commerce_products.extended` (`selected_variant_sku`/`displayed_variant_sku`/`required_variant_attributes`, read by the BE246 engine) and `commerce_concrete_supplier_resolution.selected_variant` at the binding level. But **0** customer-eligible products carry any variant-attribute key, because the research sources are keyword/category/product-level (Reddit "ISO" posts, eBay-category titles, DataForSEO merchant product-level) and contain **no** specific colour/size/model/quantity. The information is **absent at source**, not dropped by ingestion — so there is no genuine ingestion/identity defect to fix. Wiring the lone binding's supplier-side `selected_variant` into the engine would promote a random/heuristic variant on a non-authoritative link (explicitly forbidden) — not done.
+
+### T3 — supplier verification (genuine candidates, no synthetic matches)
+`e453eed4` "kids nightlight projector": demand is a Reddit keyword resolved via 148 eBay-category titles to a **generic** concept (`variant_attributes:[]`), heuristically linked to CJ `2608250310481611400` (stale 2026-09-05, `variant_count=0`, no URL). Its `concrete_supplier_resolution` over-claims `EXACT_SUPPLIER_IDENTITY_RESOLVED`/`shared_identifier:true` (legacy BE215-era), but the **BE246 engine correctly returns `exact=false`, `no_authoritative_product_identity`**, and the customer-facing `fn_product_supplier_candidate` + `fn_resolve_supplier_economics` both return `no_candidate`, exact flag null, **0** `cjdropshipping.com` URLs. The legacy label does **not** propagate to any acceptance — the strict layer holds; no fix needed and none that wouldn't manufacture a match. Ski-mask stays SAME_PRODUCT_IDENTITY/`variant_verified=false`; leather patch is system-tenant.
+
+### T4–T6 — economics, journey, regression, safeguards
+Economics not run (no genuine exact variant; no new provider calls). Customer journey: strict layer safe — no false-exact, CJ images blocked (`display_cache_images_cleared=false`, 0 URLs leaked), tenant isolation preserved (system-tenant leather patch not presented as a customer journey; no cross-tenant copy), Merchant pilots not exposed. Regression green: pd_release 13/13 (`all_green`), exact-variant engine 11/11, cross-supplier identity 13/13. Preserved: FastMoss retired (0 functions), CJ images blocked, 5 Merchant release rows FALSE, Stripe public checkout closed, founding-member-only, founder-only store/ads, tenant/country isolation, provider-budget enforcement, PAL, 11 GOLD gates.
+
+### Outcome
+**GPD.16 / GPD.17 / GPD.19 remain NOT ACCEPTED.** **Exact missing evidence** to accept GPD.16 on a customer-eligible product: (1) an **authoritative product identity** (GTIN/UPC/EAN, a CJ-native-origin product, or a genuine shared identifier) — none of the 261 have one; (2) a **source-backed research-side variant designation** (colour+size+model+quantity) — none exist; (3) **fresh CJ detail** for a genuinely same-identity CJ product. Then GPD.17 economics and GPD.19 journey follow. No GOLD gate accepted on fixture-only or system-tenant evidence.
