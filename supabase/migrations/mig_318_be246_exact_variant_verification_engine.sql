@@ -1,0 +1,20 @@
+-- mig_318 — 2026-11-23 — BE246 T3: positive EXACT_VARIANT_VERIFIED path. Record file only.
+-- Part A — NEW evidence evaluator public.fn_cross_supplier_exact_variant_check(tenant, product, market,
+--   source, supplier_product_id, evidence_conflict, max_age_days). Fail-closed. Requires ALL of:
+--     1. Authoritative shared product identity — SHARED_GTIN (same gtin both sides), or CJ_NATIVE_NAMESPACE
+--        (researched product_identity 'candidate:pid:cjdropshipping:<pid>' == supplier id), or
+--        AUTHORITATIVE_SUPPLIER_REF (supplier_refs entry with match_method in shared_identifier/gtin/
+--        authoritative/exact_sku/barcode — legacy name-links rejected). Conflicting gtins fail.
+--     2. Probed + fresh supplier variant_catalog (detail_observed_at present and within max_age_days).
+--     3. An exact variant DESIGNATED BY THE RESEARCHED PRODUCT (selected/displayed variant), present in
+--        the catalog — or a genuine single-variant product. A CJ-side-only variant id is insufficient;
+--        multi-variant with no designation fails (ambiguous).
+--     4. Material variant attributes (colour/size/model/quantity) compatible where specified.
+--     Retired FastMoss sources/identities excluded. SECURITY DEFINER, search_path='', tenant-scoped
+--     (see mig_319), EXECUTE revoked from PUBLIC / granted to service_role.
+-- Part B — wired into the EXISTING resolver fn_resolve_cross_supplier_identity (no duplicate engine):
+--   after the heuristic tier is computed it calls the evaluator; only when exact=true AND the heuristic
+--   tier is not DIFFERENT_PRODUCT and there is no form/contra conflict does it set
+--   variant_verified=true, identity_tier='EXACT_VARIANT_VERIFIED', confidence='HIGH', bound=true,
+--   missing_evidence=[]. SAME_PRODUCT_IDENTITY is never auto-promoted. The persist INSERT and the result
+--   now carry the genuine variant_verified plus exact_variant_evidence. Existing selftest stays 13/13.

@@ -1179,3 +1179,37 @@ Green: `fn_stage1_supplier_resolution_selftest` 21/21 (incl. `23_idempotency_pas
 
 ### 6. Outcome
 **GPD.16 / GPD.17 / GPD.19 remain NOT ACCEPTED** — the exact-SKU / fresh-evidence standard is not met and cannot be met zero-cost for the strongest candidate. GPD.01 remains open. Safeguards preserved: 5 release rows FALSE, billing closed to public ("founder-only pilot active; public checkout closed"), CJ/Kalodata/DataForSEO rights unchanged, supplier-image block intact, isolation intact, 11 GOLD units unchanged, FastMoss zero. **Credits/paid calls consumed this build: ZERO.**
+
+---
+
+## Addendum 26 — BE246 Exact-SKU verification engine + release-harness repair
+
+**Date:** 2026-11-23. Founder-authorised engineering: (1) correct the two outdated release-verification assertions; (2) build the missing positive exact-variant verification path; (3) fix demonstrated defects + test. NOT authorised (and not done): paid/quota supplier calls, relaxing exact-SKU standards, FastMoss, releasing the 5 Merchant products, rights/Stripe changes. **ZERO paid/quota calls; ZERO Lovable rebuild; all fixtures synthetic + rolled back.**
+
+### T1 — release-verification assertions repaired (mig_317); `fn_pd_release_verification` now `all_green=true`, 13/13
+- **Area 7** replaced the obsolete "all rights FALSE" assertion with **source-specific** invariants: `reuse_creative`/`redistribute_raw`/`commercial_redistribution` FALSE for every provider; image publication cleared only for the documented GOLD source (KALODATA); customer display cleared only for KALODATA; `display_derived` limited to {KALODATA, CJ}; **and the customer-release gate verified independent** of research permissions (0 `customer_source_release` rows released). Documented Kalodata/CJ research rights allowed.
+- **Areas 12-13** removed the hardcoded 13/5 topology. New invariant: all **18 markets represented** (`market_count=18`, plan length 18, `NO_PROVIDER=0`), without claiming each market has evidence, and **every dispatching route** (decision not `SKIP%`) uses an authorised+enabled provider with a valid market config, active schedule, approved budget and a call cap. Current topology (9 KALODATA-enabled / 9 disabled-adapter / 0 no-provider) passes; genuine release-safety checks (areas 11/16/17/18) untouched.
+
+### T2 — authoritative identity evidence inventory
+- **No universal retail barcode (GTIN/UPC/EAN/MPN) exists on either side** — not a structured column and not in Merchant/CJ JSON.
+- Merchant products carry `extended.dataforseo_merchant_product_id` (`native_identity_kind=google_product_id`) + `dataforseo_merchant_correlated_ids` — authoritative **in Google's namespace only**; CJ holds none of these, so they cannot bridge Merchant↔CJ.
+- CJ authoritative identifiers are **CJ-native**: `cj_pid`, `sku`, `vid` (variant catalog entries `{key, sku, vid, price_usd, weight_g, image}`; `key` encodes attributes, e.g. "Whitebeard 1pcs", "Combo pack 3pcs").
+- **Legitimate cross-source links that DO establish same-product identity**: a CJ-origin demand product whose own identity IS a CJ pid (`candidate:pid:cjdropshipping:<pid>`), or a `supplier_refs` entry carrying an authoritative `match_method`. Title/photo/price/category similarity and legacy name-based supplier links do NOT.
+
+### T3 — positive exact-variant path (mig_318/319), extending the existing resolver (no duplicate engine)
+New evaluator `fn_cross_supplier_exact_variant_check` (fail-closed) requires: an authoritative shared product identity (SHARED_GTIN | CJ_NATIVE_NAMESPACE | AUTHORITATIVE_SUPPLIER_REF; conflicting identifiers fail); a **probed + fresh** supplier variant catalog; an exact variant **designated by the researched product** (or genuine single-variant) present in the catalog (a CJ-side-only id is insufficient; multi-variant with no designation is ambiguous → fail); and compatible material variant attributes. Tenant-scoped; FastMoss excluded. Wired into `fn_resolve_cross_supplier_identity`: it overrides to `EXACT_VARIANT_VERIFIED` / `variant_verified=true` / `bound=true` **only** on genuine evidence and never from SAME_PRODUCT_IDENTITY alone or against a form/contra conflict.
+
+### T4 — fixtures (mig_320): `fn_exact_variant_verification_selftest` 11/11, zero residue
+Synthetic, clearly-identified TEST fixtures (inserted + rolled back in-function). **Two positive exact results** (single-variant; multi-variant designated) incl. an **end-to-end resolver proof** (`identity_tier=EXACT_VARIANT_VERIFIED`, `variant_verified=true`). Negatives fail closed: wrong/absent variant, similar-title-different-product, missing identifier, conflicting identifiers, ambiguous candidates, stale evidence (400d); plus country-inventory-difference (identity country-agnostic), cross-tenant isolation, and Product Asset Lock / image-rights denial. Explicit disclaimer: fixture success is **not** proof of a real supplier match.
+
+### T5 — real candidate discovery (no paid calls)
+Only two real CJ-linked demand products exist, and **neither currently verifies exact**:
+- `2f6f6101` "Leather Patch For Sofa Repair" (CJ-native, system tenant) — authoritative identity **present** (`CJ_NATIVE_NAMESPACE`), but `variant_catalog_absent_or_unprobed` (CJ row `c79b8a4c` never detail-probed).
+- `e453eed4` "kids nightlight projector" (Reddit, founder tenant) — only a legacy name-based CJ link → `no_authoritative_product_identity`.
+**No zero-cost exact match exists.** The single real product with authoritative cross-source identity (`2f6f6101`) needs exactly **one** piece of missing evidence: a CJ product-detail probe for pid `2608261145001630400` to populate the variant catalog (per-variant SKU/vid/attributes + stock + `detail_observed_at`). **Minimum authorised acquisition = 1 CJ product-detail call** (not made; not authorised). If that product is single-variant (or the researched product designates a specific variant with matching attributes), the engine would then verify EXACT. `e453eed4` additionally lacks any authoritative identifier and is not fixable by a CJ call alone. The rejected old-man ski-mask was not reused.
+
+### T6 — architecture/frontend flow (mig_323)
+Economics already flows: `fn_resolve_supplier_economics` reads `variant_verified` from `commerce_cross_supplier_identity` gated on a concrete binding with `selected_sku`, switching basis to `EXACT_VERIFIED` only when genuinely verified. Research interface gap fixed: `fn_product_supplier_candidate` had hardcoded `exact_variant_verified=false`; now emits `(d.dm='VERIFIED_EXACT_VARIANT')` (fail-closed; false in production today). Images blocked at source (mig_312 intact); freight approximate / margin UNKNOWN preserved (mig_310). No Lovable rebuild (frontend already reads the field).
+
+### T7 — regression + safeguards
+Green: pd_release 13/13 (`all_green`), exact-variant engine 11/11, cross-supplier identity 13/13, stage1 supplier-resolution, stage3b, competitor-evidence 5/5, stage2 shared-identifier, concrete-identity, supplier-gallery. Zero fixture residue. Safeguards intact: 5 release rows FALSE, public checkout closed, CJ images blocked, Kalodata/CJ/DataForSEO rights unchanged, 11 GOLD gates unchanged, 0 FastMoss functions. **GPD.16/17/19 NOT accepted** — the engine exists and is proven, but no genuine real-world exact evidence exists yet; acceptance awaits the one costed CJ detail probe above (founder decision) or a product with an authoritative shared identifier.

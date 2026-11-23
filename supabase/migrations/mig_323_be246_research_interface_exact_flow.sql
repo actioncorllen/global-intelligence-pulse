@@ -1,0 +1,10 @@
+-- mig_323 — 2026-11-23 — BE246 T6: close the research-interface integration gap. Record file only.
+-- fn_product_supplier_candidate computed a genuine design-match verdict (d.dm='VERIFIED_EXACT_VARIANT',
+-- returned by fn_variant_design_match ONLY when exact_sku_confirmed AND variant_verified) but emitted a
+-- HARDCODED exact_variant_verified=false, so a genuinely verified result could not flow to the research
+-- interface. Now emits exact_variant_verified = (d.dm = 'VERIFIED_EXACT_VARIANT') — fail-closed; false in
+-- production today (no real candidate verifies). The economics interface (fn_resolve_supplier_economics)
+-- already flows: it reads variant_verified from commerce_cross_supplier_identity gated on a concrete
+-- binding with selected_sku, switching basis to EXACT_VERIFIED only when genuinely verified. No Lovable
+-- UI change (frontend already reads the field). Images stay blocked (mig_312); freight approximate /
+-- margin UNKNOWN preserved (mig_310).

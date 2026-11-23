@@ -1,0 +1,11 @@
+-- mig_320 — 2026-11-23 — BE246 T4: fn_exact_variant_verification_selftest(). Record file only.
+-- 11 rigorous scenarios over SYNTHETIC, clearly-identified TEST fixtures inserted and ROLLED BACK
+-- in-function (zero residue; verified 0 residual rows afterward). Two POSITIVE exact results
+-- (single-variant + multi-variant-designated) incl. an END-TO-END resolver proof
+-- (identity_tier=EXACT_VARIANT_VERIFIED, variant_verified=true). Negatives fail closed:
+-- wrong/absent variant, similar-title-different-product, missing identifier, conflicting identifiers,
+-- ambiguous candidates, stale evidence; plus country-inventory-difference (identity country-agnostic),
+-- cross-tenant isolation, and Product Asset Lock / image-rights denial (no supplier image emitted; CJ
+-- images blocked at source). Carries an explicit disclaimer that fixture success is NOT proof of a real
+-- supplier match. (mig_321 fixed the p6 identity_basis to a permitted enum value; mig_322 pointed the
+-- fixtures at real tenant ids to satisfy the user_id FK — both record-only dev corrections to this file.)

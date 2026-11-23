@@ -1,0 +1,4 @@
+-- mig_319 — 2026-11-23 — BE246 T3/T4: enforce tenant isolation in the exact-variant evaluator.
+-- Record file only. The researched product lookup gains "AND user_id = p_tenant", so a product that
+-- belongs to another tenant is product_not_found (cross-tenant safe, defense-in-depth alongside the
+-- resolver's own tenant-scoped identity derivation).

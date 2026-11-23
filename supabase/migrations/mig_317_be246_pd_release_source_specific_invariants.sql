@@ -1,0 +1,19 @@
+-- mig_317 — 2026-11-23 — BE246 T1: repair fn_pd_release_verification Areas 7 and 12-13 (founder-approved).
+-- Record file only (authoritative body in schema_migrations / pg_get_functiondef).
+--
+-- Area 7 — replaced the obsolete "every catalogue_source_rights flag FALSE" assertion (false since
+--   KALODATA's documented GOLD display+image rights and CJ's BE239 analyse+display_derived) with
+--   SOURCE-SPECIFIC permission invariants:
+--     * reuse_creative_cleared / redistribute_raw_cleared / commercial_redistribution_cleared FALSE for EVERY provider;
+--     * display_cache_images_cleared cleared only for the documented image source (KALODATA);
+--     * display_cleared cleared only for KALODATA;
+--     * display_derived_cleared limited to the documented research set (KALODATA, CJ);
+--     * customer-release gate independent: 0 customer_source_release rows released (research permissions
+--       never imply release).
+--   Documented Kalodata/CJ research rights are allowed; analyse (base internal tier) is not a blocker.
+-- Areas 12-13 — removed the historical hardcoded LICENSED_ENABLED=13 / DISABLED_ADAPTER_ONLY=5 topology.
+--   New invariant: all 18 markets REPRESENTED (market_count=18, plan length 18, NO_PROVIDER=0 — none
+--   silently dropped) WITHOUT claiming each has independently acquired evidence, and every DISPATCHING
+--   route (decision not SKIP%) uses an authorised+enabled provider with a valid market config, an active
+--   schedule, an approved budget and a call cap. Genuine release-safety checks (areas 11/16/17/18) untouched.
+-- Result: fn_pd_release_verification all_green=true, 13/13.
