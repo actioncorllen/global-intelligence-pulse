@@ -1,0 +1,23 @@
+-- mig_339 — 2026-11-23 — BE265 §2: supplier-identity authoritative-evidence ledger (evaluator).
+-- Record file only (authoritative body in schema_migrations / pg_get_functiondef).
+--
+-- fn_supplier_identity_evidence_ledger(p_tenant, p_product_id, p_source, p_supplier_product_id, p_market,
+-- p_max_age_days=30) — the smallest independently-useful workflow to COLLECT + EVALUATE authoritative
+-- matching evidence for a (genuine US discovery, supplier candidate) pair. Read-only (STABLE), tenant-guarded.
+-- It REUSES the strict BE246 engine (fn_cross_supplier_exact_variant_check) as the SOLE authority for the
+-- verification state — it never turns title/image/attribute resemblance into EXACT — and structures the
+-- ledger around it:
+--   * us_discovery_identity (identity, basis, gtin, designated variant, dataforseo_merchant_product_id)
+--   * proposed_supplier_identity (source, pid, sku, supplier_id, product_url, gtin, variant_count, observed_at)
+--   * supporting_evidence[] — authoritative evidence actually PRESENT (SHARED_GTIN | CJ_NATIVE_NAMESPACE |
+--     AUTHORITATIVE_SUPPLIER_REF | SUPPLIER_VARIANT_CATALOG(fresh) | DESIGNATED_EXACT_VARIANT)
+--   * missing_evidence[] — authoritative evidence REQUIRED but absent (incl. GTIN_CONFLICT fail-closed)
+--   * verification_state (EXACT_VARIANT_VERIFIED | CANDIDATE_REQUIRES_VERIFICATION) mirrored from the engine
+--   * provenance (evaluated_at, engine, identity basis, supplier detail observed_at, market)
+--   * next_acquisition_requirement — the single specific smallest evidence step, derived from the engine reason.
+-- Reuses the existing identity architecture (no parallel engine). No writes, no provider calls.
+--
+-- Verified live on the genuine US discovery 9128d818 (2026 Galaxy Star Projector, dataforseo_merchant) vs CJ
+-- candidate 2610010255571606100: verification_state=CANDIDATE_REQUIRES_VERIFICATION, authoritative method null,
+-- supporting=[fresh 15-variant catalogue], missing=[AUTHORITATIVE_PRODUCT_IDENTITY, DESIGNATED_EXACT_VARIANT],
+-- next requirement = obtain a shared GTIN OR an authoritative supplier cross-reference. Selftest (mig_340) 6/6.

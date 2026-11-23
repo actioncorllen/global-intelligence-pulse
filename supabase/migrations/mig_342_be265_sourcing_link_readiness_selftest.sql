@@ -1,0 +1,10 @@
+-- mig_342 — 2026-11-23 — BE265 §4/§7: selftest for the direct supplier-link readiness evaluator.
+-- Record file only (authoritative body in schema_migrations / pg_get_functiondef).
+--
+-- fn_supplier_sourcing_link_readiness_selftest() — read-only, no fixtures. Asserts:
+--   1 BLOCKED_NO_IDENTITY_NO_LINK — real candidate BLOCKED; blocking_reasons include exact_identity_unverified
+--                                   AND supplier_link_missing; exact_identity_verified=false
+--   2 INVARIANTS_PRESENT          — supplier_provided_links_only + no_confirmed_action_without_exact_identity
+--                                   + url_never_fabricated_or_scraped
+--   3 SUPPLIER_NOT_FOUND / 4 CROSS_TENANT_REJECTED — guards
+-- Result on apply: ok=true, 4/4.

@@ -1,0 +1,21 @@
+-- mig_341 — 2026-11-23 — BE265 §4: direct supplier-link readiness evaluator.
+-- Record file only (authoritative body in schema_migrations / pg_get_functiondef).
+--
+-- fn_supplier_sourcing_link_readiness(p_tenant, p_product_id, p_source, p_supplier_product_id, p_market,
+-- p_max_age_days=30) — read-only. Formalises the preconditions for a CONFIRMED direct-sourcing action on the
+-- Product Card, using ONLY a supplier-provided link, and never fabricating or scraping a URL. Checks:
+--   * exact identity (strict BE246 engine) — the gate; a candidate without verified exact identity is BLOCKED
+--   * supplier_link present + authorised origin (source-matched domain, https) + product-level + SKU correspondence
+--   * availability status + freshness of the stock/observation timestamp
+-- Returns direct_sourcing_action = CONFIRMED_DIRECT_SOURCING only when every precondition holds, else BLOCKED
+-- with explicit blocking_reasons (exact_identity_unverified | supplier_link_missing |
+-- supplier_link_origin_unauthorised | supplier_link_not_product_level | supplier_link_sku_mismatch |
+-- supplier_availability_not_confirmed | supplier_evidence_stale_or_unobserved). Invariants:
+-- supplier_provided_links_only, no_confirmed_action_without_exact_identity, url_never_fabricated_or_scraped.
+--
+-- Context: the Product Card contract (fn_stage3b_product_card) emits NO direct supplier URL today (workflow-
+-- state actions + commercial-verification binding only; asset-lock keeps identity/assets to
+-- fn_ad_product_card_authority), and ALL 1,317 stored CJ supplier rows have product_url = NULL. So no bad link
+-- can leak; this evaluator is the explicit gate the UI/Product Card consults before offering any direct link.
+-- Verified live: genuine US discovery 9128d818 vs CJ 2610010255571606100 -> BLOCKED,
+-- blocking_reasons [exact_identity_unverified, supplier_link_missing]. Selftest (mig_342) 4/4.

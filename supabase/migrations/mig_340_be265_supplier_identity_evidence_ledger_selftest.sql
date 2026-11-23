@@ -1,0 +1,11 @@
+-- mig_340 — 2026-11-23 — BE265 §2/§7: selftest for the authoritative-evidence ledger.
+-- Record file only (authoritative body in schema_migrations / pg_get_functiondef).
+--
+-- fn_supplier_identity_evidence_ledger_selftest() — read-only, no fixtures. Picks the genuine US projector
+-- discovery + the CJ star-projector candidate and asserts:
+--   1 REAL_CANDIDATE_NOT_EXACT     — CANDIDATE_REQUIRES_VERIFICATION, authoritative method null, missing
+--                                    AUTHORITATIVE_PRODUCT_IDENTITY, supporting SUPPLIER_VARIANT_CATALOG
+--   2 MIRRORS_BE246_ENGINE         — ledger EXACT iff fn_cross_supplier_exact_variant_check exact
+--   3 NEXT_REQUIREMENT_SPECIFIC    — non-trivial, authoritative-identifier-oriented next step
+--   4 SUPPLIER_NOT_FOUND / 5 PRODUCT_NOT_FOUND / 6 CROSS_TENANT_REJECTED — guards
+-- Result on apply: ok=true, 6/6.
