@@ -1617,3 +1617,33 @@ Generic white-label US dropship discoveries carry no barcode and no manufacturer
 
 ### Security / tracker
 FastMoss retirement, 18-country isolation, founding-member + founder-only controls, PAL, provider licensing, CJ image block, Stripe, Save/Monitor, timestamps and the 11 accepted GOLD gates all preserved. No DB writes; no API calls. **GPD.16/17/19 remain NOT ACCEPTED**; GPD.06–11/22/01 unchanged (no new evidence; not re-audited). GOLD GPD.16 + Build Evidence updated with this finding.
+
+## Addendum 41 — BE260 image-assisted supplier matching: rights/capability gate + identity boundary (read-only, $0, 0 new calls)
+
+**Date:** 2026-11-23. Goal: implement the smallest safe image-assisted candidate matcher (`ca945686` vs CJ `2610010255571606100`) *only if* image-analysis rights and an existing vision capability allow — never letting visual similarity produce EXACT/bound/sourceable. No rebuild; no new provider or vision calls.
+
+### §4 Image-analysis rights (catalogue_source_rights)
+- **CJ**: `analyse_cleared=TRUE`, `display_derived_cleared=TRUE`, but **`display_cache_images_cleared=FALSE`** and `display_cleared=FALSE`. Internal transient analysis is arguable; **caching/storing images or features is NOT cleared**; customer display blocked.
+- **DATAFORSEO_MERCHANT** (the discovery source): `analyse_cleared=TRUE`, **`display_cache_images_cleared=FALSE`**, `display_cleared=FALSE`, note "Google Shopping / Amazon public merchant listings … display/redistribution rights NOT confirmed."
+- Only KALODATA has image display/cache cleared. So **neither** the discovery nor the CJ supplier side has sufficient image **cache** rights for a stored image-feature pipeline, and customer display stays blocked. Product Asset Lock preserved.
+
+### §5 Image evidence + existing vision capability
+- Discovery `ca945686`: **no stored image at all** (no signal/extended image; `product_url` null). There is literally nothing on the discovery side to compare.
+- CJ `2610010255571606100`: 15 reference-only CDN images (`SUPPLIER_PROVIDED_REFERENCE_ONLY`).
+- **No materialized image assets/hashes/asset-intelligence rows** exist for either product (product_image_assets / supplier_product_assets / product_asset_intelligence all empty for them).
+- **No internal vision capability**: no embedding/vector/perceptual-hash column anywhere (only a byte `content_hash`); no vision model in the stack; paid vision APIs not authorised ($0).
+
+### §6 Prototype NOT executed (honestly) — three independent blockers
+1. No discovery-side image to compare; 2. insufficient image cache/analysis+display rights on **both** sides (`display_cache_images_cleared=FALSE`); 3. no internal vision/embedding capability (and no authorised paid vision call). Per the directive I did **not** pretend the prototype ran and did **not** download unlicensed imagery.
+
+### Authorised candidate comparison (text/attributes only — the permitted non-image method)
+From legitimately-available metadata: **Shared observable features** — both are USB star/galaxy **night-light projectors**, disc-based pattern projection, bedroom/decor use, low price tier, Night-Lights concept. **Differences/conflicts** — discovery "**25 slide discs**" single listing (seller "Walmart - Seller", US retail price $14.99) vs CJ "interchangeable **film discs**, Moon/Galaxy/Saturn", **15** pattern variants (supplier cost $6.08–$10.76, a different metric). **Missing material specs** — discovery has no dimensions/weight/brand/GTIN/image; CJ has weight (119–150 g) but no GTIN; **no shared identifier either side**. **Match classification = CANDIDATE_REQUIRES_VERIFICATION** (concept-level STRONG_SAME_PRODUCT per BE257, **not** EXACT). No numeric confidence fabricated.
+
+### §7 Identity boundary — enforced and regression-locked
+Visual/attribute similarity cannot set `bound=true`, `variant_verified=true`, `commercially_validated=true`, an EXACT verdict or a sourceable publication state. Proven: BE246 engine requires authoritative identity (SHARED_GTIN | CJ_NATIVE_NAMESPACE | AUTHORITATIVE_SUPPLIER_REF) + a designated variant; RVD selftest locks "non-authoritative identity → no_authoritative_product_identity"; BE257 real bridge test returned exactly that for this pair; validation now: `variant_verified=0`, concrete `bound=0`. Regression green (pd_release 13/13, RVD 5/5, BE256 7/7). **Key nuance:** even a *successful future image match only locates a CANDIDATE* — it does not, by itself, satisfy the identity contract; EXACT still needs authoritative corroboration that does not exist for these barcode-less generics.
+
+### §14 Exact capability + cost required for genuine image-assisted matching (none approved)
+To make image-assisted matching real and rights-safe, Strateloq needs **all** of: (a) a **stored discovery image** (fetch the merchant image URL via a DataForSEO Merchant product-detail call — chargeable credits, confirm cost); (b) **image cache/analysis rights** for DATAFORSEO_MERCHANT and CJ (`display_cache_images_cleared`, currently FALSE — a provider-rights/licence step); (c) an **image-embedding/vision capability** (licensed internal model or a paid vision API — per-image cost, confirm); and, decisively, (d) **authoritative corroboration** (GTIN/MPN/brand cross-reference) to convert a visual CANDIDATE into EXACT — absent for generics, so image matching alone cannot complete GPD.16. The genuine founder decision: license an identifier-publishing supplier (e.g. BigBuy EANs) for authoritative corroboration, or set an explicit policy on whether a strongly-corroborated CANDIDATE (visual+attribute+concept) may ever be surfaced as sourceable — which would be a deliberate change to the identity contract, not a silent weakening.
+
+### Security / tracker
+No DB writes; no API calls; $0. FastMoss retirement, 18-country isolation, founding-member + founder-only controls, PAL, CJ image block, DataForSEO upstream/Merchant-release restrictions (5 pilots unreleased), Stripe, Save/Monitor and the 11 accepted GOLD gates preserved. **GPD.16/17/19 remain NOT ACCEPTED.** GOLD GPD.16 + Build Evidence updated.
