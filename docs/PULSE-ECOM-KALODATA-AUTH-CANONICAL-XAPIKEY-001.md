@@ -1002,3 +1002,23 @@ destructive-statement confirmation timeout (the atomic DO block never committed,
 residue; release rows never touched, still `released=false`). To be re-run
 non-destructively. Controls preserved: 5 release rows FALSE, images blocked, tenant/country
 isolation, Stripe LIVE closed, 11 GOLD units untouched, GPD.01 unchanged (OPEN).
+
+### BE242 — 2026-11-23 — interrupted verification completed (engineering sign-off)
+The BE241 "pending" drill is now complete, run read-only / transaction-safe (no synthetic
+production writes). State re-confirmed directly (not by presumed rollback): 0 `BE241_DRILL`
+rows, 0 `ZZ`-market rows, 5 release rows `released=false`, rights clearances unchanged,
+both RPCs deployed as `*_v2_aggregated`. Nine scenarios all PASS: (1) two-country —
+Projecteur GB OBSERVED/GBP vs JP 0 offers; (2) multiple-offers-one-seller — exact
+`count(*)` vs `count(DISTINCT identity)` expressions give offers=2 / distinct_sellers=1
+(read-only replica; no real group exhibits this, so no production write made); (3) distinct
+sellers — 5 offers / 5 distinct, group carries no identity/url key; (4) no competitors —
+UNKNOWN, 0 offers, empty aggregate; (5) missing identity — offers=1, distinct_sellers
+NULL/UNKNOWN; (6) GBP vs USD separated; (7) exact (Projecteur 5/0) vs comparable (Govee
+"Comparable product"); (8) release-disabled — 0 of 5 pilots visible in the explorer while
+`released=false`; (9) tenant isolation — `cross_tenant_rejected`, foreign tenant sees 0
+rows on both RPCs. Live frontend unchanged (`index-CoFwwWhL.js`): renders `price_summary`
+range + withheld `competitors[]`, no identity/url, no offers-as-sellers mislabel, UNKNOWN
+honest, currency correct — no Lovable change required. **BE241/BE242 engineering
+verification COMPLETE.** Still open and separate: the EU/Google 96/9/EC legal assessment
+(qualified Irish/EU counsel, per §Task 5 above) and the explicit founder production-release
+decision. Release rows remain FALSE; GPD.01 OPEN; 11 GOLD units unchanged.
