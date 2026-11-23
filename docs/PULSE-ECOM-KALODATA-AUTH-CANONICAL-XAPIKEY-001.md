@@ -1257,3 +1257,33 @@ The leather patch is a **system/seed-tenant** product (`00000000-0000-4000-8000-
 **Verification unchanged (no new evidence):** `fn_cross_supplier_exact_variant_check` for the leather patch (system tenant) stays `exact=false`, `product_identity_method=CJ_NATIVE_NAMESPACE`, reason `variant_catalog_absent_or_unprobed`. Economics `CANDIDATE_LISTING`, margin UNKNOWN; no inventory/shipping acquired; catalog still unprobed. Image gates, tenant isolation and PAL preserved; no system→founder tenant transfer; no Merchant release; Stripe unchanged.
 
 **Smallest next action (one-time human step, then zero-cost):** in the n8n UI open `zwTkywEYKsmojs6g` (`https://tradingb.app.n8n.cloud/workflow/zwTkywEYKsmojs6g`), bind the existing "CJ Dropshipping API" credential to the **CJ Auth** and **CJ Detail** nodes and "Supabase account" to **POST Ingest**, then **Run** once (2 free CJ calls). On return, the BE246 engine evaluates the real variant catalog — a genuinely single-variant product may verify EXACT; a multi-variant product without a research-side variant designation returns UNKNOWN (no manufactured match). Optional ≤2 further free calls (`stock/queryByVid` + `freightCalculate→GB`) complete economics if verified.
+
+---
+
+## Addendum 29 — BE248 continuation: CJ acquisition EXECUTED and verified (first real CJ supplier evidence)
+
+**Date:** 2026-11-23. The founder bound the credentials in n8n; Claude independently verified the bindings, executed the bounded probe, validated the real response, ingested, and ran the BE246 engine. **Bounded: 2 of 4 free CJ requests, $0.**
+
+### Execution
+Workflow `zwTkywEYKsmojs6g`, execution **30721 = SUCCESS**. Verified bindings before running: CJ Auth → credential `2IV5tXPu9jAItjKh`; CJ Detail → auth None + header `CJ-Access-Token = {{ $('CJ Auth').first().json.data.accessToken }}`, `pid=2608261145001630400`; POST Ingest → `supabaseApi` `jMhzgwaHX9jwZ7rA`. (The prior failure `30720` was the unbound credential.)
+
+### Real CJ response (validated, not just HTTP 200)
+`code 200, result true, "Success"`, requestId `b12708c23fc548209f3b83a4d9258879`. **pid `2608261145001630400` confirmed** = "Leather Patch For Sofa Repair Restoration And Touch-up"; product SKU `CJYD3099115`; category Home/Garden/Furniture › Home Office Storage; sellPrice **0.95–1.71 USD**; **20 genuine variants** (colour × size — 12 colours @ 50×68CM + 8 @ "100 Length 68 Width Cm"/Beige/Off-White). Example: key `Black-50X68CM`, vid `2608261145001631600`, sku `CJYD309911501AZ`, 0.95 USD, 730 g. `detail_observed_at` 2026-11-23T14:54:14Z.
+
+### Ingestion
+`fn_ingest_cj_product_media` → `status ok, updated 1, variant_count 20, image_count 21`. The global supplier row (`cjdropshipping`/`2608261145001630400`) now carries the real `variant_catalog` (20) + fresh `detail_observed_at`; merge added evidence without overwriting/contradicting the authoritative identity (same product/title/SKU; was `variant_count=0`).
+
+### Exact-variant verdict (BE246 engine, REAL evidence)
+`fn_cross_supplier_exact_variant_check` → **`exact=false`**, `product_identity_method=CJ_NATIVE_NAMESPACE` (authoritative identity CONFIRMED), reason **`ambiguous_no_variant_designation`**. Resolver end-to-end: `identity_tier=UNVERIFIED`, `variant_verified=FALSE`, `bound=false`, `confidence=NONE`. This is the correct, disciplined outcome: the product genuinely has 20 variants and the system-seed research product `2f6f6101` designates none (`selected/displayed/required_variant` all null), so **no exact-SKU was manufactured.**
+
+### Economics
+`fn_resolve_supplier_economics` → `status=no_candidate`, `basis=null`, margin UNKNOWN (no verified exact variant; no fabricated margin). `product/stock/queryByVid` and `freightCalculate` were **not called** (not justified without an exact variant) — 2 of 4 CJ calls used.
+
+### Image rights, tenant isolation, integration
+21 CJ image URLs stored **backend-only** (`SUPPLIER_PROVIDED_REFERENCE_ONLY`); `CJ.display_cache_images_cleared=false`; the customer-facing economics path emits **0** `cjdropshipping.com` URLs; research-interface gates (mig_324/325) + economics gate (mig_312) intact; PAL preserved. The product stays **system/seed tenant** — not transferred to the founder tenant and not presented as a released customer-tenant journey. Verified-path functions (`fn_resolve_cross_supplier_identity`, `fn_product_supplier_candidate`, `fn_resolve_supplier_economics`) all return honest unverified/UNKNOWN states; no Lovable rebuild.
+
+### Regression + safeguards
+pd_release 13/13 (`all_green`), exact-variant engine 11/11, cross-supplier identity 13/13. Preserved: FastMoss retired (0 functions), CJ images blocked, 5 DataForSEO Merchant release rows FALSE, Stripe public checkout closed, founding-member-only, founder-only store/ads, tenant/country isolation, provider-budget enforcement, PAL, 11 GOLD gates.
+
+### Outcome
+**GPD.16 / GPD.17 / GPD.19 remain NOT ACCEPTED** — genuine real CJ evidence is now acquired and the identity is authoritatively confirmed, but exact-SKU is UNKNOWN by design (multi-variant, no research-side designation). **Remaining blocker:** a research/opportunity-side designation of one specific variant (colour+size) mapping to a CJ vid/sku on a real customer product (single-variant auto-qualification does not apply to this 20-variant product); then economics (stock/freight ≤2 further free calls + a credible selling price).
