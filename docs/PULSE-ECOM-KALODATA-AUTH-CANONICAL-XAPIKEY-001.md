@@ -1527,3 +1527,35 @@ No `cjdropshipping`/`oss-cf` URLs in any customer-facing function output for the
 
 ### Remaining blocker (single, founder-specific)
 A genuine founder/customer **choice of one film-disc variant** (15 options; e.g. HD-Galaxy 1 `CJJT321332307GT`, HD-Cosmic Journey `CJJT321332306FU`, HD-12 Glass Sheets `CJJT321332303CX`, …). On that choice, `fn_set_research_variant_designation` records it → BE246 re-run (expected EXACT) → then the remaining ≤2 CJ calls (stock + US freight, with an authorised US destination — ZIP not to be invented) → US economics → customer Save/Monitor sighting. No further acquisition is authorised until the founder designates the variant (and supplies a US destination for freight).
+
+## Addendum 38 — BE257 US-discovery-first identity verification & supplier-matching discipline (read-only, $0, 0 new provider calls)
+
+**Date:** 2026-11-23. Re-asserts the correct sequence (US discovery → verified identity → genuine CJ bridge → exact variant). No new CJ/DataForSEO calls; BE256's 2 unused calls NOT reused. BE256 evidence preserved intact.
+
+### §1 BE256 evidence preserved
+Supplier row `2610010255571606100` (SKU CJJT3213323, 15 variants, AVAILABLE_PROBED) and the fail-closed ingestion fix (mig_331/332) stand. Founder-tenant CJ-supplier-origin research item `534d98bc` remains honestly labelled: provenance origin=`supplier_catalogue`, opportunity=`INSUFFICIENT_EVIDENCE`, unbound, UNVERIFIED. Not converted into an independently discovered US product; not deleted.
+
+### §2 Genuine US-discovered projector products (DataForSEO merchant; none FastMoss)
+Real US-market discoveries exist (source_store `dataforseo_merchant`, market US, first-observed 2026-11-19/20), e.g. Govee Star Light Projector `d985e5af`, Rossetta Dual-Lens `ae58628c`, POCOCO `20d03417`, Anysun 13-in-1 `68559293`, "Bedroom Star Projector w/ Timer" `a37f20e0`, "Star Projector Night Light 1-Pack 360 … 25 slide discs" `ca945686`, "Planetarium Projector Pro 13-in-1" `84af56b0`. All carry identity_basis `platform_id` (name-based), **no GTIN/UPC/EAN/MPN and no populated provider-native id**, thin product-specific US evidence (1–2 US competitors, 1 US eval each, confidence NONE). `fastmoss_dep = false` for all. Generic Reddit keyword/category concept `e453eed4` is explicitly **excluded** as exact-identity proof (category context only).
+
+### §3 Relationship to CJ `2610010255571606100` — NO authoritative bridge
+The CJ supplier record carries **no** GTIN/UPC/EAN/barcode/MPN/brand (CJ-native `pid`/`productSku` only; it does carry `shippingCountryCodes` for later US-shipping checks). Neither side shares an authoritative identifier. BE246 engine bridge test (`fn_cross_supplier_exact_variant_check`) for the closest generic (`ca945686`, "25 slide discs") **and** the branded Govee (`d985e5af`) against the CJ pid → **exact=false, reason `no_authoritative_product_identity`** in both cases. Provider-native namespaces (Google-Shopping merchant vs CJ pid) are not interchangeable; similar titles / interchangeable discs / shared category / matching price / visual resemblance do **not** establish identity. **They remain separate records** (0 discovery→CJ bridges persisted; the CJ pid's only identity row is its own unbound CJ-origin item).
+
+### §4 Strongest genuine US discovery + the precise gap
+By US evidence the discoveries are uniformly thin (1–2 competitors, confidence NONE); the most evidenced generic, CJ-match-eligible starting point is `ca945686` ($14.99, 360° star/slide-disc, generic). But **no US-discovered projector has an authoritative supplier bridge** — the precise gap, reported rather than resolved by arbitrary catalogue selection. Branded discoveries (Govee/POCOCO/Anysun/Rossetta) have recognisable identity and real US retail presence but **cannot** map to the generic CJ SKU without the brand's own SKU (substitution forbidden). No product is called a winner (insufficient verified evidence); "first observed 2026-11-20 by Strateloq" is not asserted as new-to-market.
+
+### §5 Supplier/variant qualification — not proceeded
+No authoritative same-product relationship → supplier qualification does not proceed for any US discovery. `variant_verified=false` everywhere; the CJ item 534d98bc stays UNVERIFIED/unbound; no variant auto-selected; no founder/customer choice fabricated.
+
+### §6 Acquisition controls — precise evidence-acquisition recommendation (NOT authorised; nothing executed)
+No new call is justified to force a bridge the identifier evidence cannot support. If the founder wishes to pursue it, one precise option:
+- **US-discovered UUID:** `ca945686-18ca-40a9-94a8-2eafcb3bf5a7` (generic US star projector). **Proposed CJ PID:** `2610010255571606100`. **Identity evidence today:** category/title/disc-mechanism resemblance only — NOT authoritative. **Endpoint:** a DataForSEO merchant product-detail lookup for that US listing to retrieve a GTIN/brand/model. **Calls:** 1 (DataForSEO, **chargeable** — monetary + quota impact, exact cost per the provider budget). **Expected evidence / honest yield:** LOW — even if the US listing exposes a GTIN, the CJ product has none to match, so an identifier bridge is unlikely to resolve; image-vision corroboration is unavailable. **Destination:** n/a. Recommendation: **do not spend** on a low-yield bridge; treat the CJ USB star projector as a CJ-origin item on its own terms, and keep US discoveries separate.
+
+### §7 Provenance separation (verified)
+(A) Independently discovered US research products keep their own US observations/evaluations; (B) the CJ supplier-origin item keeps CJ catalogue/supplier data and carries **no** independent product-specific US demand (category-level kids'-projector demand is NOT attached to it). No records merged on name/category. The 5 locked DataForSEO Merchant pilot rows remain unreleased (pd_release asserts 0 released).
+
+### §9 Validation
+pd_release all_green 13/13, RVD selftest 5/5, BE256 fail-closed 7/7. CJ pid bridge rows = 1 (the CJ-origin item only), bound = 0, discovery→CJ bridges = 0. No FastMoss discovery used. Exact variants fail closed when identifiers/designations are absent (`no_authoritative_product_identity` / `ambiguous_no_variant_designation`). Tenant/US isolation and honest UNKNOWN/INSUFFICIENT states intact. No browser-journey claim.
+
+### GOLD — GPD.16/17/19 remain NOT ACCEPTED
+No acceptance on supplier-catalogue identity alone. GPD.16 blocked by the absence of an authoritative US-discovery→CJ bridge (and, for the CJ item alone, an undesignated 15-variant set). GPD.17 economics UNKNOWN. GPD.19 supplier-positive journey not sightable (no bound exact variant; backend only). 11 accepted gates preserved.
