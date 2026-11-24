@@ -2097,3 +2097,34 @@ The **selftest fixture** was stale: the two-family product `p_two` qualified via
 
 ### Verification
 `fn_stage1_supplier_resolution_selftest` **all_pass=true, 21/21** (0 failed). No regression: GOLD-gating `fn_stage1_product_opportunity_invariants_selftest` 8/8, `fn_stage1_research_bridge_selftest` 8/8, `fn_kalodata_commerce_adapter_selftest` 17/17, `fn_generic_only_discovery_selftest` 7/7, `fn_product_competitor_evidence_selftest` 6/6. **$0; 0 provider calls; 0 orders.** No acceptance flipped; **GOLD 11/22 preserved.** Build Evidence row **291**; migration record `mig_366`. The BE264 rights-enforcement behaviour and all accepted features are unchanged.
+
+---
+
+## Addendum 67 — DataForSEO secure-executor verification (BE292, 2026-11-24)
+
+**Date:** 2026-11-24. Founder directive: *GPD.06 — DataForSEO Secure Executor Verification*. Verify the budget-enforcing execution pathway (BE290) is deployed, operational and secure **before any further chargeable requests**. Verification only; no new build; fix only a genuine control failure. **$0; 0 provider calls; 0 orders; no unnecessary n8n executions.**
+
+### TASK 1 — deployment, connection, flow, n8n bypass
+- `supabase/functions/dataforseo-execute/index.ts` is **ACTIVE, version 1, verify_jwt=false**; the live source is **byte-identical to the repo** (`ezbr_sha256 44835547…`). `mig_365` functions present and granted service_role-only.
+- **Credential access (secure):** the executor reads `DATAFORSEO_LOGIN`/`DATAFORSEO_PASSWORD`/`DATAFORSEO_EXECUTOR_TOKEN` from the **edge secret store only** — never from n8n, never logged, never returned; Basic auth is constructed at call time and only after the authoriser authorises. Secret **values** cannot be read back through available tooling (by design); their provisioning is a founder action (below).
+- **Flow (from the deployed source):** GATE 1 executor-token (unset ⇒ all dispatch 401) → GATE 2 credential-presence (unset ⇒ 503 **before** consume) → GATE 3 `fn_dataforseo_pilot_consume`; the provider `fetch()` is unreachable unless GATE 3 authorises; `fn_dataforseo_merchant_record_cost` reconciles actual cost afterward; `probe` is read-only.
+- **No active n8n bypass:** only **3** DataForSEO workflows remain and **all are `active:false`** (free retrieve/preflight/balance); the 5 paid-capable direct-HTTP workflows were archived (BE290); the credential is DECOMMISSIONED. No active workflow can bypass.
+
+### TASK 2 — spending controls (non-chargeable)
+`fn_dataforseo_spend_control_selftest` **ok=true, 10/10** (founder-approval gate, country, over-per-run-cap, disabled, emergency-stop, idempotency, and T8 concurrency ×3). `fn_dataforseo_pilot_preauthorize` live = **PAID_DISABLED** (`enabled=false`, **0 active provider budgets**, `emergency_stop=false`). Endpoint-specific projection: **SEARCH_VOLUME 60000µ ($0.06) / SEARCH_VOLUME_LIVE 90000µ ($0.09)** / MERCHANT_PRODUCTS 75000 / SELLERS 10000 / unknown-failsafe 100000, checked pre-dispatch and reconciled post via `record_cost` (month-spend excludes FAILED/REFUNDED). Provider failure/retry handled in-executor (records FAILED, slot stays consumed, idempotent replay never re-dispatches). Authoriser/ledger/preauthorize/selftest all **service_role-only**. **0 dispatch rows in the last 30 min** (last row = the prior BE289 audit row).
+
+### TASK 3 — product evidence & rights
+US SEARCH_DEMAND retrievable via **GLOBAL_SAFE**, **US-only**: lamp `207dbaa8` `demand_basis=PRODUCT` (product 50 / category 11110); Shark `50e1b04e` PRODUCT (product 81000 / category 214000) — product-vs-category labels distinct. The customer intelligence core **withholds** SEARCH_DEMAND as `DISPLAY_PENDING_RIGHTS` (`present=true` internal, `strength`/`observed_detail` **nulled**, `contributes_to_qualification=false`, customer `source_state=NOT_SEARCHED`; `display_pending_sources=[DATAFORSEO,DATAFORSEO_MERCHANT]`) → **no DataForSEO-derived restricted metric reaches customers**; display gated pending GPD.01. Supplier Unknown (`fn_product_supplier_state_selftest` ok), generic-only (`fn_generic_only_discovery_selftest` ok), PAL, country isolation and accepted GOLD all preserved.
+
+### TASK 4 — fix
+**No fix required.** No misconfiguration or control failure was found; the executor is correctly deployed and fail-closed. The only open items are **founder actions**, not defects.
+
+### Remaining security limitations (honest)
+Full technical non-bypassability is **not yet established** and requires two founder actions: (1) provision the three edge secrets and enable a budget; (2) **delete** the n8n credential `OYKLUdhcUwGJ8ymT`. Even then, **Supabase project-owners / service-role** can read edge secrets or deploy a replacement function — an inherent admin bypass that cannot be engineered away in-stack.
+
+### Readiness for GPD.07 / GPD.09
+- **GPD.06 / GPD.07-search (DataForSEO):** the mechanism is secure and executor-ready; scaling to the other 7 eligible US products is safe **once the founder provisions secrets + approves a budget** (one `/live` task, ~$0.09). Customer display still gated by GPD.01.
+- **GPD.07-social:** BLOCKED — Reddit/TikTok `analyse_cleared=false`; Kalodata creator/video counts NULL. Needs a social analysis+display licence (not an executor issue).
+- **GPD.09-advertiser:** BLOCKED — META_AD_LIBRARY `analyse_cleared=false`; no DataForSEO path supplies advertiser data. Needs a Meta Ad Library analysis+display licence.
+
+**GOLD 11/22 preserved** (no checkbox flipped). Build Evidence row **292**; LIVE MASTER — GOLD GPD.06 next-action annotated. No code/DB change this pass.
