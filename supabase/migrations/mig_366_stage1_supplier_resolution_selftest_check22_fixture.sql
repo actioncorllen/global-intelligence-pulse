@@ -1,0 +1,30 @@
+-- mig_366 — 2026-11-24 — fix fn_stage1_supplier_resolution_selftest check 22 (early_opportunity_v2).
+-- Record file only (authoritative body in schema_migrations / pg_get_functiondef).
+--
+-- DIAGNOSIS (not a production bug): fn_stage1_early_opportunity_state is CORRECT. BE264 added decision-boundary
+-- rights enforcement — evidence families whose source has analyse_cleared=false (META_AD_LIBRARY, EBAY, REDDIT,
+-- …) are EXCLUDED from the AUTHORISED top-level decision (early_opportunity_state / qualifying counts), while the
+-- underlying investigation detail is retained in supplier_resolution for audit. This is a GOLD-relevant safety
+-- property (uncleared evidence must not drive the authorised decision) and is locked by the GOLD-gating
+-- fn_stage1_product_opportunity_invariants_selftest (8/8, GREEN).
+--
+-- The SELFTEST FIXTURE was stale. The two-family product p_two qualified via COMMERCE_MOMENTUM +
+-- ADVERTISING_EMERGENCE, but ADVERTISING_EMERGENCE maps to META_AD_LIBRARY (analyse_cleared=false). After BE264,
+-- the rights-gated top-level state therefore saw only ONE authorised qualifying family (COMMERCE_MOMENTUM) ->
+-- EMERGING, not QUALIFIED_FOR_SUPPLIER_RESOLUTION. Check 04 (the UNGATED supplier_resolution sub-object) still
+-- passed; only the GATED check 22 failed. The suite is not in the standard GOLD regression set, so it had gone
+-- unobserved. (Observed during BE290; unrelated to that change.)
+--
+-- FIX (fixture-only; NO production function changed): p_two now carries a SECOND AUTHORISED qualifying family —
+-- a SEARCH_DEMAND signal (source_platform DATAFORSEO_GOOGLE_ADS; DATAFORSEO analyse_cleared=true;
+-- buyer_intent_band HIGH). With COMMERCE_MOMENTUM + SEARCH_DEMAND both authorised and qualifying, the rights-gated
+-- top-level state genuinely reaches QUALIFIED_FOR_SUPPLIER_RESOLUTION, while p_two's META advertising stays PRESENT
+-- but EXCLUDED at the decision boundary — so check 22 is now a STRONGER, rights-aware positive assertion (it proves
+-- the gated decision uses the two cleared families and ignores the uncleared one) instead of relying on an
+-- uncleared source to reach QUALIFIED. Also added commerce_signals cleanup for the fixture product_ids (the
+-- selftest previously left orphan signals each run). Suite contract id unchanged.
+--
+-- VERIFIED: fn_stage1_supplier_resolution_selftest all_pass=true, 21/21 (0 failed). No regression: GOLD-gating
+-- fn_stage1_product_opportunity_invariants_selftest 8/8, fn_stage1_research_bridge_selftest 8/8,
+-- fn_kalodata_commerce_adapter_selftest 17/17, fn_generic_only_discovery_selftest 7/7,
+-- fn_product_competitor_evidence_selftest 6/6. $0; 0 provider calls; no acceptance flipped; GOLD 11/22 unchanged.

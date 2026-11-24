@@ -2080,3 +2080,20 @@ Projected cost is checked **before** dispatch (`fn_dataforseo_operation_projecte
 
 ### Status
 Spend security brought to the **strongest achievable boundary**: a single budget-enforcing server-side executor + decommissioned n8n credential + archived paid workflows, with the exact 2-step founder action to reach full technical non-bypassability and the inherent admin bypass stated plainly. **GPD.06/07/09 remain OPEN** (GPD.06 awaits the GPD.01 DataForSEO display clearance, no code change). **GOLD 11/22 preserved** (C2:C23; no checkbox flipped). Supplier Unknown, Kalodata revenue, country isolation and PAL unaffected. Build Evidence row **290**; LIVE MASTER — GOLD GPD.06 next-action annotated. Migration record `mig_365`; edge function `supabase/functions/dataforseo-execute/index.ts`.
+
+---
+
+## Addendum 66 — Stage-1 selftest check 22 fix (early_opportunity_v2) (BE291, 2026-11-24)
+
+**Date:** 2026-11-24. Follow-up to the BE290 spend-security work, which flagged that `fn_stage1_supplier_resolution_selftest()` returned **20/21** with check `22_early_opportunity_v2` failing. Founder asked to diagnose and fix to 21/21.
+
+### Diagnosis — stale fixture, not a function bug
+`fn_stage1_early_opportunity_state` is **correct**. BE264 added **decision-boundary rights enforcement**: evidence families whose source is `analyse_cleared=false` (META_AD_LIBRARY, EBAY, REDDIT) are **excluded from the authorised top-level decision** (`early_opportunity_state`, qualifying/present counts), while the ungated investigation detail is retained in `supplier_resolution` for audit. That safety property is GOLD-relevant and locked by the GOLD-gating `fn_stage1_product_opportunity_invariants_selftest` (8/8).
+
+The **selftest fixture** was stale: the two-family product `p_two` qualified via **COMMERCE_MOMENTUM + ADVERTISING_EMERGENCE**, and ADVERTISING_EMERGENCE maps to **META_AD_LIBRARY** (`analyse_cleared=false`). After BE264, the rights-gated top-level state saw only **one** authorised qualifying family (COMMERCE_MOMENTUM) → `EMERGING`, not `QUALIFIED_FOR_SUPPLIER_RESOLUTION`. Check 04 (the **ungated** `supplier_resolution` sub-object) still passed; only the **gated** check 22 failed. The suite isn't in the standard regression set, so it had gone unobserved (surfaced during BE290; unrelated to it).
+
+### Fix — `mig_366` (fixture-only; no production function changed)
+`p_two` now carries a **second authorised qualifying family** — a `SEARCH_DEMAND` signal (`source_platform=DATAFORSEO_GOOGLE_ADS`; DATAFORSEO `analyse_cleared=true`; `buyer_intent_band=HIGH`). With **COMMERCE_MOMENTUM + SEARCH_DEMAND** both authorised and qualifying, the rights-gated top-level state genuinely reaches `QUALIFIED_FOR_SUPPLIER_RESOLUTION`, while `p_two`'s META advertising stays **present but excluded** at the decision boundary. Check 22 is now a **stronger, rights-aware positive assertion** (it proves the gated decision uses the two cleared families and ignores the uncleared one) rather than relying on an uncleared source to reach QUALIFIED. Also added `commerce_signals` cleanup for the fixture product_ids (the selftest previously left orphan signals each run). Suite contract id unchanged.
+
+### Verification
+`fn_stage1_supplier_resolution_selftest` **all_pass=true, 21/21** (0 failed). No regression: GOLD-gating `fn_stage1_product_opportunity_invariants_selftest` 8/8, `fn_stage1_research_bridge_selftest` 8/8, `fn_kalodata_commerce_adapter_selftest` 17/17, `fn_generic_only_discovery_selftest` 7/7, `fn_product_competitor_evidence_selftest` 6/6. **$0; 0 provider calls; 0 orders.** No acceptance flipped; **GOLD 11/22 preserved.** Build Evidence row **291**; migration record `mig_366`. The BE264 rights-enforcement behaviour and all accepted features are unchanged.
