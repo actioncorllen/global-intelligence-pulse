@@ -1,0 +1,33 @@
+-- mig_368 — 2026-11-24 — P0 FIX: media-asset-url 403 {"error":"no_asset"} + blank Product Research workspace.
+-- Record file only (authoritative body in schema_migrations / pg_get_functiondef).
+--
+-- DEFECT (introduced by BE294's reference-video insert on the US lamp 207dbaa8): fn_product_media_state derived
+--   playback_mode = (storage_ref ~ https ? EXTERNAL_URL : SELF_HOSTED_SIGNED)
+-- so a video with NO stored file (storage_ref NULL — e.g. a TikTok reference) was mislabelled SELF_HOSTED_SIGNED.
+-- The FE then minted a signed URL via media-asset-url for an asset that has no storage object →
+-- fn_media_asset_signed_ref returned status 'no_asset' → edge function 403 {"error":"no_asset"}, surfaced by the
+-- authenticated preview as a RUNTIME_ERROR / blank screen. A tiktok.com PAGE url stuffed into storage_ref was also
+-- wrongly treated as a directly-playable EXTERNAL_URL (a TikTok page is not a media file).
+--
+-- FIX (display-only; NO new rights, NO RLS/PAL change, NO manufactured URLs): playback_mode is now THREE-WAY in
+-- both the videos[] element and primary_video —
+--   EXTERNAL_URL        : storage_ref is an https URL that is NOT a tiktok.com page (genuine direct media, e.g. CJ CDN)
+--   SELF_HOSTED_SIGNED  : storage_ref is a non-empty, non-https bucket object path (genuine signed-URL asset)
+--   NULL (absent)       : no stored file OR a tiktok.com reference → TikTok official embed/link path only
+-- url / storage_bucket / storage_object are emitted only for their respective modes. A reference-only TikTok video
+-- therefore NEVER triggers a signed-URL fetch (no spurious media-asset-url call, no 403). Genuine self-hosted CJ /
+-- generated videos keep SELF_HOSTED_SIGNED; genuine non-TikTok CDN media keeps EXTERNAL_URL. Added invariant
+-- 'reference_video_without_storage_uses_embed_not_signed_fetch'=true. Everything else (REFERENCE_ONLY, auth.uid
+-- ownership, tenancy, market isolation, launch-safe exclusion, embed_platform/identity_match from mig_367) unchanged.
+--
+-- VERIFIED ($0; 0 provider calls): across all reference VIDEO rows — 8 TikTok rows (lamp + 7 FastMoss) now resolve
+-- to playback_mode NULL (embed/link; no signed fetch); 4 genuine self-hosted rows (CJDROPSHIPPING, GEMINI_VEO_VIDEO,
+-- STRATELOQ_VIDEO_COMPOSITION) stay SELF_HOSTED_SIGNED with real bucket objects (0 empty-storage). No video row can
+-- be SELF_HOSTED_SIGNED with empty storage any more → the spurious 403 is eliminated at the root. Regression GREEN:
+-- product_media_auth, product_image, discovery_media_integrity, product_supplier_state, stage1 invariants (GOLD-gating).
+-- The fix is live in the production DB (migration applied), so preview AND production stop getting the lamp 403 on
+-- reload (the old published FE degrades the null-mode video to a "Watch on TikTok" link; the preview FE renders the
+-- official TikTok embed). FE defense-in-depth on the Lovable PREVIEW (commits dd7edb8 + 8e6a0f6, NOT published):
+-- embeddable videos prefer the TikTok player and never signed-fetch; a genuinely missing/forbidden self-hosted asset
+-- renders a neutral "Video unavailable" placeholder (no misleading retry; one-off retry only for transient) contained
+-- to the card, siblings/workspace unaffected; 1,081 FE tests pass. GOLD 11/22 unchanged; GPD.19 NOT marked accepted.
