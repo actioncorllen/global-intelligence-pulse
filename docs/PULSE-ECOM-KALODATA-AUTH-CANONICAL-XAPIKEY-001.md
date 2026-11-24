@@ -1829,3 +1829,33 @@ Since CJ provides no machine-readable image authorisation, a narrow 7-item clari
 - **Regression GREEN:** pd_release 13/13, record_url 7/7, link-readiness 4/4, ledger 6/6, cj_image_rights 8/8, generic_only 7/7, BE256 7/7, RVD 5/5, competitor 6/6.
 
 **Escalation:** GPD.16 cannot close from existing authorised access. The two genuinely-external items are (1) the official CJ product-page URL (founder retrieves from the CJ portal → `fn_record_supplier_product_url`) and (2) an authoritative same-product reference. Optionally, allowing `cjdropshipping.com` on the environment network would let Claude attempt a *public* CJ page fetch in future, but the direct, authorised path is the founder recording the URL.
+
+## Addendum 52 — CX.02 Exact Supplier Identity & Verified Sourcing Link: Phase A (stored) + Phase B/C (approved live read-only run) ($0, 0 API points, no orders, no DB change)
+
+**Date:** 2026-11-24. Objective: verify, for the CJ candidate `2610010255571606100` / SKU `CJJT3213323`, the live sourcing facts CX.02 needs — variant US stock, US shipping, a working direct product/variant link, price currency, and an authoritative US↔CJ identifier — exhausting stored evidence first, then running **only** the founder-approved controlled live requests, with no auto-retry. No code change (so BE267/BE270 regression stands); no GOLD acceptance flipped; GPD.16/17/19 remain OPEN.
+
+### Phase A — non-chargeable verification (stored evidence) — recorded Build Evidence row 271
+- Selected test variant: key **HD-3 Glass Cover**, SKU `CJJT321332301AZ`, VID `2610010255571607000`, `price_usd 7.29` (one of 15 CJ-native variants).
+- **VERIFIED (stored):** (4) **price currency = USD** — `cost_currency=USD`, every variant carries `price_usd`, `sell_price_range_usd` `6.08–10.76`; caveat: the raw CJ payload has no per-field currency code, so this relies on the account currency being USD. Product **ACTIVE + API healthy** (`cj_result=true`, `cj_code=200`, `AVAILABLE_PROBED`, `FRESH_PROBE_OK`). (7) **Gates preserved** — country isolation, supplier-data rights, fail-closed publication; CJ images `RIGHTS_UNVERIFIED`; `pd_release 13/13` earlier; concrete `bound=0`.
+- **NOT VERIFIED (data gaps, not errors):** (1) variant US stock — no stock field stored; (2) US freight/delivery — no freight object stored; (3) official product URL — `product_url` NULL and CJ `product/query` returns none; (5) authoritative US↔CJ identifier — none (identity stays `CANDIDATE_REQUIRES_VERIFICATION`).
+
+### Phase B — controlled live requests (founder-approved, exactly one run, no auto-retry) — recorded Build Evidence row 272
+Founder approved running the three read-only CJ calls via the existing authenticated **n8n** CJ credential. Built the read-only workflow **`aLdzdQoG4qJCvfkt`** ("Pulse — CX.02 CJ Read-Only Verification"): `Run → CJ Auth → product/stock/queryByVid (vid=2610010255571607000) → logistic/freightCalculate (CN→US, qty 1, that VID) → product/query (pid=2610010255571606100) → Consolidate`. **No ingest, no Supabase write, no order.** Executed **once** (execution `30725`, 2026-11-24 14:26 UTC, workflow status success).
+
+**Outcome — CJ authentication REJECTED.** `authentication/getAccessToken` returned HTTP 200 with `code 1600005`: *"Email or password is wrong, please check and try again. We recommend switching to the apiKey mode."* No access token was issued, so `CJ Stock`, `CJ Freight` and `CJ Detail` each returned `code 1600002` *"access token cannot be empty"* (HTTP 401). **No API points consumed** (`pointsInfo` remaining 50000, usedToday 0); `$0`; no orders; no record changes.
+
+**Root cause (diagnosed, not a workflow bug):** the `CJ Auth` node is **byte-for-byte identical** to workflow `zwTkywEYKsmojs6g` (same `httpCustomAuth` credential id `2IV5tXPu9jAItjKh`, same URL, same empty JSON body) that authenticated successfully on 2026-11-23 (exec `30723`). Nothing in the request shape changed; the **stored credential secret is now rejected by CJ**. The secret cannot be viewed or guessed from here, so this is not a safe local fix — it is an external credential refresh.
+
+### Phase C — results: VERIFIED vs NOT VERIFIED
+1. **Variant US stock — NOT VERIFIED** (live call blocked at auth).
+2. **US shipping cost / delivery — NOT VERIFIED** (live call blocked at auth).
+3. **Direct CJ product/variant link — NOT VERIFIED** (live call blocked at auth; and CJ `product/query` carries no URL field regardless — BE267).
+4. **Price currency — VERIFIED USD** from stored evidence (unchanged; not re-confirmed live).
+5. **Authoritative US↔CJ identifier — NOT VERIFIED**; identity stays `CANDIDATE_REQUIRES_VERIFICATION` (no GTIN/UPC/EAN, no manufacturer/model, `supplier_id 9999` generic).
+
+Integrity preserved exactly: the authoritative exact-product identity requirement is unchanged (similarity/imagery/name/category never treated as exact), and image rights, 18-market/tenant/country isolation, and the fail-closed publication gates are all unchanged. **No new VERIFIED items; CX.02 not marked complete; no GOLD acceptance checkbox flipped.**
+
+### Tracker / tests / cost
+LIVE MASTER — GOLD CX.02 status annotated with the live-run blocker and Addendum-52 reference; Build Evidence rows **271** (Phase A) and **272** (Phase B/C) added; 22 GOLD units and the 11/22 acceptance preserved; GPD.16/17/19 OPEN. No code change, so the standing regression (pd_release 13/13, record_url 7/7, cj_image_rights 8/8, ledger 6/6, link-readiness 4/4, generic_only 7/7, BE256 7/7, RVD 5/5, competitor 6/6) is untouched. `$0`; 0 API points; 0 orders.
+
+**Smallest remaining blocker (external, no auto-retry):** refresh the n8n "CJ Dropshipping API" credential (id `2IV5tXPu9jAItjKh`) to CJ **apiKey mode** with the current working apiKey the local CJ MCP uses (CJ explicitly recommends apiKey mode) — then re-run `aLdzdQoG4qJCvfkt` **once** for stock/freight/detail — **or** run the same three read-only calls through the authenticated local CJ MCP and hand back the raw JSON. Either path unblocks sourcing-data verification; the authoritative exact-identity bridge (item 5) remains separately required and unchanged.
