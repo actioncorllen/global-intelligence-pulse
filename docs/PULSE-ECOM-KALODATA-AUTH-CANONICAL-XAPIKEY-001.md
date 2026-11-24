@@ -2128,3 +2128,36 @@ Full technical non-bypassability is **not yet established** and requires two fou
 - **GPD.09-advertiser:** BLOCKED — META_AD_LIBRARY `analyse_cleared=false`; no DataForSEO path supplies advertiser data. Needs a Meta Ad Library analysis+display licence.
 
 **GOLD 11/22 preserved** (no checkbox flipped). Build Evidence row **292**; LIVE MASTER — GOLD GPD.06 next-action annotated. No code/DB change this pass.
+
+---
+
+## Addendum 68 — GPD.07 social + GPD.09 advertiser: rights determination + withholding re-verification + rights-request drafts (BE293, 2026-11-24)
+
+**Date:** 2026-11-24. Founder directive: establish the smallest lawful, technically feasible routes for genuine social-attention (GPD.07) and advertiser (GPD.09) customer-facing evidence; reuse-first; implement only genuinely-necessary fixes; prepare (not send) one rights request per provider where permission is genuinely missing; keep both gates OPEN until rights-cleared customer evidence exists. **$0; 0 provider calls; 0 orders; no n8n runs; no code/DB change.**
+
+### Rights state (reuse-first)
+`catalogue_source_rights`: the **only** display-cleared source is **KALODATA** (analyse + display + display_derived + cache all TRUE). **REDDIT, TIKTOK, META_AD_LIBRARY are all `analyse_cleared=FALSE`** — not cleared even to analyse. Item-4/5 distinction: public API accessibility (Meta Ad Library, Reddit Data API, TikTok) is **not** analysis / commercial-SaaS-display / caching permission.
+
+### Existing stored evidence
+- **GPD.07 social:** `COMMUNITY_ATTENTION` = reddit, 11 rows / 10 products (tenant-private, uncleared). No `SOCIAL_ATTENTION` signal type exists.
+- **GPD.09 advertiser:** `ADVERTISING_ACTIVITY` = META_AD_LIBRARY, 440 rows / 11 products (GLOBAL_SAFE, uncleared).
+- **Kalodata (the cleared source):** all 33 products (23 DE + 10 US) carry the social/advertiser **keys** (`creator_count`, `video_count`, `view_growth`, `share_growth`, `creator_growth`, `advertiser_count`, `ad_growth`) but **every value is JSON null** (`jsonb_typeof='null'` on all 33 — the discovery endpoint did not populate them). `kalodata_video_research` is **empty** (the built `kalodata-video-rank` capability was never ingested).
+
+### Item-6 — any narrow derived signal?
+**No** from META/REDDIT/TIKTOK: `analyse_cleared=FALSE` means deriving *is* analysing, which is unlicensed — a "presence flag" is not a lawful workaround. **Only Kalodata** (fully cleared) could lawfully yield a derived social/advertiser signal, but it currently holds no such data. So there is **no rights-cleared customer-facing social or advertiser evidence today**.
+
+### Customer withholding re-verified (present-but-uncleared, not mere absence)
+`fn_stage1_early_opportunity_state(e453eed4, GB)` — a product with **128 Meta ads + 1 Reddit row** — returns `ADVERTISING_EMERGENCE` = **NOT_AUTHORISED** (present=false, qualifying=false) and `COMMUNITY_SOCIAL` = **NOT_AUTHORISED**; `uncleared_sources=[FASTMOSS,EBAY,META_AD_LIBRARY,TIKTOK,REDDIT,EBAY_MARKETPLACE]`; the raw **128** advertiser count does **not** leak; `SEARCH_DEMAND` (DataForSEO, analyse-cleared) is used internally only, customer display gated `DISPLAY_PENDING_RIGHTS`. The customer drawers (`fn_product_ad_evidence`) are tenant-auth-gated. **Distinctions preserved:** rights-withheld (`NOT_AUTHORISED`) ≠ no-observation (`present=false`, state null) ≠ zero; social attention ≠ verified demand; advertiser ≠ sales. Attribution/identity/country/tenant verified.
+
+### Fix (item 8)
+**None required** — no engineering defect; the honest withholding and UNKNOWN/NOT_AUTHORISED states are already correct. The gates are blocked on **external rights**, not code. GPD.01 kept separate; DataForSEO DISPLAY_PENDING_RIGHTS preserved.
+
+### Lowest-cost next actions (each needs founder approval; none executed)
+- **GPD.07 social — PRIMARY (no new rights):** a founder-approved **Kalodata** video/creator ingest (already display-cleared; existing `kalodata-video-rank`), mapped to a customer **social-attention** signal labelled *social ≠ demand*.
+- **GPD.09 advertiser:** (a) a **free** question to Kalodata on whether `advertiser_count` is retrievable (if yes, a cleared no-new-rights ingest); else (b) a **Meta Ad Library** analysis + SaaS-display + cache **licence**.
+- **FALLBACK social:** a **Reddit** analysis+display licence.
+
+### Rights-request drafts (prepared, NOT sent)
+`docs/GPD07-09-PROVIDER-RIGHTS-REQUESTS-DRAFT.md` — **Draft 1 Meta Ad Library** (GPD.09), **Draft 2 Reddit** (GPD.07). Both request analysis + authenticated-SaaS-display + caching (derived aggregate only; no restricted content), not mere API access. **TikTok not requested** (social attention served via the already-cleared Kalodata). Do not send without founder authorisation.
+
+**GPD.07 and GPD.09 remain OPEN.** GOLD **11/22 preserved** (no checkbox flipped). Build Evidence row **293**; LIVE MASTER — GOLD GPD.07/GPD.09 next-actions annotated. No migration (no code/DB change).
