@@ -1,0 +1,38 @@
+-- mig_367 — 2026-11-24 — GPD.07 TikTok product-video integration (founder PERMANENT decision: use TikTok's
+-- official embedding for discovered-product videos; stop pursuing Kalodata video-playback permission).
+-- Record file only (authoritative body in schema_migrations / pg_get_functiondef).
+--
+-- REUSE-FIRST: the product-video subsystem already exists end to end — fn_product_media_state
+-- (pulse_product_media_state_v1; auth.uid()-owned, tenant-isolated, market-isolated) serves videos[] from
+-- media_assets (media_type='VIDEO', is_launch_safe=false, REFERENCE_ONLY) with tiktok_url in spec_ref, decoded by
+-- src/lib/business-discovery/product-media-contract.ts and rendered by reference-video-gallery.tsx. Media is
+-- REFERENCE_ONLY and NEVER feeds store/ad/creative/publishing or social-demand qualification (item 11).
+--
+-- CHANGE (smallest-safe; one function; two display-only derived fields added to each video element AND primary_video):
+--   * embed_platform : 'TIKTOK' when the stored tiktok_url is a tiktok.com link, else null. The FE renders TikTok's
+--       OFFICIAL embed player (https://www.tiktok.com/player/v1/<video_id>) from it — no download, cache or rehost.
+--   * identity_match : honest product-identity basis — provenance.identity_match when asserted; else
+--       'PROVIDER_ASSOCIATED' for provider-discovery references (FastMoss tied the video to the product; exact
+--       identity NOT independently verified); else 'RELATED_CATEGORY'. NEVER defaults to EXACT (item 6: label a
+--       category-relevant video as related, not an exact product demonstration).
+-- Nothing else changes: REFERENCE_ONLY, ownership/tenancy, market isolation, launch-safe exclusion, the self-hosted
+-- signed-URL path and all existing fields are byte-for-byte preserved; one invariant renamed to add
+-- 'video_embed_is_not_verified_social_demand'=true.
+--
+-- DATA (reference videos; NO provider call, NO download): the US lamp 207dbaa8 (tenant 7c8ddf9d) gained ONE
+-- genuine, lawfully web-discovered public TikTok reference video (media_asset 5a4fffcf;
+-- https://www.tiktok.com/@lennyventure._/video/7426619822433111302; provider TIKTOK_PUBLIC; rights_state
+-- TIKTOK_EMBED_PUBLIC; identity_match RELATED_CATEGORY; US; is_launch_safe=false) — honestly a category reference,
+-- not an exact-product demonstration. The DE product 5bc29d0a already carried 7 FastMoss-discovered TikTok
+-- references → now labelled PROVIDER_ASSOCIATED. Playback for all is via TikTok's official embed only.
+--
+-- FE (Lovable project 12db6c84; preview commit 77d27e8; NOT published — production publish awaits founder):
+-- reference-video-gallery.tsx now click-to-plays the official TikTok player for embed_platform=TIKTOK videos with a
+-- video_id, keeps 'Watch on TikTok' as the fallback, shows the identity_match caption, and adds a banner line that a
+-- related video is not verified social-demand evidence; no download control. product-media-contract.ts decodes the
+-- two new fields fail-closed. Full FE suite 1074 tests pass (+8), typecheck/lint/build clean.
+--
+-- VERIFIED ($0; 0 provider calls): derived fields correct (207dbaa8 embed_platform=TIKTOK/identity_match=RELATED_CATEGORY;
+-- 5bc29d0a PROVIDER_ASSOCIATED), country-isolated (US vs DE). Regression GREEN: product_media_auth, product_image,
+-- discovery_media_integrity, product_supplier_state, stage1 invariants (GOLD-gating), product_competitor_evidence,
+-- gpd01_aggregate. GPD.07 remains OPEN (a video embed is NOT social-demand evidence). GOLD 11/22 unchanged.
