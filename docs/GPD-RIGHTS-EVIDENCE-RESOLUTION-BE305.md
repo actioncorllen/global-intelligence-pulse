@@ -103,3 +103,55 @@ Reuse-first, **no chargeable calls made**. Capability exists end-to-end (`kaloda
 5. **Alternatives:** none to decide now; revisit only with written field/rights/cost coverage.
 
 **Controls:** $0; 0 provider/API calls; 0 orders; no n8n; no publish; no code/DB change; no rights/release/budget flag flipped; no legal-clearance assertion. GOLD **11/22** unchanged; BE303 approvals + infrastructure intact. Recorded as Build Evidence **BE305** (master-doc Addendum 76).
+
+---
+
+## Part 8 — Live evidence-state verification + consolidated decision matrix (BE306, 2026-11-24)
+
+Non-chargeable DB verification of the **actual** customer-display path. $0; 0 provider calls; no sends/flips/deploys. *(Founder titled this follow-up "BE305"; recorded as **BE306** because BE305 is the report above.)*
+
+### 8.1 Live evidence states (the four categories the founder asked for)
+
+| Gate · source (signal) | Present (live count) | Internally analysable? | Display-authorised? | Verdict |
+|---|---|---|---|---|
+| **GPD.06** · DataForSEO Google **Ads** `SEARCH_DEMAND` | 38 obs / 22 products (to 2026-11-24) | **Yes** (`DATAFORSEO.analyse=TRUE`) | **No** (`display_derived=FALSE`) | analysable-not-display-cleared; UNKNOWN where no signal |
+| **GPD.07 search** · = GPD.06 | (as above) | Yes | No | analysable-not-display-cleared |
+| **GPD.07 social** · Kalodata video/creator | **0 rows** (`kalodata_video_research` empty) | n/a (no data) | source is display-cleared, but **nothing stored** | **genuinely absent** |
+| **GPD.07 social** · Reddit `COMMUNITY_ATTENTION` | 11 obs / 10 products | **No** (`REDDIT.analyse=FALSE`) | No | present-but-rights-blocked |
+| **GPD.08** · Google **Shopping** sellers (`DATAFORSEO_SELLERS`) | 18 obs / 9 products / 5 markets | **Yes** (`DATAFORSEO_MERCHANT.analyse=TRUE`) | **No** | analysable-not-display-cleared; UNKNOWN beyond 9 |
+| **GPD.08** · eBay sellers (`EBAY_BROWSE`) | **1,992 obs / 36 products / 10 markets** | **No** (`EBAY.analyse=FALSE`) | No | **present-but-RIGHTS-BLOCKED (the independent-marketplace gap)** |
+| **GPD.10** · Google Shopping offers/prices | 18 priced / 9 products | Yes | No | analysable-not-display-cleared |
+| **GPD.10** · eBay prices | 1,992 priced + 119 price-obs | **No** (`EBAY.analyse=FALSE`) | No | present-but-RIGHTS-BLOCKED |
+| **GPD.11** · saturation derived from Shopping sellers/offers | derivable for 9 products / 5 markets | Yes (derivative) | No | analysable-not-display-cleared; weak/derivative |
+| **GPD.09** · Meta `ADVERTISING_ACTIVITY` | 440 obs / 11 products | **No** (`META_AD_LIBRARY.analyse=FALSE`) | No | present-but-RIGHTS-BLOCKED |
+
+**Reading:** the **only** display-authorised source (Kalodata) holds **zero** rows for these gates; every *usable* stored signal is **DataForSEO analyse-only** (display-gated on the two Google-upstream legs); the large **eBay (1,992)** and **Meta (440)** datasets are present but **not even analysable** (no rights).
+
+### 8.2 GPD.01 alone does NOT guarantee all four gates pass (confirmed with data)
+- **GPD.06** — Leg-1 (search-volume) clearance → displayable for the **22** products with signals (honest UNKNOWN elsewhere). **Strongest.**
+- **GPD.08 / GPD.10** — Leg-2 (Shopping) clearance → displayable only for the **9** Google-Shopping products / 5 markets; the **1,992-row eBay bulk stays blocked** → a **separate** eBay/marketplace rights decision governs breadth.
+- **GPD.11** — derivative on GPD.08/10 → **thin/weak**.
+So GPD.01 clears the DataForSEO **display** path; it does **not** by itself give broad GPD.08/10/11 coverage. The **independent eBay/marketplace rights gap** is the real-data gap.
+
+### 8.3 Consolidated decision matrix
+
+| Gate · source | What already works | Exact external permission / data still missing | Fastest lawful route | Replacement provider actually necessary? | Founder decision required |
+|---|---|---|---|---|---|
+| **GPD.01** · DataForSEO/Kalodata/CJ | Analyse/derive of all; rights register + legal package complete; aggregate engineering done | Qualified counsel opinion on the two Google-upstream legs; capture the 5 Nov FAQ | Narrow 2-leg counsel question (ready) | **No** — permission in hand; gap is upstream *legal*, not a provider | Obtain counsel opinion; re-auth Gmail / paste the 5 Nov FAQ |
+| **GPD.06** · DataForSEO Google Ads | 38 search-demand obs / 22 products, fresh, analysable; UNKNOWN path accepted | Display clearance for search-volume (Leg 1) | Leg-1 counsel → founder flips `DATAFORSEO.display_derived_cleared` | **No** | Counsel Leg 1 + flip flag |
+| **GPD.07** · DataForSEO (search) + Kalodata (social) | Search leg = GPD.06; TikTok official embeds (REFERENCE_ONLY ≠ demand) | Search: Leg-1. Social: **actual Kalodata creator/video data (0 stored)** + confirmation those fields are in-subscription + display-permitted + founder budget | Search as GPD.06; social = founder-funded Kalodata ingest **after** the enquiry confirms fields | **No** (Kalodata is the cleared social route; Reddit/TikTok would need new licences — not recommended) | Approve Kalodata budget + enquiry, **or** defer the social leg |
+| **GPD.08** · Google Shopping [usable] + eBay [blocked] | Google Shopping aggregate seller-count mechanism for 9 products (verbatim withheld) | Leg-2 Shopping clearance (for the 9); **independent eBay marketplace data-display rights** for the 1,992-row breadth | Leg-2 counsel → flip `DATAFORSEO_MERCHANT.display_derived_cleared` (9 products); eBay licence separately for breadth | **Partly** — not for the narrow Shopping path; **yes** (an eBay/marketplace data-display licence) to cover the bulk. CJ/BigBuy supplier data is **not** a substitute | Counsel Leg 2 + flip; separately decide eBay rights vs thin coverage + UNKNOWN |
+| **GPD.09** · Meta (optional) | Gate preserved; 440 obs withheld (can't even analyse) | Meta Ad Library analyse + display + retention licence for derived counts/activity/dates | **Either** send the smallest Meta licence request (Draft 1) **or** formally defer | No alternative advertiser source is cleared — Meta is the source | **Send Meta request OR formally defer optional GPD.09** (not auto-deferred) |
+| **GPD.10** · Google Shopping [usable] + eBay [blocked] | Google Shopping offer count + price range for 9 products | Leg-2 Shopping clearance; eBay rights for breadth | Leg-2 counsel → flip | Same as GPD.08 | Counsel Leg 2 + flip; eBay-rights decision for breadth |
+| **GPD.11** · derived (Shopping) | Derivable saturation for 9 products (derivative) | Leg-2 clearance; an independent diversity signal for strength | Leg-2 counsel → flip (rides GPD.08/10) | **No** (derivative); eBay breadth only to strengthen | Counsel Leg 2 + flip; accept derivative/weak or pursue eBay for strength |
+
+### 8.4 Kalodata inspection (item 3)
+Schemas/entitlements/cache/mappings inspected without spend: `kalodata_video_research` (the cache + mapping `requested_product_id ↔ kalodata_video_id ↔ creator`, `metrics` jsonb) = **0 rows**; `kalodata_discovery_cursor`, `kalodata_invoke_nonce` = infra; **no entitlement/subscription table** in our DB. So product-matched, country-specific creator/video counts or growth are **not currently obtainable from stored evidence**, and the subscription field-coverage + derived-display scope **cannot be confirmed from our data**. Determination: obtaining them needs a **founder-approved paid Kalodata ingest**; lawful display needs the narrow enquiry (§6) confirming those fields fall under the 2026-11-11 permission. No metric invented; related-category ≠ exact-product; no media downloaded.
+
+### 8.5 Meta (item 4) — request fields + separate deferral decision
+- **Gate preserved** (`META_AD_LIBRARY.analyse_cleared=FALSE`; 440 obs withheld; not enabled).
+- **Concise display-licence request** (Draft 1): requested fields = **derived advertiser count, observed ad-activity presence, observation date windows** (NO creatives, NO advertiser identities); markets = the launch set **GB, DE, IE, IT, US** (plus any other observed market on founder instruction).
+- **Separate founder decision (NOT auto-deferred):** *"Defer optional GPD.09 from the 18 Dec launch — yes / no."* If no, authorise sending Draft 1.
+
+### 8.6 Controls & numbering
+$0; 0 provider/API calls; no sends, flips, deployments, n8n; GOLD **11/22** unchanged; BE303 approvals, eBay/Meta rights gates, supplier verification, RLS, Product Asset Lock, source rights, tenant/country isolation and release restrictions all preserved. Recorded as Build Evidence **BE306** (the founder's "BE305" label maps here; BE305 is the report above). Master-doc Addendum 77.
