@@ -1,0 +1,23 @@
+-- mig_363b — 2026-11-24 — GPD.06 P0 Task 1.7: narrowly-scoped noisy-title classification fix.
+-- Record file only (authoritative body in schema_migrations / pg_get_functiondef).
+--
+-- DEFECT: noisy marketing titles (e.g. "1PC RGBIC Wall-Wash Floor Lamp, Music Sync Color Changing LED ...",
+-- "Shark PowerPro Cordless Vacuum - IZ383H/IZ386H") diluted token-overlap in fn_classify_search_query_relevance,
+-- so genuine product/category queries scored ADJACENT/IRRELEVANT and the ingest returned no_relevant_query or
+-- under-counted product-specific demand. A concise normalized_name would fix it, but normalized_name is read by
+-- ~22 identity/supplier/ingestion functions (broad blast radius) and must NOT be broadly rewritten.
+--
+-- FIX (local to search-demand ingestion only; does NOT touch normalized_name or any stored field): inside
+-- fn_ingest_search_demand_for_product the CLASSIFICATION name is cleaned before matching — strip a leading quantity
+-- token and truncate at the first clause separator (comma / pipe / spaced dash), so the core product phrase is used
+-- for relevance. The effective cleanup is the clause-separator truncation; the leading-quantity strip is best-effort
+-- (Postgres ARE treats `\b` as backspace, so that sub-clause is a no-op and leaves a leading "1PC"-style token,
+-- which does not affect correctness because truncation handles the real marketing noise). product-specific vs
+-- category separation, honest claim_safety, provenance and reporting country are unchanged.
+--
+-- Result (reusing the already-acquired pilot volumes; NO new paid call): RGBIC lamp 207dbaa8 ->
+-- classification_name "1PC RGBIC Wall-Wash Floor Lamp", demand_basis PRODUCT (product_relevant 50) with genuine
+-- category demand 11110/mo (was no_relevant_query); Shark vacuum 50e1b04e -> classification_name
+-- "Shark PowerPro Cordless Vacuum", demand_basis PRODUCT with product_relevant 81000/mo (genuinely demonstrated
+-- product-specific matching — permitted upgrade from PRODUCT_NO_VOLUME per the directive). Dedup preserved
+-- (ON CONFLICT update in place); customer display remains DISPLAY_PENDING_RIGHTS (mig_362).

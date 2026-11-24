@@ -1,0 +1,30 @@
+-- mig_363 — 2026-11-24 — GPD.06 P0 Task 1: fix search-demand evidence ownership/retrieval seam + generic-only.
+-- Record file only (authoritative bodies in schema_migrations / pg_get_functiondef).
+--
+-- DEFECT: fn_ingest_search_demand_for_product writes provider-acquired SEARCH_DEMAND to the GLOBAL intelligence
+-- tenant with visibility GLOBAL_SAFE (the intended model for shared market intelligence — the same model as
+-- ADVERTISING_ACTIVITY and the GLOBAL_SAFE MARKETPLACE rows), but the product-research reader
+-- fn_stage1_supplier_resolution_qualified derived SEARCH_DEMAND (buyer_search_intent) ONLY from the pre-computed,
+-- tenant-scoped product_market_evaluations row — so the acquired GLOBAL_SAFE signal never surfaced for the product.
+-- (ADVERTISING already read commerce_signals directly by product+market, tenant-agnostic; SEARCH_DEMAND did not.)
+--
+-- FIX (smallest secure correction, consistent with the GLOBAL_SAFE shared-evidence model):
+--   fn_stage1_supplier_resolution_qualified — SEARCH_DEMAND (bsi) now ALSO resolves the latest SEARCH_DEMAND
+--   commerce_signal for (product_id, market) restricted to visibility='GLOBAL_SAFE' OR user_id=p_tenant (no
+--   cross-tenant private leakage). present/qualifying follow the existing band rule (band NOT IN
+--   NONE/VERY_LOW/UNKNOWN). No other logic changed; the two-qualifying-families + branded/saturation/identity
+--   disqualifiers are unchanged. Internal analysis may use analyse-cleared evidence; customer DISPLAY stays gated
+--   by mig_362 (DISPLAY_PENDING_RIGHTS) until GPD.01.
+--
+-- GENERIC-ONLY (Task 1.8): registered the real consumer brands observed in the customer-visible US cohort that the
+--   brand registry missed — shark (SharkNinja), ecoflow, insignia (Best Buy), 4patriots — into
+--   commerce_product_brand_registry (ON CONFLICT upsert, active=true). The Shark PowerPro Cordless Vacuum now
+--   screens BRANDED_OR_IP -> fn_stage1 branded disqualifier fires (stage1_supplier_resolution_qualified=false,
+--   stays RESEARCH_PRIORITY) and fn_monday_top_opportunities excludes it from generic-only recommendations. The
+--   research record is preserved (still viewable); it is simply not a generic-only launch candidate.
+--
+-- Verified: brand screen Shark=BRANDED_OR_IP, lamp=GENERIC_OK; the acquired SEARCH_DEMAND surfaces for the product
+-- (intelligence core present=true) while display stays DISPLAY_PENDING_RIGHTS; exactly 1 SEARCH_DEMAND signal per
+-- product (dedup), market US preserved (no duplication/country change). Regression GREEN: stage1_invariants 8/8
+-- (incl. COUNTRY_ISOLATION + SEARCH_VOLUME_ALONE_DOES_NOT_QUALIFY), generic_only 7/7, w004 11/11,
+-- competitor_evidence 6/6, gpd01_aggregate 5/5. GOLD 11/22 unchanged.

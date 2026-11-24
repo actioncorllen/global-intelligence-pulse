@@ -1,0 +1,26 @@
+-- mig_364 — 2026-11-24 — GPD.06 P0 Task 2: DataForSEO spend-control cost reconcile + authoriser selftest.
+-- Record file only (authoritative bodies in schema_migrations / pg_get_functiondef).
+--
+-- (2.4) ENDPOINT-SPECIFIC COST PROJECTION. fn_dataforseo_operation_projected_micro previously projected
+-- SEARCH_VOLUME = 60000 ($0.06) as the Standard async task_post cost. The GPD.06 pilot used the DataForSEO /live
+-- PRIORITY endpoint, which billed $0.09 (exec 30727) — dearer than Standard. Added SEARCH_VOLUME_LIVE = 90000
+-- ($0.09) so projections reflect the endpoint actually selected (SEARCH_VOLUME = Standard task_post $0.06;
+-- SEARCH_VOLUME_LIVE = /live $0.09). The sanctioned/cheaper path is Standard task_post.
+--
+-- (2.2/2.6/2.7) SPEND-CONTROL SELFTEST. fn_dataforseo_spend_control_selftest() exercises the fail-closed authoriser
+-- fn_dataforseo_pilot_consume in a rolled-back sub-transaction using NON-CHARGEABLE mocks (the authoriser performs
+-- NO provider HTTP). 7/7: T1 permitted (authorized); T2 exhausted -> CALL_BUDGET_BLOCKED; T3 wrong market ->
+-- MARKET_NOT_AUTHORIZED; T4 over per-run cap -> OVER_PER_RUN_CAP; T5 master disabled -> PAID_DISABLED; T6 emergency
+-- stop -> EMERGENCY_STOP; T7 duplicate idempotency key -> idempotent replay (no double consume). No real spend; no
+-- residue (research_budget_config/provider_call_budget/emergency_stop restored by rollback).
+--
+-- RELATED (data, not in this migration): the $0.09 pilot spend was recorded for audit as a completed
+-- dataforseo_merchant_dispatch row (idempotency_key gpd06-pilot-exec30727-audit, status INGESTED,
+-- actual_cost_micro 90000, operation SEARCH_VOLUME_LIVE) so month-spend reconciliation counts it; it is NOT a new
+-- approved/pending request. The two direct-HTTP n8n bypass workflows (P5 probe 0HGniWXeacHbVTQL, research executor
+-- aVKNL2CFhyA8VUdm) and the pilot workflow (l2OJYTbsMvxaZHZ5) were archived so no active direct-HTTP DataForSEO path
+-- remains; the sanctioned pattern is authorise-via-fn_dataforseo_pilot_consume (market + per-run cap + monthly cap +
+-- provider_call_budget + idempotency + emergency-stop) THEN execute THEN fn_dataforseo_merchant_record_cost.
+-- NOTE (honest): n8n workflows are user-editable, so the DB authoriser + archived bypass workflows + credential
+-- discipline are the controls; full technical non-bypassability would require restricting the DataForSEO credential
+-- to a single budget-enforcing executor (recommended, not built here). No chargeable call was made by this task.
