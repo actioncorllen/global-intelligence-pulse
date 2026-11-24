@@ -1,0 +1,11 @@
+-- mig_353 — 2026-11-24 — CX.02 P0 (Addendum 56) §1: reusable CJ product-URL resolution mechanism.
+-- Record file only (authoritative body in schema_migrations / pg_get_functiondef).
+--
+-- fn_resolve_cj_product_url(p_source text, p_supplier_product_id text) -> jsonb. Reads the stored,
+-- founder-verified product_url for a CJ supplier product (the cache is the persisted column), revalidates
+-- its shape (https + cjdropshipping.com + product-level, same rules as fn_record_supplier_product_url),
+-- and returns it with source provenance. States: RESOLVED (valid stored URL + provenance + cached_at),
+-- UNRESOLVED (cache miss — no verified URL recorded yet; points to fn_record_supplier_product_url),
+-- INVALID (stored URL fails validation), SUPPLIER_NOT_FOUND, UNSUPPORTED_SOURCE. It NEVER invents or
+-- constructs a URL. STABLE, SECURITY DEFINER, search_path=''. Verified live: real CJ 2610010255571606100
+-- -> UNRESOLVED (no URL recorded); bogus pid -> SUPPLIER_NOT_FOUND. Grants: authenticated, service_role.

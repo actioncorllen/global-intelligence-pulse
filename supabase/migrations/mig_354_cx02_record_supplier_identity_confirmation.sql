@@ -1,0 +1,15 @@
+-- mig_354 — 2026-11-24 — CX.02 P0 (Addendum 56) §2: documented supplier same-product + exact-variant recorder.
+-- Record file only (authoritative body in schema_migrations / pg_get_functiondef).
+--
+-- fn_record_supplier_identity_confirmation(p_tenant, p_product_id, p_source, p_supplier_product_id,
+--   p_confirmed_variant_sku, p_confirmation_ref, p_confirmed_by='cj_support', p_note) -> jsonb.
+-- Smallest-safe addition: records a DOCUMENTED supplier confirmation as an AUTHORITATIVE_SUPPLIER_REF in the
+-- researched product's extended.supplier_refs (match_method='authoritative') and designates the confirmed
+-- variant (selected_variant_sku/vid) in exactly the shape the UNCHANGED BE246 engine
+-- (fn_cross_supplier_exact_variant_check) consumes. It records evidence only; the resolver independently and
+-- fail-closed decides exact status (requires a fresh probed supplier variant_catalog). Guards: service_role
+-- only; product + supplier row must exist; a non-empty documented confirmation reference is REQUIRED (generic
+-- similarity rejected); confirmed variant SKU must exist in the supplier variant_catalog (no bogus-variant
+-- designation); FastMoss excluded. Never fabricates identity; never self-asserts exact. The BE246 resolver,
+-- catalogue_source_rights, publication gates and candidate-vs-verified states are all unchanged. Selftest
+-- (mig_355b) 8/8. Grant: service_role only.

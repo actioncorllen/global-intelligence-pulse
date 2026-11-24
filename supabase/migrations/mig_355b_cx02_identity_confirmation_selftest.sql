@@ -1,0 +1,12 @@
+-- mig_355 / mig_355b — 2026-11-24 — CX.02 P0 (Addendum 56) §2 selftest.
+-- Record file only (authoritative body in schema_migrations / pg_get_functiondef). mig_355b supersedes the
+-- first cut (mig_355) which used a random tenant uuid and tripped the commerce_products.user_id FK; 355b
+-- borrows an existing tenant id so the synthetic product satisfies the FK (all writes still rolled back).
+--
+-- fn_record_supplier_identity_confirmation_selftest() -> jsonb. In a rolled-back sub-transaction it inserts a
+-- synthetic US generic product referencing the real (fresh) CJ supplier row 2610010255571606100 and proves,
+-- end to end: CANDIDATE_BEFORE_RECORD (resolver fail-closed -> no_authoritative_product_identity),
+-- FORBIDDEN_WITHOUT_SERVICE, MISSING_REF_REJECTED, VARIANT_NOT_IN_CATALOG_REJECTED, SUPPLIER_NOT_FOUND,
+-- PRODUCT_NOT_FOUND, VALID_RECORDED_AND_RESOLVER_EXACT (documented confirmation -> resolver exact=true,
+-- product_identity_method=AUTHORITATIVE_SUPPLIER_REF, variant CJJT321332301AZ / VID 2610010255571607000),
+-- NO_PERSIST_AFTER_ROLLBACK (real table carries none of the selftest refs). Result on apply: ok=true, 8/8.
