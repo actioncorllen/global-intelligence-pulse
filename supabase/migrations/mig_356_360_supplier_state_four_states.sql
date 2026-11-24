@@ -1,0 +1,32 @@
+-- mig_356..360 — 2026-11-24 — Founder "Supplier Unknown" permanent requirement: 4-state supplier status.
+-- Record file only (authoritative bodies in schema_migrations / pg_get_functiondef). Verified supplier is
+-- OPTIONAL for discovery/research/save/compare/monitor; REQUIRED only to claim a verified supplier and enable
+-- the "View Supplier" action. No existing projection/discovery function or data was modified (zero regression);
+-- discovery is already supplier-independent (fn_discovery_product_hidden = explicit hidden-list only;
+-- fn_monday_top_opportunities does not gate on supplier resolution/bound).
+--
+-- mig_356  fn_product_supplier_state(p_tenant,p_product_id,p_market) -> jsonb. Authoritative 4-state verdict,
+--          reusing the UNCHANGED BE246 resolver (fn_cross_supplier_exact_variant_check) + fn_resolve_cj_product_url.
+--          States: VERIFIED_SUPPLIER (exact identity + working official URL -> view_supplier_allowed=true) |
+--          POTENTIAL_SUPPLIER_NOT_VERIFIED | SUPPLIER_UNKNOWN | SUPPLIER_NOT_YET_VERIFIED. Returns label,
+--          message, recommendation, view_supplier_allowed, supplier_url (non-null only when verified), candidate
+--          evidence, checks_performed/completed. Never searches, never manufactures a URL, never overclaims.
+-- mig_357  get_product_supplier_state(p_product_id,p_market) + get_products_supplier_state(uuid[],p_market):
+--          auth.uid()-scoped RPCs the frontend calls (single + batch). No projection function edited.
+-- mig_358  fn_product_supplier_state_selftest() -> 5/5 in a rolled-back sub-transaction: A VERIFIED (synthetic
+--          CJ supplier row w/ fresh variant_catalog + valid product URL -> exact + url -> view_supplier_allowed),
+--          B POTENTIAL, C SUPPLIER_UNKNOWN (verbatim "couldn't verify a supplier" + "Source this product
+--          independently"), D NOT_YET_VERIFIED, NO_PERSIST_AFTER_ROLLBACK.
+-- mig_359  v2 refinement: POTENTIAL only on a plausible same-product candidate.
+-- mig_360  v3 refinement (current): POTENTIAL is driven by the resolver's authoritative verdict
+--          (identity_result EXACT_SUPPLIER_IDENTITY_RESOLVED/CONCRETE_PRODUCT_AMBIGUOUS, bound, or an explicit
+--          selected/authoritative candidate); a completed search with identity_result=NO_VALID_CJ_MATCH ->
+--          SUPPLIER_UNKNOWN (rejected look-alikes do not create a false "potential"); NO_CONCRETE_EVIDENCE or
+--          no row -> SUPPLIER_NOT_YET_VERIFIED. Selftest re-run 5/5.
+--
+-- Real-state verification (existing evidence; stored-only resolution, $0, no CJ/n8n call): genuine
+-- SUPPLIER_UNKNOWN on real US discoveries (207dbaa8 RGBIC wall-lamp, 50e1b04e Shark vacuum, 44643cdb EcoFlow,
+-- c351816b 4Patriots); POTENTIAL (e453eed4); SUPPLIER_NOT_YET_VERIFIED (ca945686 generic star projector).
+-- view_supplier_allowed=false everywhere (no genuine verified supplier exists). Regression GREEN
+-- (exact_variant 11/11, cross_supplier_identity 13/13, record_url 7/7, ledger 6/6, link 4/4, image 8/8,
+-- generic_only 7/7, identity_confirmation 8/8, supplier_state 5/5).
