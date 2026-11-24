@@ -1,0 +1,28 @@
+-- mig_362 — 2026-11-24 — GPD.06 Phase 4: customer-display gate for analyse-cleared-but-not-display-derived sources.
+-- Record file only (authoritative body in schema_migrations / pg_get_functiondef).
+--
+-- Context: the founder-approved GPD.06 pilot acquired genuine US Google-Ads search-demand (via DataForSEO) for a
+-- customer-visible product and ingested it (fn_ingest_search_demand_for_product). DataForSEO is analyse_cleared=TRUE
+-- but display_derived_cleared=FALSE (the GPD.01 legal question is unresolved). Before this migration,
+-- fn_ecommerce_product_intelligence_core gated customer display only on analyse_cleared, so a DataForSEO-derived
+-- family would have displayed to customers under the analyse gate — premature per GPD.01 (the latent gap noted in
+-- Addendum 62).
+--
+-- Change (smallest-safe, one function): fn_ecommerce_product_intelligence_core now computes a second gate list,
+-- v_display_pending = catalogue_source_rights WHERE analyse_cleared=true AND display_derived_cleared=false
+-- (currently {DATAFORSEO, DATAFORSEO_MERCHANT}). A family whose source is in that list is presented as
+-- state=DISPLAY_PENDING_RIGHTS with strength/observed_detail nulled, qualifying=false and contributes_to_qualification
+-- =false FOR CUSTOMER DISPLAY, and a rights_note explaining it is retained + used for internal analysis but withheld
+-- from customer display pending clearance (GPD.01). rights_enforcement gains display_pending_sources and an extended
+-- note. This is distinct from NOT_AUTHORISED (sources not cleared even to analyse: Meta/Reddit/eBay/FastMoss).
+--
+-- Unaffected: KALODATA and CJ (display_derived_cleared=TRUE) display normally; COMMERCE_MOMENTUM (source 'COMMERCE',
+-- not a rights-table provider) is unaffected (Kalodata sales still shown); the internal lifecycle / opportunity state
+-- (fn_stage1_early_opportunity_state) is unchanged — internal analysis may still use analyse-cleared data; only the
+-- customer-facing evidence-family DISPLAY is withheld. When the GPD.01 DataForSEO display clarification lands and the
+-- founder sets DATAFORSEO display_derived_cleared=TRUE, the gate lifts automatically (no code change).
+--
+-- Verified live (product 50e1b04e Shark PowerPro vacuum, US): SEARCH_DEMAND -> DISPLAY_PENDING_RIGHTS (withheld);
+-- COMMERCE_MOMENTUM (Kalodata) QUALIFYING + shown; ADVERTISING/COMMUNITY/MARKETPLACE NOT_AUTHORISED;
+-- display_pending_sources=[DATAFORSEO,DATAFORSEO_MERCHANT]; lifecycle unchanged (RESEARCH_PRIORITY).
+-- No GOLD checkbox flipped (11/22 preserved); GPD.06/07/09 remain OPEN.
