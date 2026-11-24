@@ -1,0 +1,36 @@
+-- mig_365 — 2026-11-24 — GPD.06 spend-security COMPLETION: read-only preauthorize + concurrency selftest + grants.
+-- Record file only (authoritative bodies in schema_migrations / pg_get_functiondef).
+--
+-- CONTEXT: BE289 archived the direct-HTTP n8n DataForSEO workflows but could not stop an authorised operator
+-- creating a NEW direct call with the still-present n8n credential — n8n cannot bind a credential to one workflow.
+-- The genuine fix is a single server-side budget-enforcing executor that HOLDS the credential (Supabase edge
+-- function dataforseo-execute, deployed separately — supabase/functions/dataforseo-execute/index.ts) and
+-- fail-closes through the EXISTING authoriser fn_dataforseo_pilot_consume before any provider call, reconciling
+-- actual cost via fn_dataforseo_merchant_record_cost. NO new budget system — it reuses research_budget_config +
+-- provider_call_budget + dataforseo_merchant_dispatch. This migration adds the DB pieces that executor needs.
+--
+-- (A) fn_dataforseo_pilot_preauthorize(p_user_id,p_market,p_operation_code,p_provider_code) -> jsonb. READ-ONLY
+--     (STABLE; no writes, no idempotency claim, no provider-budget consume). Mirrors the consume gate logic
+--     (emergency-stop, dispatch-suppression, provider check, research_budget_config enabled/authorized_market/
+--     per_run_cap, combined monthly ceiling, provider_call_budget availability) and returns authorized_preview +
+--     reason + endpoint-specific projected_cost_micro. Used by the edge executor's read-only PROBE path and for the
+--     pre-dispatch projected-cost check. It NEVER authorises spend by itself.
+--
+-- (B) fn_dataforseo_spend_control_selftest extended to v2 (contract pulse_dataforseo_spend_control_selftest_v2):
+--     10 checks in a rolled-back sub-transaction with non-chargeable mocks (no provider HTTP): T1 permitted,
+--     T2 exhausted->CALL_BUDGET_BLOCKED, T3 wrong-market->MARKET_NOT_AUTHORIZED, T4 over per-run cap->OVER_PER_RUN_CAP,
+--     T5 disabled->PAID_DISABLED (denied-approval default), T6 emergency-stop->EMERGENCY_STOP, T7 duplicate->idempotent
+--     replay, and NEW T8 CONCURRENCY: against a 1-call budget, two DISTINCT-key consumes yield exactly one winner,
+--     the other CALL_BUDGET_BLOCKED, and consumed_calls never exceeds max_calls. True parallelism is serialised by the
+--     SELECT .. FOR UPDATE row-lock + (consumed_calls < max_calls) predicate inside fn_provider_budget_try_consume;
+--     this test asserts the observable ceiling invariant (approved N can never become N+1).
+--
+-- (C) LEAST-PRIVILEGE GRANTS: fn_dataforseo_pilot_preauthorize, fn_dataforseo_pilot_consume,
+--     fn_dataforseo_merchant_record_cost and fn_dataforseo_spend_control_selftest are EXECUTE-granted to service_role
+--     ONLY (anon + authenticated EXECUTE revoked) so only the edge executor (service_role key) can reach the
+--     authoriser/ledger/preauthorize via PostgREST RPC. NOTIFY pgrst reload issued.
+--
+-- VERIFIED ($0; 0 provider calls; 0 dispatch rows): selftest ok=true 10/10; preauthorize live = PAID_DISABLED
+-- (research_budget_config.enabled=false, authorized_market=SG, 0 active provider_call_budget), endpoint-specific
+-- projected cost 90000 (/live SEARCH_VOLUME_LIVE $0.09) / 60000 (Standard SEARCH_VOLUME $0.06); grants confirmed
+-- service_role-only. mig_362 DISPLAY_PENDING_RIGHTS and GOLD 11/22 unaffected.
