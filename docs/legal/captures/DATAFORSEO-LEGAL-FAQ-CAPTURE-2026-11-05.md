@@ -42,7 +42,20 @@
 **§5 — Who is responsible for complying with Google's, Bing's, other search engines' own terms?**
 > "**The client is responsible** for ensuring compliance with the applicable terms and conditions of Google, Bing, and any other relevant search engine providers. **Our Terms of Service do not grant any licenses from, or confer any rights under, the terms and conditions of, any upstream provider.** Furthermore, **Section 7.2** … requires the client to indemnify, defend, and hold DataForSEO harmless against claims … arising from violations of Section 7.1 … Section 8.1 further clarifies that DataForSEO assumes no responsibility for the use of client accounts."
 
-**§§6–18:** not captured in this pass (the extract was length-trimmed after §5). §6 ("commercial use in a paid product shown to our own customers") and §7 ("does §7.1 apply to non-SERP data") should be captured in a follow-up fetch before counsel sign-off; from §§3–5 the expected thrust of §6 is that commercial use of **derived/transformed** data in a paid product shown to customers is permitted (only **raw** redistribution is restricted, §3), with upstream-provider compliance remaining the client's (§5).
+**§6 — Can we use the data commercially, in a paid product, shown to our own customers?** *(captured 2026-11-25)*
+> "**Nothing in the Terms of Service conditions use on the product being free or non-commercial.** Section 3.1 makes the Service available on a pay-as-you-go and/or subscription basis. **The Terms do not restrict processing API outputs into analytics, reports, dashboards or scores inside the client's own product, or showing those to the client's own paying users, and set no cap on end-user numbers.** The limit that applies is Section 7.1. Our Terms do not grant a right to resell, sublicense, or redistribute DataForSEO datasets as an untransformed standalone data feed, database dump, or raw API service."
+
+**§7 — Does Section 7.1 apply to data that isn't SERP data?**
+> "Section 7.1 is written around 'search engine results page (SERP) data' and 'search engine providers,' and **applies to all service data**."
+
+**§8 — AI processing:** the Terms contain no provision on AI inference/RAG/training; §7.1 applies however the data is processed; sending personal data to a third-party AI makes the client the responsible processor under DPA §4.
+
+**§11 — Do we need an additional license, license tier, or enterprise agreement?**
+> "The published documents set **no commercial/non-commercial license tiers, no endpoint or volume minimums, and no separate data license**. Access is as described in Section 3.1 … **A separate written agreement is required only for distribution outside the standard terms.**"
+
+**§12 — Eligibility by country:** §6.2 prohibits access by entities located/incorporated/resident in Russia, Belarus, Cuba, Iran, Syria, Myanmar, North Korea, and Crimea / occupied Ukrainian territories. *(Not applicable to Strateloq.)*
+
+**Decisive upshot for GPD.01/06/08/10/11 (analysis, not clearance):** **§6 expressly permits** processing DataForSEO outputs into analytics/reports/dashboards/scores **inside Strateloq's own paid product and showing them to Strateloq's own paying customers, with no end-user cap** — exactly our customer-display model. The only DataForSEO-side limit is **§7.1** (don't compete with / harm the originating search engine — applies to all service data per §7), and **upstream compliance remains the client's** (§5). No additional DataForSEO licence/tier is needed (§11). **So no further request is owed to DataForSEO; the sole residual is the two independent Google-upstream legal questions for counsel.**
 
 ## What this changes for GPD.01 (analysis, not clearance)
 - **Confirms the derived-display model is NOT the restricted activity.** §3 restricts only redistribution of **raw/untransformed** data (feeds, dumps, public endpoints, raw API). Strateloq displays **derived, aggregated analytics** — not a raw feed — so §3's prohibition is not engaged; §4 confirms **no attribution/transformation-threshold** requirement from DataForSEO.

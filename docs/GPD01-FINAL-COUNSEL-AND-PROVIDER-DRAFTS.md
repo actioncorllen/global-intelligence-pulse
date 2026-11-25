@@ -90,3 +90,40 @@ Clearing Leg 1 and/or Leg 2 is a **legal** decision that only a qualified lawyer
 5. On a **positive** counsel opinion (per leg): the **founder** records the clearance and flips the relevant `display_derived_cleared` flag — a founder action, reversible, **never** performed by the build session.
 
 **Controls:** $0; 0 provider/API calls; 0 orders; no n8n; no publish; no code/DB change; no rights/release/budget flag flipped; no legal-clearance assertion. Source-rights flags and customer-release gates unchanged. GOLD **11/22**; GPD.16/19/22 (revised) founder-accepted; GPD.17 retired.
+
+---
+
+## Part 2 — BE310 updates (verified FAQ §6; eBay sections; channels; 2026-11-25)
+
+### A. DataForSEO counsel package — updated with verified §6
+The DataForSEO 5 Nov 2026 FAQ is now fully captured (`docs/legal/captures/DATAFORSEO-LEGAL-FAQ-CAPTURE-2026-11-05.md`). **§6 expressly permits** processing API outputs into "analytics, reports, dashboards or scores inside the client's own product, [and] showing those to the client's own paying users … no cap on end-user numbers," subject only to **§7.1**; **§11** confirms **no additional licence/tier** is required (a separate agreement is only for **raw** redistribution). **Therefore no further request is owed to DataForSEO** — its permission for our paid-SaaS derived display is express. The two independent counsel questions (§2 above, Leg 1 + Leg 2) are **preserved unchanged** — they concern **Google-upstream** rights (sui-generis database right + whether the specific aggregated display competes with / harms Google under §7.1, which §7 confirms applies to all service data), which DataForSEO's §5 leaves to the client. **Do not ask DataForSEO for rights §6/§11 already grant.**
+
+### B. eBay permission request — updated to the current agreement sections (NOT sent)
+*(The agreement page `developer.ebay.com/join/api-license-agreement` returned an eBay error/anti-bot page to the authorised server-side fetch on both attempts, so the verbatim clause text could not be captured; the request cites the founder-identified sections by number and flags wording-verification.)*
+> **To:** eBay Developer Technical Support (API licensing) · **Subject:** Written clarification — derived aggregate marketplace statistics for an authenticated paid-SaaS research tool
+> Strateloq operates an authenticated, paid B2B product-research SaaS and uses the eBay Browse API under the API License Agreement. Beyond the ordinary in-application item/offer display the Agreement already permits, we seek written confirmation of the following **derived/aggregate** uses, with reference to **§3.1 (licence scope/permitted use), §4.2 (restrictions), §8.1(d), §8.5 and §9**:
+> 1. Displaying to our authenticated paying customers **derived, country-specific aggregate statistics** — distinct observed **seller counts**, **offer counts**, and **local price ranges** — with **no verbatim listing reproduction**.
+> 2. Displaying **derived competition / saturation classifications** computed from those observations.
+> 3. **Retention** of historically-observed data (we hold ~1,992 prior observations) and future authorised API observations for this research purpose, and any **freshness / re-query** obligation on displayed listing data.
+> 4. Any **attribution** required.
+> Please confirm which of the above require your prior written permission under §§3.1/4.2/8.1(d)/8.5/9 and on what terms. We do not resell raw data or reproduce verbatim listings.
+
+Until granted, the **1,992 observations remain NOT_AUTHORISED**; CJ/BigBuy supplier data is **not** a substitute for independent marketplace sellers.
+
+### C. Verified provider channels + send status
+- **DataForSEO:** **no request owed** (§6/§11 clear our use). Channel if ever needed: Help Center / contact form (not an authenticated send channel here).
+- **Kalodata:** the existing **Andrew Lin email thread** (2026-11-11) is the verified channel — **founder-accessible**; not sendable here (Gmail de-authorised).
+- **eBay:** Developer Technical Support (support portal, not a direct email).
+- **Meta:** developer support / Ad Library data-licensing contact (web forms).
+- **Actually sent: NONE.** No authenticated send channel is available to this session (Gmail de-authorised; no provider send connector). All messages are prepared; no delivery is claimed or fabricated. **To send, re-authorise Gmail or submit via the founder's own provider logins.**
+
+### D. Kalodata — entitlement/price/country/field-population BEFORE a fixed-cap pilot (no credits bought)
+Established from live DB + docs: our stored Kalodata is **Product Rank** revenue, **not** Product **Detail** (the `creator_number`/`video_number`/`live_number` counts are **absent**). Product Detail **entitlement, supported countries, per-call price, and exact-product field population are account-specific and are NOT in public docs** — they require either the Kalodata enquiry (Andrew Lin thread) or a first (chargeable) sample call. **Sequence (nothing executed):** (1) founder confirms, via Kalodata, Product-Detail entitlement + supported countries + per-call price; (2) founder sets a **hard $ cap**; (3) a **fixed-cap pilot** on resolved exact products (GB/DE/IE/IT/US) is itself the field-population test (identity/country-isolation/confidence/freshness/truthful "social attention" labels; no media). **No credits purchased.**
+
+### E. GPD.09 Meta — mandatory, licensed source prioritised (GB/DE/IE/IT/US)
+Primary = **Track A** (official Meta): request per-country commercial-ad coverage + a SaaS display/retention licence (standard terms don't grant commercial redistribution; EU markets DE/IE/IT broader under the DSA, GB/US narrower). Fallback = **Track B** a **legally licensed** competitive-ad-intelligence provider. **No vendor can be selected here** — their API availability, legal provenance, SaaS-redistribution rights, GB/DE/IE/IT/US coverage, freshness and pricing are sales-gated and were not verifiable this session; selection requires the founder to authorise evaluating specific named vendors (whose terms/pricing I can then fetch via the authorised route) or to name candidates. **GPD.09 stays BLOCKED until authorised advertiser evidence is accepted in production; not deferred; no ad-link/TikTok substitute.**
+
+### F. GOLD tracker integrity (after the transient 4/22)
+Confirmed live: `LIVE MASTER — GOLD!C2:C23` = **11/22**, the correct historical set — **GPD.02, 03, 04, 05, 12, 13, 14, 15, 18, 20, 21** TRUE; GPD.16/19/22 FALSE (intentional). **Cause (per the register audit trail, rows 309–310):** a transient drop of **seven** accepted booleans (C3, C4, C13:C16, C22) briefly left 4/22; the concurrent reconciliation **restored them from `LIVE MASTER — GOLD` + BE279**, and the `⭐ GOLD Product Discovery` tab now also reads 11/22. The original 11 accepted values are **intact**; **no broad rewrite performed**; no checkbox changed by this pass.
+
+**BE310 controls:** $0; 0 provider/API calls (the n8n runs were free public-doc GETs; both workflows archived); no sends/flips/publish; isolation/PAL/RLS/budgets/founding-member preserved. GOLD **11/22**. Recorded as Build Evidence **BE310**; master-doc Addendum 81.
