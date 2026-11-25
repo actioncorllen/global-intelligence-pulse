@@ -84,7 +84,7 @@ Clearing Leg 1 and/or Leg 2 is a **legal** decision that only a qualified lawyer
 
 ## 6. Founder authorisations required (summary checklist)
 1. **Enable the FAQ fetch** — add a permission rule / use a session that allows the outbound request, or paste the 5 Nov FAQ text, so it can be reconciled against Section 1 before counsel sign-off.
-2. **Engage** a qualified Irish/EU IP & technology solicitor (Section 5) and send the Leg 1 + Leg 2 questions (Section 2) with the legal package.
+2. **Counsel enquiries ALREADY SENT (free/pro bono) — see Part 3 (BE311):** two Irish legal-assistance enquiries covering the Leg 1 + Leg 2 Google-upstream questions were sent via the founder's Gmail on 2026-11-25 (RDJ Startups; UCC IT Law Clinic). **Do not seek a paid engagement while these are pending; do not send duplicates.** Await their response.
 3. **GPD.07 social** — approve a Kalodata-credit budget **and** authorise sending the Kalodata enquiry (Section 3), or defer the social leg.
 4. **GPD.09** — tick Defer or Authorise-send (Section 4).
 5. On a **positive** counsel opinion (per leg): the **founder** records the clearance and flips the relevant `display_derived_cleared` flag — a founder action, reversible, **never** performed by the build session.
@@ -127,3 +127,20 @@ Primary = **Track A** (official Meta): request per-country commercial-ad coverag
 Confirmed live: `LIVE MASTER — GOLD!C2:C23` = **11/22**, the correct historical set — **GPD.02, 03, 04, 05, 12, 13, 14, 15, 18, 20, 21** TRUE; GPD.16/19/22 FALSE (intentional). **Cause (per the register audit trail, rows 309–310):** a transient drop of **seven** accepted booleans (C3, C4, C13:C16, C22) briefly left 4/22; the concurrent reconciliation **restored them from `LIVE MASTER — GOLD` + BE279**, and the `⭐ GOLD Product Discovery` tab now also reads 11/22. The original 11 accepted values are **intact**; **no broad rewrite performed**; no checkbox changed by this pass.
 
 **BE310 controls:** $0; 0 provider/API calls (the n8n runs were free public-doc GETs; both workflows archived); no sends/flips/publish; isolation/PAL/RLS/budgets/founding-member preserved. GOLD **11/22**. Recorded as Build Evidence **BE310**; master-doc Addendum 81.
+
+---
+
+## Part 3 — BE311 correction: counsel enquiries WERE sent (free assistance) (2026-11-25)
+
+**This corrects the earlier records.** Prior passes (BE307–BE310) stated that no solicitor enquiries had been sent and recommended a paid engagement. That is **superseded**: on **2026-11-25** the founder sent **two free / pro-bono legal-assistance enquiries** through the connected Gmail, both covering the **Leg 1 (Google Ads search-volume)** and **Leg 2 (Google Shopping aggregate)** questions:
+
+| # | Recipient | Address | Gmail sent message ID | Delivery | Reply |
+|---|-----------|---------|-----------------------|----------|-------|
+| 1 | **RDJ Startups** | `info.rdj@rdj.ie` | `1a214a31e94464b7` | **Sent** (founder-confirmed) | **PENDING** — not verifiable this session (Gmail de-authorised) |
+| 2 | **UCC IT Law Clinic** | `itlawclinic@ucc.ie` | `1a214a3277b6aae8` | **Sent** (founder-confirmed) | **PENDING** — not verifiable this session (Gmail de-authorised) |
+
+**Consequences:**
+- **Do NOT seek a paid legal engagement, and do NOT send duplicate enquiries, while these free-assistance requests are pending.** The "approve counsel engagement + fee" action (Sections 5–6) is **withdrawn** in favour of awaiting these replies.
+- **Reply status = PENDING (unverified).** I could not read the sent messages or check for replies because Gmail is de-authorised to this session. **To let me review responses, re-authorise Gmail**; I will not guess whether a reply has arrived.
+- The two Google-upstream legs remain the open legal question; the enquiries are now **in flight** (not merely drafted). DataForSEO FAQ §6 already clears the DataForSEO side, so no DataForSEO request is owed.
+- Unchanged: Kalodata entitlement clarification and the mandatory Meta rights/alternative-provider work proceed; both remain **prepared but un-sendable this session** (Gmail de-authorised; no other authenticated send channel). eBay §§3.1/4.2/8.1(d)/8.5/9 are cited **by number only — not represented as verbatim-verified** until the actual text is retrieved. GOLD 11/22, revised acceptances, provider rights and release flags unchanged. Recorded as Build Evidence **BE311**; master-doc Addendum 82.

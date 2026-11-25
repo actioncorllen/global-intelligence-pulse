@@ -2343,3 +2343,13 @@ Backend regression GREEN: `product_media_auth`, `product_image`, `discovery_medi
 - **Kalodata:** Product-Detail entitlement/countries/per-call price/field-population are account-specific → founder confirms via Kalodata, sets a hard $ cap, then a fixed-cap pilot (which is itself the field-population test). No credits bought.
 - **Meta GPD.09 (mandatory):** Track A official request + Track B licensed-alternative verification; no vendor selectable without authorised evaluation; stays BLOCKED until authorised evidence is accepted; not deferred.
 - **GOLD integrity:** `C2:C23` = **11/22** intact (GPD.02/03/04/05/12/13/14/15/18/20/21); the transient 4/22 was a drop of 7 booleans (C3,C4,C13:C16,C22) restored by the concurrent reconciliation from `LIVE MASTER` + BE279; no broad rewrite. Build Evidence row **BE310**.
+
+---
+
+## Addendum 82 — Correction: two free-assistance counsel enquiries WERE sent (BE311, 2026-11-25)
+
+**Date:** 2026-11-25. **Corrects the earlier "no solicitor enquiries sent" / "approve paid counsel engagement" records.** On 2026-11-25 the founder sent **two free / pro-bono legal-assistance enquiries** via the connected Gmail, both covering the Leg 1 (Google Ads search-volume) and Leg 2 (Google Shopping aggregate) questions:
+- **RDJ Startups** — `info.rdj@rdj.ie` — Gmail msg `1a214a31e94464b7` — **sent**; reply **PENDING** (not verifiable this session).
+- **UCC IT Law Clinic** — `itlawclinic@ucc.ie` — Gmail msg `1a214a3277b6aae8` — **sent**; reply **PENDING** (not verifiable this session).
+
+**Do not seek a paid engagement or send duplicates while these pend.** I could not read the messages or check replies — **Gmail is de-authorised to this session**; re-authorise it for me to review responses (I will not guess). DataForSEO FAQ §6 already clears the DataForSEO side (no request owed). Kalodata/Meta work continues (prepared, un-sendable this session); eBay clauses remain cited **by number only, not verbatim-verified**, pending the actual text. GOLD **11/22**, revised acceptances, provider rights and release flags unchanged. Full: `docs/GPD01-FINAL-COUNSEL-AND-PROVIDER-DRAFTS.md` Part 3. Build Evidence row **BE311**.
