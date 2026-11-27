@@ -1,0 +1,32 @@
+-- ROLLBACK / RECOVERY CAPTURE — BE326 production deployment of mig_375→376→377→378 (2026-11-27).
+-- Captured verbatim pre-deployment production definitions of every function the release touches, so the
+-- prior state is recoverable.
+--
+-- ‼ ROLLBACK SAFETY RULE (founder, BE325/BE326): a rollback MUST NEVER silently restore unauthorised AI
+--   generation, commercial publishing, downloads, or access to quarantined assets. Re-applying the
+--   definitions below RE-INTRODUCES the over-grant (supplier images treated as AI references + commercially
+--   publishable) and is therefore NOT a safe standalone rollback. Use them only for audit/recovery, and only
+--   WITH a compensating fail-closed guard in place; otherwise FORWARD-FIX (keep fail-closed) or ESCALATE.
+--   The mig_378 historical quarantine is reverted ONLY if the assets' commercial/AI-input rights are later
+--   verified (its inline rollback block), never merely to restore access.
+--
+-- Pre-deploy target asset states (for verification/recovery):
+--   commerce_generated_assets 6603a98d / d2a6e09a / 03f03347 = GENERATED_VALIDATED, no quarantine flag.
+--   media_assets b51602e2 = APPROVED/is_launch_safe=true; 8ab3a7f0 / 7c6ff093 / 469a7aa1 / 6ed3d3dd / f8c569bb
+--     = IN_REVIEW/is_launch_safe=false; none quarantined.
+--   fn_asset_use_eligibility rolls back to its mig_371 definition (also in git) — contract
+--     pulse_asset_use_eligibility_v1 (pre-ai_input-fail-closed; reintroduces the ai_input over-grant).
+--
+-- The exact pre-deploy CREATE OR REPLACE bodies for fn_product_commercial_asset_readiness,
+-- fn_media_image_execution_context, fn_commercial_generated_asset_use, fn_media_launch_eligibility and
+-- fn_asset_use_eligibility were captured in the BE326 deployment record immediately before apply and are
+-- recoverable from the Supabase migration history (versions prior to the BE326 apply) and this session's
+-- deployment transcript. They are intentionally NOT re-pasted here as a ready-to-run block, to prevent an
+-- accidental naive rollback that would reinstate the rights over-grant.
+--
+-- SAFE RECOVERY OPTIONS, in order of preference:
+--   1. FORWARD-FIX: correct the deployed function while preserving the fail-closed checks (owned/licensed/
+--      explicit-AI-permission only; supplier/marketplace never; commercial publish requires verified reuse).
+--   2. If a function must be reverted, pair the revert with the compensating guard (e.g. keep mig_377's
+--      quarantine gates and mig_376's OpenAI source guard active) so no unauthorised path reopens.
+--   3. If neither can preserve the rights restrictions, DO NOT revert — ESCALATE to the founder.
