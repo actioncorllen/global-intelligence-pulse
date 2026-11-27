@@ -14,6 +14,11 @@
 // as a generative source. This closes the "owned-image Gemini generation
 // unavailable / supplier substitution" gap recorded in BE325/BE326 while keeping
 // the BE324/BE326 fail-closed readiness gate and Product Asset Lock intact.
+//
+// BE329: for an authorised private storage object, this edge signs a FRESH
+// short-lived URL at execution time (never a stored long-lived signed URL), and
+// fails closed on sign failure — it never falls back to a stale URL and never
+// substitutes any other image.
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
@@ -188,9 +193,15 @@ Deno.serve(async (req: Request): Promise<Response> => {
     const imageUrlIn = String(r.image_url ?? "");
     const sourceUrlIn = String(r.source_url ?? "");
     if (storageRefIn) {
-      // Private owned/licensed asset in Supabase storage: sign a short-lived URL for the executor.
+      // Authoritative private storage object ("bucket/path"): ALWAYS mint a FRESH short-lived signed URL
+      // at execution time. Never rely on a stored long-lived signed URL (it has a fixed expiry and can be
+      // invalidated). If signing fails, fail CLOSED with a retryable technical error — never fall back to a
+      // stale URL, and never substitute a different (e.g. supplier) image. The resolver has already excluded
+      // all unauthorised sources, so there is no supplier image to substitute here.
       refUrl = await signStorageRef(storageRefIn);
+      if (!refUrl) return fail("REFERENCE_RESOLUTION_FAILED", "could not sign authorised private reference");
     } else if (/^https:\/\//i.test(imageUrlIn)) {
+      // No private storage object: use the authorised asset's own public URL (e.g. a first-party/licensed CDN image).
       refUrl = imageUrlIn;
     } else if (/^https:\/\//i.test(sourceUrlIn)) {
       refUrl = sourceUrlIn;

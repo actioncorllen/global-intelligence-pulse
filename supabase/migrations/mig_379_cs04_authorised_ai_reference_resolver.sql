@@ -55,7 +55,13 @@ BEGIN
   SELECT z.* INTO r FROM (
     SELECT
       pia.id, pia.rights_state, pia.source_provider, pia.source_entity_id,
-      pia.image_url, pia.source_url, pia.storage_ref, pia.is_primary, pia.observed_at,
+      pia.image_url, pia.source_url,
+      -- Authoritative private storage object reference ("bucket/path"). Customer uploads store it in
+      -- provenance.storage_ref (the storage_ref COLUMN is left null by fn_product_image_import_register),
+      -- so coalesce surfaces it reliably. The edge signs a FRESH short-lived URL from this at execution time
+      -- rather than relying on any stored long-lived signed URL.
+      coalesce(pia.storage_ref, pia.provenance->>'storage_ref') AS storage_ref,
+      pia.is_primary, pia.observed_at,
       CASE
         WHEN upper(coalesce(pia.rights_state,''))='CUSTOMER_OWNED'
              AND pia.source_provider='CUSTOMER_UPLOAD'
@@ -110,7 +116,7 @@ BEGIN
     'notes', jsonb_build_array(
       'Reference selection mirrors the fail-closed readiness gate (BE324/BE326) at the per-image level.',
       'A bare supplier (SUPPLIER_PROVIDED/SUPPLIER_AUTHORIZED), marketplace or research image is never returned as a generative reference.',
-      'The edge prefers a signed private storage_ref, else a public image_url/source_url, as the Gemini source image.'),
+      'storage_ref is the authoritative private object ref (coalesced from the column or provenance.storage_ref); the edge signs a FRESH short-lived URL from it at execution, never relying on a stored long-lived signed URL. image_url/source_url are used only when no private object exists.'),
     'contract','pulse_authorised_ai_reference_v1');
 END; $function$;
 
@@ -143,19 +149,27 @@ BEGIN
     'ok', v_r->>'status'='PRODUCT_NOT_FOUND', 'detail', v_r->>'status');
 
   BEGIN
-    -- rank 1: customer-owned upload (rights_confirmed). Also add a bare supplier image: owned must still win.
+    -- rank 1: customer-owned upload, shaped exactly as fn_product_image_import_register stores it
+    -- (image_url = a stored signed URL; source_url + provenance.storage_ref = the private object ref;
+    -- storage_ref COLUMN null). Also add a bare supplier image: owned must still win, AND the resolver
+    -- must surface the private object ref (so the edge can sign a fresh short-lived URL).
     INSERT INTO public.product_image_assets(tenant_id,product_id,market,image_url,source_provider,source_url,
         source_entity_id,rights_state,availability,is_primary,observed_at,provenance,is_fixture,content_hash)
       VALUES
-      (v_founder,v_prod,v_mkt,'https://owned.example/a.png','CUSTOMER_UPLOAD','https://owned.example/a.png',
-         NULL,'CUSTOMER_OWNED','AVAILABLE',true,now(),'{"rights_confirmed":"true"}'::jsonb,false,'CS04_SELFTEST'),
+      (v_founder,v_prod,v_mkt,'https://sb.example/storage/v1/object/sign/pulse-product-imports/o.png?token=x',
+         'CUSTOMER_UPLOAD','pulse-product-imports/'||v_founder::text||'/'||v_prod::text||'/o.png',
+         NULL,'CUSTOMER_OWNED','AVAILABLE',true,now(),
+         jsonb_build_object('rights_confirmed','true','bucket','pulse-product-imports',
+           'storage_ref','pulse-product-imports/'||v_founder::text||'/'||v_prod::text||'/o.png'),
+         false,'CS04_SELFTEST'),
       (v_founder,v_prod,v_mkt,'https://cdn.cj/x.jpg','CJ_SUPPLIER','https://cdn.cj/x.jpg',
          'CS04_BARE_SUP','SUPPLIER_PROVIDED','AVAILABLE',false,now(),'{}'::jsonb,false,'CS04_SELFTEST');
     v_r := public.fn_resolve_authorised_ai_reference(v_founder, v_prod, v_mkt);
-    v_checks := v_checks || jsonb_build_object('check','RANK1_CUSTOMER_OWNED_WINS_OVER_SUPPLIER',
+    v_checks := v_checks || jsonb_build_object('check','RANK1_CUSTOMER_OWNED_WINS_AND_SURFACES_PRIVATE_REF',
       'ok', v_r->>'status'='AUTHORISED_REFERENCE_AVAILABLE'
          AND (v_r->'reference'->>'origin_rank')='1'
-         AND (v_r->'reference'->>'origin_basis')='CUSTOMER_OWNED_UPLOAD',
+         AND (v_r->'reference'->>'origin_basis')='CUSTOMER_OWNED_UPLOAD'
+         AND (v_r->'reference'->>'storage_ref') LIKE 'pulse-product-imports/%',
       'detail', v_r->'reference');
     DELETE FROM public.product_image_assets WHERE content_hash='CS04_SELFTEST';
 
