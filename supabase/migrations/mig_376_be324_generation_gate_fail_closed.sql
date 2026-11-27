@@ -7,10 +7,12 @@
 --
 -- Two production-wired generation entry points are corrected (surgically, additively):
 --   (1) fn_product_commercial_asset_readiness  — the Gemini guard (commercial-image-generate edge,
---        fn_generate_storefront_runtime). ONLY the ai_generation.reference_eligible / execution_state /
---        reference_basis / requires fields change. commercial_asset_readiness, commercial_testability,
---        publishable_asset_path, images, rights, supplier_match and every other field are UNCHANGED, so the
---        workspace readiness badge and storefront publish path are not affected.
+--        fn_generate_storefront_runtime): ai_generation.reference_eligible / execution_state / reference_basis /
+--        requires fail closed. BE325 ALSO fails-closes the COMMERCIAL PUBLISHING label: a supplier image is no
+--        longer reported READY / SUPPLIER_AUTHORIZED_COMMERCIAL_ASSET unless commercial reuse rights are
+--        verified (CJ reuse_creative_cleared / commercial_redistribution_cleared are FALSE per BE239), so a
+--        supplier-only product now truthfully reports CUSTOMER_ASSET_REQUIRED (an existing, UI-handled status;
+--        badge layout preserved, value truthful). supplier_match / images / rights are unchanged.
 --   (2) fn_media_image_execution_context — the OpenAI/Ad-Studio guard (creative-image-execute edge). Adds a
 --        single additive check: the source image must carry AI-use permission (owned/licensed), never merely
 --        display/research permission.
@@ -36,6 +38,7 @@ DECLARE v_owner uuid; v_sup jsonb; v_resolve jsonb; v_state text; v_provider tex
   v_rights jsonb; v_testability text; v_ref_basis text;
   v_has_ai_authorised_owned_asset boolean := false;  -- BE324
   v_has_ai_evidence boolean := false;                -- BE324
+  v_has_commercial_reuse_rights boolean := false;    -- BE325
 BEGIN
   SELECT user_id INTO v_owner FROM public.commerce_products WHERE id = p_product_id;
   IF v_owner IS NULL THEN RETURN jsonb_build_object('status','product_not_found'); END IF;
@@ -77,27 +80,41 @@ BEGIN
       AND coalesce((r.permission_scope->>'expires_at')::timestamptz, 'infinity'::timestamptz) > now()
       AND r.supplier_product_id = (v_sup->>'supplier_product_id'));
 
+  -- BE325: verified COMMERCIAL REUSE rights for this supplier (provider-level reuse/redistribution clearance,
+  -- or explicit per-image commercial permission). Supplier product-DATA analysis permission is NOT image
+  -- commercial-reuse permission (BE239: CJ reuse_creative_cleared / commercial_redistribution_cleared = FALSE).
+  v_has_commercial_reuse_rights := EXISTS (
+      SELECT 1 FROM public.catalogue_source_rights r
+      WHERE upper(r.source_provider) = upper(coalesce(v_provider,''))
+        AND (coalesce(r.commercial_redistribution_cleared,false) OR coalesce(r.reuse_creative_cleared,false)))
+    OR ((v_sup->>'supplier_product_id') IS NOT NULL AND EXISTS (
+      SELECT 1 FROM public.commerce_supplier_image_rights r
+      WHERE r.revoked_at IS NULL
+        AND coalesce((r.permission_scope->>'commercial')::boolean,false)=true
+        AND coalesce((r.permission_scope->>'expires_at')::timestamptz,'infinity'::timestamptz) > now()
+        AND r.supplier_product_id = (v_sup->>'supplier_product_id')));
+
   v_provider_connected := coalesce((public.fn_commercial_image_provider_status()->>'connected')::boolean, false);
   SELECT count(*) INTO v_validated_generated FROM public.commerce_generated_assets
    WHERE product_id = p_product_id AND identity_validation_status='IDENTITY_VALIDATED';
 
-  -- UNCHANGED: readiness label / publishable path / testability (drive the workspace badge + storefront publish).
-  IF v_resolve_available OR v_has_customer_owned THEN
-    v_readiness := 'READY';
-    v_path := CASE WHEN v_has_customer_owned AND NOT v_resolve_available THEN 'CUSTOMER_OWNED_ASSET'
-                   ELSE 'SUPPLIER_AUTHORIZED_COMMERCIAL_ASSET' END;
-    v_basis := CASE WHEN v_has_customer_owned AND NOT v_resolve_available
-                 THEN 'A rights-confirmed customer-owned product image is available.'
-                 ELSE 'Connected supplier provides a rights-cleared product image for this exact supplier product.' END;
-  ELSIF v_has_supplier_authorized THEN
-    v_readiness := 'GENERATABLE_FROM_AUTHORIZED_REFERENCE'; v_path := 'SUPPLIER_AUTHORIZED_REFERENCE';
-    v_basis := 'An authorized supplier reference exists; a commercial image can be generated from it (identity-validated) rather than republishing a marketplace image.';
-  ELSIF v_has_supplier THEN
-    v_readiness := 'SUPPLIER_ASSET_REQUIRED'; v_path := 'SUPPLIER_ASSET_RECOVERY';
-    v_basis := 'The product is matched to a connected supplier, but a supplier-authorized commercial asset has not yet been obtained. Supplier asset recovery is required before generation or publication.';
+  -- BE325 FAIL-CLOSED COMMERCIAL PUBLISHING: only a rights-confirmed customer-owned image, or a supplier image
+  -- with VERIFIED commercial reuse rights, is reported as a publishable commercial asset. A supplier image
+  -- without verified commercial reuse rights is NOT commercially publishable (truthful status; UI layout kept).
+  IF v_has_customer_owned THEN
+    v_readiness := 'READY'; v_path := 'CUSTOMER_OWNED_ASSET';
+    v_basis := 'A rights-confirmed customer-owned product image is available.';
+  ELSIF v_resolve_available AND v_has_commercial_reuse_rights THEN
+    v_readiness := 'READY'; v_path := 'SUPPLIER_AUTHORIZED_COMMERCIAL_ASSET';
+    v_basis := 'Connected supplier provides a rights-cleared, commercially-licensed product image for this exact supplier product.';
+  ELSIF v_has_supplier_authorized OR v_resolve_available OR v_has_supplier THEN
+    -- Supplier image present but commercial reuse rights NOT verified. Supplier product-data analysis
+    -- permission is not image commercial-reuse permission (BE239). Not commercially publishable.
+    v_readiness := 'CUSTOMER_ASSET_REQUIRED'; v_path := 'NONE';
+    v_basis := 'A supplier image exists but its commercial reuse rights are not verified (supplier data-analysis permission is not image commercial-reuse permission). A customer-owned/licensed image, or written commercial reuse permission, is required to publish.';
   ELSIF v_has_marketplace THEN
     v_readiness := 'CUSTOMER_ASSET_REQUIRED'; v_path := 'NONE';
-    v_basis := 'Only marketplace/reference imagery is available. Image access is not republishing rights, so a customer-owned or supplier-authorized image is required to publish.';
+    v_basis := 'Only marketplace/reference imagery is available. Image access is not republishing rights, so a customer-owned or licensed image is required to publish.';
   ELSIF v_total_images = 0 THEN
     v_readiness := 'UNAVAILABLE'; v_path := 'NONE';
     v_basis := 'No product imagery has been observed for this product.';
