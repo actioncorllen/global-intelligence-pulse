@@ -1,0 +1,208 @@
+// ROLLBACK CAPTURE — commercial-image-generate PRIOR version 26 (pre-BE330).
+// Captured 2026-11-27 immediately before the BE330 deploy of v27 (ezbr_sha256 of v26:
+// eb92d2f7c96c8a3e37d6ddd68f30f14aef88f382500740b057a3a81b09ccd602). This is the edge as it ran before the
+// CS.04 authorised-reference resolver was wired in — it resolved its generative reference ONLY from the supplier
+// storefront (fn_resolve_storefront_assets, labelled SUPPLIER_PROVIDED).
+//
+// ROLLBACK PROCEDURE: redeploy this exact source to the `commercial-image-generate` function (verify_jwt=true),
+// and optionally DROP FUNCTION public.fn_resolve_authorised_ai_reference(uuid,uuid,text) +
+// public.fn_resolve_authorised_ai_reference_selftest() (additive, unwired once this edge is restored).
+//
+// ROLLBACK SAFETY (founder BE325/BE326 rule — preserved): a rollback must never silently restore unauthorised
+// AI generation. Restoring this v26 edge is SAFE because the deployed BE326 readiness gate
+// (fn_product_commercial_asset_readiness) still returns ai_generation.reference_eligible=false for a
+// supplier-only product, so this edge returns NOT_ELIGIBLE before it ever resolves a supplier image. Its
+// owned+supplier supplier-substitution branch is vacuous today (products_with_owned_and_supplier = 0). The
+// BE330 resolver-based v27 edge is strictly safer; FORWARD-FIX is preferred over rollback. Use this only for a
+// functional regression in v27 itself, never to reopen a rights path.
+
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
+const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+const WEBHOOK_SECRET = Deno.env.get("N8N_GEMINI_WEBHOOK_SECRET") ?? Deno.env.get("PULSE_DISCOVERY_WEBHOOK_SECRET") ?? "";
+const EXECUTOR_WEBHOOK = Deno.env.get("N8N_GEMINI_EXECUTOR_WEBHOOK") ?? "https://tradingb.app.n8n.cloud/webhook/pulse-gemini-commercial-image";
+const VALIDATOR_WEBHOOK = Deno.env.get("N8N_GEMINI_VALIDATOR_WEBHOOK") ?? "https://tradingb.app.n8n.cloud/webhook/pulse-gemini-identity-validate";
+const BUCKET = "pulse-generated-media";
+const RATE_WINDOW_SEC = 600;
+const RATE_MAX = 12;
+
+const CORS_HEADERS: Record<string, string> = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+
+const SCENES: Record<string, string> = {
+  CLEAN_STUDIO: "Place it on a clean seamless neutral studio background with soft even studio lighting and a subtle natural shadow; premium sharp e-commerce hero product photograph.",
+  LIFESTYLE: "Place it in a tasteful, realistic lifestyle setting appropriate to this product, with warm natural lighting and a softly blurred background; premium e-commerce lifestyle photograph.",
+  PRODUCT_IN_USE: "Show it naturally in use in a realistic everyday setting appropriate to this product, with warm natural lighting and a softly blurred background; premium e-commerce photograph.",
+};
+
+function json(status: number, body: unknown): Response {
+  return new Response(JSON.stringify(body), { status, headers: { ...CORS_HEADERS, "content-type": "application/json", "cache-control": "no-store" } });
+}
+
+function fail(status: string, detail: string): Response {
+  return json(200, { status, usable: false, retryable: true, detail, message: "Image generation didn't complete. Please try again." });
+}
+
+async function rpc(fn: string, args: Record<string, unknown>): Promise<unknown> {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${fn}`, {
+    method: "POST",
+    headers: { "content-type": "application/json", apikey: SERVICE_ROLE, authorization: `Bearer ${SERVICE_ROLE}` },
+    body: JSON.stringify(args),
+  });
+  const txt = await res.text();
+  let parsed: unknown = null; try { parsed = txt ? JSON.parse(txt) : null; } catch { parsed = txt; }
+  if (!res.ok) throw new Error(`rpc ${fn} ${res.status}: ${String(txt).slice(0, 200)}`);
+  return parsed;
+}
+
+async function callWebhook(url: string, body: unknown): Promise<{ ok: boolean; status: number; data: Record<string, unknown> }> {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json", ...(WEBHOOK_SECRET ? { "x-pulse-webhook-secret": WEBHOOK_SECRET } : {}) },
+    body: JSON.stringify(body),
+  });
+  const txt = await res.text();
+  let data: Record<string, unknown> = {}; try { data = txt ? JSON.parse(txt) : {}; } catch { data = { raw: txt }; }
+  return { ok: res.ok, status: res.status, data };
+}
+
+Deno.serve(async (req: Request): Promise<Response> => {
+  if (req.method === "OPTIONS") return new Response("ok", { status: 200, headers: CORS_HEADERS });
+  if (req.method !== "POST") return json(405, { status: "METHOD_NOT_ALLOWED" });
+  if (!SUPABASE_URL || !SERVICE_ROLE) return json(500, { status: "SERVER_NOT_CONFIGURED" });
+
+  const authHeader = req.headers.get("Authorization") ?? "";
+  if (!/^Bearer\s+.+/i.test(authHeader)) return json(401, { status: "UNAUTHENTICATED" });
+  let userId = "";
+  try {
+    const u = await fetch(`${SUPABASE_URL}/auth/v1/user`, { headers: { apikey: SERVICE_ROLE, authorization: authHeader } });
+    if (!u.ok) return json(401, { status: "UNAUTHENTICATED" });
+    const uj = await u.json();
+    userId = String(uj?.id ?? "");
+  } catch { return json(401, { status: "UNAUTHENTICATED" }); }
+  if (!userId) return json(401, { status: "UNAUTHENTICATED" });
+
+  try {
+    const allowed = await rpc("fn_edge_onboarding_allowed", { p_auth_user_id: userId });
+    if (allowed !== true) return json(403, { status: "ONBOARDING_INCOMPLETE" });
+  } catch { return json(403, { status: "ONBOARDING_INCOMPLETE" }); }
+
+  let body: Record<string, unknown>;
+  try { body = (await req.json()) as Record<string, unknown>; } catch { return json(400, { status: "INVALID_JSON" }); }
+  const productId = String(body.product_id ?? "");
+  const market = body.market ? String(body.market) : null;
+  const scene = SCENES[String(body.scene ?? "LIFESTYLE")] ? String(body.scene ?? "LIFESTYLE") : "LIFESTYLE";
+  const requestId = String(body.request_id ?? crypto.randomUUID());
+  if (!/^[0-9a-f-]{36}$/i.test(productId)) return json(400, { status: "INVALID_PRODUCT" });
+
+  let product: Record<string, unknown> | null = null;
+  try {
+    const pr = await fetch(`${SUPABASE_URL}/rest/v1/commerce_products?id=eq.${productId}&select=id,user_id,title`, { headers: { apikey: SERVICE_ROLE, authorization: `Bearer ${SERVICE_ROLE}` } });
+    const arr = await pr.json(); product = Array.isArray(arr) ? arr[0] ?? null : null;
+  } catch { /* fallthrough */ }
+  if (!product) return json(404, { status: "PRODUCT_NOT_FOUND" });
+  if (String(product.user_id) !== userId) return json(403, { status: "CROSS_TENANT_REJECTED" });
+  const title = String(product.title ?? "product");
+
+  try {
+    const since = new Date(Date.now() - RATE_WINDOW_SEC * 1000).toISOString();
+    const rl = await fetch(`${SUPABASE_URL}/rest/v1/commerce_generated_assets?tenant_id=eq.${userId}&created_at=gte.${since}&select=id`, { headers: { apikey: SERVICE_ROLE, authorization: `Bearer ${SERVICE_ROLE}`, Prefer: "count=exact" } });
+    const cr = rl.headers.get("content-range") ?? ""; const n = Number((cr.split("/")[1] ?? "0"));
+    if (n >= RATE_MAX) return json(429, { status: "RATE_LIMITED", message: "Too many image generations recently. Please wait a moment and try again." });
+  } catch { /* non-fatal */ }
+
+  let readiness: Record<string, unknown>;
+  try { readiness = (await rpc("fn_product_commercial_asset_readiness", { p_product_id: productId, p_market: market })) as Record<string, unknown>; }
+  catch (e) { return fail("ELIGIBILITY_CHECK_FAILED", (e as Error).message); }
+  const ai = (readiness?.ai_generation ?? {}) as Record<string, unknown>;
+  if (ai.reference_eligible !== true || ai.execution_state !== "AVAILABLE") {
+    return json(200, { status: "NOT_ELIGIBLE", reason: readiness?.commercial_asset_readiness ?? "NOT_ELIGIBLE",
+      message: String(ai.requires ?? "A customer-owned or supplier-authorized image is required.") });
+  }
+
+  // v26 reference resolution: SUPPLIER STOREFRONT ONLY (the behaviour BE330 replaces).
+  let refUrl = ""; let refProvider = ""; let refRights = ""; let supplierProductId: string | null = null;
+  try {
+    const sup = (await rpc("fn_product_supplier_identity", { p_product_id: productId })) as Record<string, unknown>;
+    refProvider = String(sup?.provider ?? ""); supplierProductId = sup?.supplier_product_id ? String(sup.supplier_product_id) : null;
+    if (sup?.has_supplier === true && supplierProductId) {
+      const resolved = (await rpc("fn_resolve_storefront_assets", { p_supplier: refProvider, p_supplier_product_id: supplierProductId, p_market: market })) as Record<string, unknown>;
+      const primary = (resolved?.primary_image ?? {}) as Record<string, unknown>;
+      refUrl = String(primary?.source_url ?? ""); refRights = "SUPPLIER_PROVIDED";
+    }
+  } catch (e) { return fail("REFERENCE_RESOLUTION_FAILED", (e as Error).message); }
+  if (!refUrl) return json(200, { status: "NOT_ELIGIBLE", reason: "NO_AUTHORIZED_REFERENCE", message: "No rights-cleared reference image is available to generate from." });
+
+  const prompt = `Reproduce the EXACT product from the provided reference photo, pixel-faithful, as the single subject. Keep THIS SAME ${title} completely unchanged and identical to the reference: same overall shape and silhouette, housing and body, the exact base and its control interface (do NOT add, remove, or change any buttons, switches, touch controls, ports or indicators — if the reference base is a smooth touch-control base, keep it smooth with no physical buttons), the lens/projector head, gooseneck/arm, wings/panels and every accessory, the same proportions, materials, textures, finish and colour, and the same projected pattern if any. Do NOT redesign, stylise, beautify, or substitute the product or any of its parts, and do NOT invent a different or generic ${title}. Only the surrounding scene may change: ${SCENES[scene]} Do not add any text, words, letters, numbers, logos, badges, price tags, stickers, watermarks, UI overlays, ratings, reviews, people's faces or promotional graphics.`;
+
+  const baseJobId = `cig-${requestId}`;
+  const MAX_ATTEMPTS = 2;
+  let gen: { ok: boolean; status: number; data: Record<string, unknown> } | null = null;
+  let usedJobId = baseJobId;
+  let attempt = 0;
+  while (attempt < MAX_ATTEMPTS) {
+    attempt++;
+    usedJobId = `${baseJobId}-a${attempt}`;
+    try {
+      gen = await callWebhook(EXECUTOR_WEBHOOK, { job_id: usedJobId, source_image_url: refUrl, prompt, size: "1024x1024", attempt });
+    } catch (e) { return fail("GENERATION_FAILED", `attempt${attempt}:${(e as Error).message}`); }
+    const d = gen.data ?? {};
+    if (gen.ok && d.ok !== false && d.storage_path) break;
+    if (d.reason === "IMAGE_OTHER" && attempt < MAX_ATTEMPTS) continue;
+    return fail("GENERATION_FAILED", `attempt${attempt}:${String(d.reason ?? d.detail ?? gen.status)}`);
+  }
+  const storagePath = String(gen!.data.storage_path ?? "");
+  const storageRef = String(gen!.data.storage_ref ?? (storagePath ? `${BUCKET}/${storagePath}` : ""));
+  if (!storagePath) return fail("STORAGE_FAILED", "no storage path returned");
+
+  let signedUrl: string | null = null;
+  try {
+    const s = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/${BUCKET}/${storagePath}`, {
+      method: "POST", headers: { apikey: SERVICE_ROLE, authorization: `Bearer ${SERVICE_ROLE}`, "content-type": "application/json" },
+      body: JSON.stringify({ expiresIn: 3600 }),
+    });
+    if (s.ok) { const sj = await s.json(); if (sj?.signedURL) signedUrl = `${SUPABASE_URL}/storage/v1${sj.signedURL}`; }
+  } catch { /* non-fatal */ }
+
+  let verdict: Record<string, unknown> = { verdict: "PENDING" };
+  try {
+    const val = await callWebhook(VALIDATOR_WEBHOOK, { reference_url: refUrl, generated_path: storagePath });
+    verdict = (val.data.identity_validation ?? val.data) as Record<string, unknown>;
+  } catch (e) { verdict = { verdict: "VALIDATION_ERROR", error: (e as Error).message }; }
+
+  let reg: Record<string, unknown>;
+  try {
+    reg = (await rpc("fn_register_generated_commercial_asset", {
+      p_tenant: userId, p_product_id: productId, p_storage_ref: storageRef,
+      p_reference: { url: refUrl, provider: refProvider, rights_state: refRights },
+      p_generation: { provider: "GOOGLE_GEMINI", model: "gemini-2.5-flash-image", workflow: "OYjIUMd0GS7OanbY", job_id: usedJobId, attempts: attempt, bucket: BUCKET, mime: "image/png", width: 1024, height: 1024 },
+      p_identity: verdict,
+    })) as Record<string, unknown>;
+  } catch (e) { return fail("PROVENANCE_FAILED", (e as Error).message); }
+
+  const idState = String(reg.identity_validation_status ?? "PENDING_IDENTITY_VALIDATION");
+  if (idState !== "IDENTITY_VALIDATED") {
+    return json(200, { status: "IDENTITY_VALIDATION_FAILED", generated_asset_id: reg.generated_asset_id,
+      identity_validation_status: idState, identity_validation: verdict,
+      commercial_asset_status: reg.commercial_asset_status, signed_url: signedUrl, usable: false,
+      provider: "GOOGLE_GEMINI", model: "gemini-2.5-flash-image",
+      message: "The generated image changed the product too much and can't be used." });
+  }
+
+  return json(200, {
+    status: "READY_FOR_REVIEW",
+    generated_asset_id: reg.generated_asset_id,
+    commercial_asset_status: reg.commercial_asset_status,
+    identity_validation_status: idState,
+    identity_validation: verdict,
+    usable: true,
+    storage_ref: storageRef,
+    signed_url: signedUrl,
+    provider: "GOOGLE_GEMINI",
+    model: "gemini-2.5-flash-image",
+    scene,
+    auto_published: false,
+  });
+});

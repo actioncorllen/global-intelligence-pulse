@@ -5,8 +5,8 @@
 // Lock) -> provenance registration -> review-ready result. The browser never sees
 // or supplies the reference URL, rights state, tenant, or any provider secret.
 //
-// CS.04 (committed, NOT deployed in this change — founder control: no production
-// deployment): the reference is now resolved by fn_resolve_authorised_ai_reference,
+// CS.04 (BE330, deployed under founder authorisation): the reference is now
+// resolved by fn_resolve_authorised_ai_reference,
 // which returns an ACTUAL authorised customer-owned / first-party / explicitly-
 // licensed / AI-authorised image (or a supplier image carrying EXPLICIT per-image
 // AI-input permission), and NEVER a bare supplier (CJ), marketplace or research
