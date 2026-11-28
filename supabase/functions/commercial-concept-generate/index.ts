@@ -47,6 +47,7 @@ import {
 } from "./lane/concept-execution-lane.ts";
 import { buildProductVisualIdentityPack } from "./lane/product-visual-identity-pack.ts";
 import {
+  conceptSafetyPrecheck,
   decideSpendAuthorized,
   mapPackSources,
   safeAspectRatio,
@@ -66,7 +67,11 @@ const CONCEPT_EXECUTOR_WEBHOOK =
 const BUCKET = "pulse-generated-media";
 const PROVIDER_BUDGET_KEY = "GEMINI_CONCEPT";
 const PROVIDER_ID = "GOOGLE_GEMINI";
-const PROVIDER_MODEL = "gemini-2.5-flash-image";
+// Env-overridable (BE344 P1): gemini-2.5-flash-image is GA + live until an earliest
+// shutdown of 2027-03-15 (recommended replacement gemini-3.1-flash-lite-image /
+// gemini-nano-banana-2.1). Switching models = set PULSE_GEMINI_IMAGE_MODEL + migrate the
+// text-to-image workflow to the new Interactions API (/v1beta/interactions); no code change.
+const PROVIDER_MODEL = Deno.env.get("PULSE_GEMINI_IMAGE_MODEL") ?? "gemini-2.5-flash-image";
 const RATE_WINDOW_SEC = 600;
 const RATE_MAX = 12;
 
@@ -237,11 +242,27 @@ Deno.serve(async (req: Request): Promise<Response> => {
   }
   const pack = buildProductVisualIdentityPack(mapPackSources(identityJson, readinessJson));
 
+  // (4)+(5)+(6) Rights-safety pre-check BEFORE any spend reservation, so a blocked /
+  // unsafe request never consumes a paid budget slot (BE344 P2 hardening). The lane
+  // re-validates and still refuses to call the provider for an unsafe request; this
+  // only moves the refusal ahead of the budget reservation.
+  const pre = conceptSafetyPrecheck({ pack, productId, market, scene, aspectRatio, founderBrief });
+  if (!pre.safe) {
+    return json(200, {
+      status: "BLOCKED_UNSAFE_REQUEST",
+      usable: false,
+      label: pre.request.label,
+      blocked_reasons: pre.request.blockedReasons,
+      message: "This concept request could not be made rights-safe and was not executed.",
+    });
+  }
+
   // (8)+(9) Explicit spend authorisation + budget reservation. Reserve ONE slot of
   // a founder-opened GEMINI_CONCEPT budget (max_calls + TTL). FAIL-CLOSED: spend is
   // authorised only when a budget was explicitly opened AND a slot remained
   // (enforced && allowed). With no open budget, the concept is PREPARED_NOT_EXECUTED
-  // and the provider is NEVER called. Reserved immediately before the provider call.
+  // and the provider is NEVER called. Reserved only AFTER the safety pre-check passes
+  // and immediately before the provider call, so an unsafe request burns no budget.
   let spendApproved = false;
   try {
     const consume = (await rpc("fn_provider_budget_try_consume", {

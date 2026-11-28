@@ -3,6 +3,39 @@
 // without starting the HTTP server. Logic here is server-only wiring; the
 // rights-safe execution semantics live in ./lane/concept-execution-lane.ts.
 import type { ProductVisualIdentityPackSources } from "./lane/pack-sources.ts";
+import {
+  assertConceptRequestSafe,
+  buildConceptGenerationRequest,
+  type ConceptGenerationRequest,
+  type ConceptScene,
+} from "./lane/creative-concept-prep.ts";
+import type { ProductVisualIdentityPack } from "./lane/product-visual-identity-pack.ts";
+
+/**
+ * Rights-safety pre-check run BEFORE any spend reservation. The lane itself also
+ * refuses to call the provider for an unsafe request, but the edge must not consume
+ * a paid budget slot for a request that will never be sent. So the edge builds +
+ * asserts the request first; only a safe request proceeds to reserve budget and
+ * execute. Deterministic and pure (mirrors the lane's own safety invariants).
+ */
+export function conceptSafetyPrecheck(args: {
+  pack: ProductVisualIdentityPack;
+  productId: string;
+  market: string | null;
+  scene: ConceptScene;
+  aspectRatio: string;
+  founderBrief?: string | null;
+}): { safe: boolean; request: ConceptGenerationRequest } {
+  const request = buildConceptGenerationRequest(args);
+  let safe = true;
+  try {
+    assertConceptRequestSafe(request);
+  } catch {
+    safe = false;
+  }
+  if (/(https?:|data:|www\.)/i.test(request.prompt)) safe = false;
+  return { safe, request };
+}
 
 /**
  * Explicit spend authorisation decision over fn_provider_budget_try_consume's

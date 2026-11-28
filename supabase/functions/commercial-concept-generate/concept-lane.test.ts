@@ -14,7 +14,7 @@ import {
   buildProductVisualIdentityPack,
   type ProductVisualIdentityPack,
 } from "./lane/product-visual-identity-pack.ts";
-import { decideSpendAuthorized, mapPackSources } from "./edge-core.ts";
+import { conceptSafetyPrecheck, decideSpendAuthorized, mapPackSources } from "./edge-core.ts";
 
 // --- tiny inline assert (keeps the suite self-contained) --------------------
 function ok(cond: unknown, msg: string): asserts cond {
@@ -210,4 +210,17 @@ Deno.test("mapPackSources: numeric id stringified (safe range) == string id; 19-
   );
   eq(packReal.identityVersion, packReal2.identityVersion, "deterministic for identical inputs");
   ok(packReal.identityVersion !== conceptPack().identityVersion, "distinct identities differ");
+});
+
+// --- (I) BE344 P2: safety pre-check runs before spend; safe for a normal pack ---
+Deno.test("conceptSafetyPrecheck: safe for a normal pack, builds a URL-free labelled request", () => {
+  const r = conceptSafetyPrecheck({
+    pack: conceptPack(), productId: PRODUCT, market: "US", scene: "LIFESTYLE", aspectRatio: "1:1",
+    founderBrief: "warm kitchen morning https://cj.example/x",
+  });
+  ok(r.safe === true, "normal pack is safe");
+  ok(!/(https?:|data:|www\.)/i.test(r.request.prompt), "prompt is URL-free (brief URL stripped)");
+  eq(r.request.label, "AI CONCEPT — NOT PRODUCT VERIFIED", "carries the concept label");
+  eq(r.request.provenance.type, "ORIGINAL_CONCEPT", "ORIGINAL_CONCEPT provenance");
+  eq(r.request.provenance.referenceAsset, null, "no reference asset");
 });

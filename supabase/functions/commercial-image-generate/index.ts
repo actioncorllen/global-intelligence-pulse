@@ -28,6 +28,18 @@ const VALIDATOR_WEBHOOK = Deno.env.get("N8N_GEMINI_VALIDATOR_WEBHOOK") ?? "https
 const BUCKET = "pulse-generated-media";
 const RATE_WINDOW_SEC = 600;
 const RATE_MAX = 12;
+// BE344 P1 — image model is now configurable (env-overridable), not hard-coded, so the
+// recommended replacement can be set without a code change. CURRENT OFFICIAL STATUS
+// (ai.google.dev, 2026-11-28): gemini-2.5-flash-image is GA and still live; it is
+// DEPRECATED with an earliest shutdown of 2027-03-15 (NOT Oct 2026 — Oct 2 2025 was its
+// release date), recommended replacement gemini-3.1-flash-lite-image (or
+// gemini-nano-banana-2.1). MIGRATION NOTE: the newer image models are documented only on
+// the new Interactions API (POST /v1beta/interactions, header Api-Revision:2026-05-20,
+// input:[{type:text},{type:image,mime_type,data(base64)}], output in interaction.output_image.data),
+// NOT :generateContent+inline_data. The actual provider call lives in the n8n workflow
+// (N8N_GEMINI_EXECUTOR_WEBHOOK), so switching models is: set PULSE_GEMINI_IMAGE_MODEL +
+// migrate that workflow to the Interactions API. No urgent change is required before 2027.
+const IMAGE_MODEL = Deno.env.get("PULSE_GEMINI_IMAGE_MODEL") ?? "gemini-2.5-flash-image";
 
 // Browser-invoked (supabase.functions.invoke) — must answer the CORS preflight.
 const CORS_HEADERS: Record<string, string> = {
@@ -271,7 +283,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     reg = (await rpc("fn_register_generated_commercial_asset", {
       p_tenant: userId, p_product_id: productId, p_storage_ref: storageRef,
       p_reference: { url: refUrl, provider: refProvider, rights_state: refRights, origin_basis: refBasis, asset_id: refAssetId },
-      p_generation: { provider: "GOOGLE_GEMINI", model: "gemini-2.5-flash-image", workflow: "OYjIUMd0GS7OanbY", job_id: usedJobId, attempts: attempt, bucket: BUCKET, mime: "image/png", width: 1024, height: 1024 },
+      p_generation: { provider: "GOOGLE_GEMINI", model: IMAGE_MODEL, workflow: "OYjIUMd0GS7OanbY", job_id: usedJobId, attempts: attempt, bucket: BUCKET, mime: "image/png", width: 1024, height: 1024 },
       p_identity: verdict,
     })) as Record<string, unknown>;
   } catch (e) { return fail("PROVENANCE_FAILED", (e as Error).message); }
@@ -283,7 +295,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     return json(200, { status: "IDENTITY_VALIDATION_FAILED", generated_asset_id: reg.generated_asset_id,
       identity_validation_status: idState, identity_validation: verdict,
       commercial_asset_status: reg.commercial_asset_status, signed_url: signedUrl, usable: false,
-      provider: "GOOGLE_GEMINI", model: "gemini-2.5-flash-image",
+      provider: "GOOGLE_GEMINI", model: IMAGE_MODEL,
       message: "The generated image changed the product too much and can't be used." });
   }
 
@@ -298,7 +310,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     signed_url: signedUrl,
     reference_basis: refBasis,
     provider: "GOOGLE_GEMINI",
-    model: "gemini-2.5-flash-image",
+    model: IMAGE_MODEL,
     scene,
     auto_published: false,
   });
