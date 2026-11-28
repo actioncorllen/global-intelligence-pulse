@@ -97,6 +97,16 @@ Deno.serve(async (req: Request): Promise<Response> => {
     return json(403, { status: "ONBOARDING_INCOMPLETE" });
   }
 
+  // BE346: the Ad Creative Studio is FOUNDER-ONLY. Check the RESOLVED signed-in user
+  // with fn_is_founder_uid (not fn_is_founder(), which passes for the service role).
+  try {
+    const founder = await rpc("fn_is_founder_uid", { p_auth_user_id: userId });
+    if (founder !== true)
+      return json(403, { status: "FOUNDER_ONLY", message: "The Ad Creative Studio is available to the founder only." });
+  } catch {
+    return json(403, { status: "FOUNDER_ONLY" });
+  }
+
   let body: Record<string, unknown>;
   try {
     body = (await req.json()) as Record<string, unknown>;

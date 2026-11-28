@@ -148,6 +148,16 @@ Deno.serve(async (req: Request): Promise<Response> => {
   } catch { return json(403, { status: "ONBOARDING_INCOMPLETE" }); }
   // ---- STRATELOQ mandatory-onboarding gate (edge) END ------------------------
 
+  // ---- BE346: Ad Creative Studio FOUNDER-ONLY gate (edge) BEGIN ---------------
+  // Image generation is part of the founder-only Ad Creative Studio. Check the
+  // RESOLVED signed-in user via fn_is_founder_uid — NOT fn_is_founder(), which
+  // returns true for the service role this edge runs as. Fail closed on any error.
+  try {
+    const founder = await rpc("fn_is_founder_uid", { p_auth_user_id: userId });
+    if (founder !== true) return json(403, { status: "FOUNDER_ONLY", message: "The Ad Creative Studio is available to the founder only." });
+  } catch { return json(403, { status: "FOUNDER_ONLY" }); }
+  // ---- BE346: Ad Creative Studio FOUNDER-ONLY gate (edge) END -----------------
+
   let body: Record<string, unknown>;
   try { body = (await req.json()) as Record<string, unknown>; } catch { return json(400, { status: "INVALID_JSON" }); }
   const productId = String(body.product_id ?? "");
